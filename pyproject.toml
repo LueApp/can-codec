@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "canfd-codec"
+version = "1.0.0"
+description = "Configurable CAN/CAN-FD message encoder/decoder"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+monitor = [
+    "python-can>=4.0",
+]
+
+[project.scripts]
+canfd-codec = "canfd_codec.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["canfd_codec*"]

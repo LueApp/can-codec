@@ -1,0 +1,2 @@
+[console_scripts]
+canfd-codec = canfd_codec.cli:main
