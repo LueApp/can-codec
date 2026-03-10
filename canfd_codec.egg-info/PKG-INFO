@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: canfd-codec
-Version: 1.0.0
-Summary: Configurable CAN/CAN-FD message encoder/decoder
-Requires-Python: >=3.10
-Requires-Dist: pyyaml>=6.0
-Provides-Extra: monitor
-Requires-Dist: python-can>=4.0; extra == "monitor"

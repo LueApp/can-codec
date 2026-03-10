@@ -137,7 +137,9 @@ def _parse_signal(raw: dict) -> Signal:
     max_val = raw.get("max")
 
     # If linear_map is enabled, calculate scale/offset from min/max
-    if raw.get("linear_map", False) and min_val is not None and max_val is not None:
+    # linear_map also implies big-endian (Motorola) byte order
+    is_linear_map = raw.get("linear_map", False)
+    if is_linear_map and min_val is not None and max_val is not None:
         # For signed types, raw range is different
         if value_type == "signed":
             max_raw = (1 << (bit_length - 1)) - 1  # e.g., 127 for 8-bit
@@ -156,11 +158,14 @@ def _parse_signal(raw: dict) -> Signal:
             scale = (max_val - min_val) / raw_range
             offset = min_val - min_raw * scale
 
+    # linear_map implies big_endian byte order (Motorola style, like dm_parser.py)
+    byte_order = raw.get("byte_order", "big_endian" if is_linear_map else "little_endian")
+
     sig = Signal(
         name=raw["name"],
         start_bit=raw["start_bit"],
         bit_length=bit_length,
-        byte_order=raw.get("byte_order", "little_endian"),
+        byte_order=byte_order,
         value_type=value_type,
         scale=scale,
         offset=offset,
@@ -252,26 +257,24 @@ def _extract_bits_le(data: bytes, start_bit: int, bit_length: int) -> int:
 
 def _extract_bits_be(data: bytes, start_bit: int, bit_length: int) -> int:
     """
-    Extract a big-endian (Motorola) signal from the data payload.
+    Extract a big-endian signal from the data payload.
 
-    For big-endian CAN signals, start_bit refers to the MSB position
-    using the standard Motorola bit numbering convention.
+    Uses continuous MSB-first bit ordering (like dm_parser.py):
+    - Bit 0 is byte 0 bit 7 (MSB of first byte)
+    - Bit 7 is byte 0 bit 0 (LSB of first byte)
+    - Bit 8 is byte 1 bit 7 (MSB of second byte)
+    - etc.
+
+    start_bit is the bit position of the MSB of the signal.
     """
-    # Convert Motorola bit numbering to sequential bit positions
     value = 0
-    bit_pos = start_bit
     for i in range(bit_length):
+        bit_pos = start_bit + i
         byte_idx = bit_pos // 8
-        bit_in_byte = bit_pos % 8
+        bit_in_byte = 7 - (bit_pos % 8)  # MSB-first within byte
         if byte_idx < len(data):
-            if data[byte_idx] & (1 << (7 - bit_in_byte)):
+            if data[byte_idx] & (1 << bit_in_byte):
                 value |= (1 << (bit_length - 1 - i))
-
-        # Navigate to next bit in Motorola order
-        if bit_in_byte == 0:
-            bit_pos += 15  # jump to MSB of next byte
-        else:
-            bit_pos -= 1
     return value
 
 
@@ -289,21 +292,27 @@ def _pack_bits_le(data: bytearray, start_bit: int, bit_length: int, value: int):
 
 
 def _pack_bits_be(data: bytearray, start_bit: int, bit_length: int, value: int):
-    """Pack a value into the data payload as a big-endian (Motorola) signal."""
-    bit_pos = start_bit
+    """
+    Pack a value into the data payload as a big-endian signal.
+
+    Uses continuous MSB-first bit ordering (like dm_parser.py):
+    - Bit 0 is byte 0 bit 7 (MSB of first byte)
+    - Bit 7 is byte 0 bit 0 (LSB of first byte)
+    - Bit 8 is byte 1 bit 7 (MSB of second byte)
+    - etc.
+
+    start_bit is the bit position of the MSB of the signal.
+    """
     for i in range(bit_length):
+        bit_pos = start_bit + i
         byte_idx = bit_pos // 8
-        bit_in_byte = bit_pos % 8
+        bit_in_byte = 7 - (bit_pos % 8)  # MSB-first within byte
         while byte_idx >= len(data):
             data.append(0)
         if value & (1 << (bit_length - 1 - i)):
-            data[byte_idx] |= (1 << (7 - bit_in_byte))
+            data[byte_idx] |= (1 << bit_in_byte)
         else:
-            data[byte_idx] &= ~(1 << (7 - bit_in_byte))
-        if bit_in_byte == 0:
-            bit_pos += 15
-        else:
-            bit_pos -= 1
+            data[byte_idx] &= ~(1 << bit_in_byte)
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +354,8 @@ def _physical_to_raw(physical_value: float, signal: Signal) -> int:
         return struct.unpack("<Q", raw_bytes)[0]
 
     else:
-        raw = round((physical_value - signal.offset) / signal.scale)
+        # Use int() truncation (not round()) to match dm_parser.py behavior
+        raw = int((physical_value - signal.offset) / signal.scale)
         if vtype == "signed" and raw < 0:
             raw += (1 << signal.bit_length)
         # Clamp to valid range
