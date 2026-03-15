@@ -157,65 +157,61 @@ def cmd_decode(args):
 
             # Check if this is a full MAVLink v2 frame (starts with 0xFD)
             if len(data) >= 10 and data[0] == 0xFD:
-                # MAVLink v2 frame structure:
-                # [0] = 0xFD (magic)
-                # [1] = payload length
-                # [2] = incompat flags
-                # [3] = compat flags
-                # [4] = sequence
-                # [5] = system ID
-                # [6] = component ID
-                # [7:9] = message ID (24-bit little-endian, but usually 16-bit)
-                # [10:10+payload_len] = payload
-                # [last 2 bytes] = CRC
                 payload_len = data[1]
                 msg_sys_id = data[5]
                 msg_comp_id = data[6]
-                msg_id = data[7] | (data[8] << 8)  # 16-bit message ID
-                if len(data) >= 12:  # 3-byte message ID in v2
-                    msg_id |= (data[9] << 16)
+                msg_id = data[7] | (data[8] << 8) | (data[9] << 16)
 
-                # Update mavlink_info with frame info
                 mavlink_info["frame_sys_id"] = msg_sys_id
                 mavlink_info["frame_comp_id"] = msg_comp_id
                 mavlink_info["msg_id"] = msg_id
                 mavlink_info["seq"] = data[4]
 
-                # Extract payload (skip header, exclude CRC)
-                header_len = 10
-                payload = data[header_len:header_len + payload_len]
+                # Use pymavlink to decode the full MAVLink v2 frame
+                from .mavlink_loader import decode_mavlink
+                mav_result = decode_mavlink(bytes(data))
+                if mav_result is not None:
+                    # Build a DecodedMessage-like output from pymavlink result
+                    from .codec import DecodedMessage, DecodedSignal
+                    signals = []
+                    msg_name = mav_result["msg_name"]
+                    for key, val in mav_result.items():
+                        if key in ("msg_name", "msg_id"):
+                            continue
+                        if isinstance(val, (list, tuple)):
+                            for i, item in enumerate(val):
+                                signals.append(DecodedSignal(
+                                    name=f"{key}_{i}", raw_value=0,
+                                    physical_value=item,
+                                ))
+                        else:
+                            signals.append(DecodedSignal(
+                                name=key, raw_value=0,
+                                physical_value=val,
+                            ))
 
-                # Find message by ID and decode payload
-                from .codec import decode as codec_decode
-                msg_def = codec._by_id.get(msg_id)
-                if msg_def:
-                    _, msg = msg_def
-                    decoded = codec_decode(msg, bytes(payload), actual_id=can_id)
+                    # Look up description from XML-loaded config
+                    desc = ""
+                    for dev in codec.devices:
+                        msg_def = dev.get_by_name(msg_name)
+                        if msg_def:
+                            desc = msg_def.description
+                            break
+
+                    decoded = DecodedMessage(
+                        msg_id=can_id,
+                        name=msg_name,
+                        description=desc,
+                        signals=signals,
+                        raw_data=data,
+                    )
                 else:
-                    print(f"Error: Unknown MAVLink message ID {msg_id} (0x{msg_id:X})", file=sys.stderr)
-                    print(f"Known message IDs: {', '.join(f'0x{m.id:X}' for d in codec.devices for m in d.messages)}", file=sys.stderr)
+                    print(f"Error: Failed to decode MAVLink frame (msg_id=0x{msg_id:X})", file=sys.stderr)
                     sys.exit(1)
             else:
-                # Raw payload (not a full MAVLink frame) - auto-detect by DLC
-                from .codec import decode as codec_decode, dlc_to_bytes
-                data_len = len(data)
-                candidates = []
-                for dev in codec.devices:
-                    for msg in dev.messages:
-                        if dlc_to_bytes(msg.dlc) == data_len:
-                            candidates.append(msg)
-
-                if len(candidates) == 1:
-                    decoded = codec_decode(candidates[0], data, actual_id=can_id)
-                elif len(candidates) > 1:
-                    print(f"Multiple messages match DLC={data_len}:", file=sys.stderr)
-                    for msg in candidates:
-                        print(f"  - {msg.name} (ID: 0x{msg.id:03X})", file=sys.stderr)
-                    print(f"Use: canfd-codec decode 0x{candidates[0].id:03X} '{args.data}'", file=sys.stderr)
-                    sys.exit(1)
-                else:
-                    print(f"Error: No message matches data length {data_len}", file=sys.stderr)
-                    sys.exit(1)
+                # Raw payload (not a full MAVLink frame)
+                print(f"Error: Expected MAVLink v2 frame (starting with 0xFD)", file=sys.stderr)
+                sys.exit(1)
         else:
             print(f"Warning: CAN ID 0x{can_id:08X} does not have MAVLink marker bit set", file=sys.stderr)
             decoded = codec.decode(can_id, data)
