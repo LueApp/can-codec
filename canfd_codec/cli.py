@@ -31,18 +31,6 @@ import os
 from .codec import Codec
 
 
-def _mavlink_crc(data: bytes) -> int:
-    """
-    Calculate MAVLink X.25 CRC checksum.
-    Note: This does not include CRC_EXTRA (message-specific seed).
-    """
-    crc = 0xFFFF
-    for byte in data:
-        tmp = byte ^ (crc & 0xFF)
-        tmp = (tmp ^ (tmp << 4)) & 0xFF
-        crc = (crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4)
-    return crc & 0xFFFF
-
 
 def parse_hex_data(hex_str: str) -> bytes:
     """Parse hex string in various formats: '01 02 AB', '0102AB', '01:02:AB'."""
@@ -149,6 +137,8 @@ def cmd_decode(args):
     decoded = None
 
     if args.mavlink:
+        from .mavlink_loader import parse_mavlink_v2_header
+
         # CAN ID format: 0x10000 | (system_id << 8) | component_id
         if can_id & 0x10000:  # Check MAVLink marker bit
             can_sys_id = (can_id >> 8) & 0xFF
@@ -156,60 +146,22 @@ def cmd_decode(args):
             mavlink_info = {"sys_id": can_sys_id, "comp_id": can_comp_id}
 
             # Check if this is a full MAVLink v2 frame (starts with 0xFD)
-            if len(data) >= 10 and data[0] == 0xFD:
-                payload_len = data[1]
-                msg_sys_id = data[5]
-                msg_comp_id = data[6]
-                msg_id = data[7] | (data[8] << 8) | (data[9] << 16)
+            hdr = parse_mavlink_v2_header(data)
+            if hdr is not None:
+                mavlink_info["frame_sys_id"] = hdr["sys_id"]
+                mavlink_info["frame_comp_id"] = hdr["comp_id"]
+                mavlink_info["msg_id"] = hdr["msg_id"]
+                mavlink_info["seq"] = hdr["seq"]
 
-                mavlink_info["frame_sys_id"] = msg_sys_id
-                mavlink_info["frame_comp_id"] = msg_comp_id
-                mavlink_info["msg_id"] = msg_id
-                mavlink_info["seq"] = data[4]
-
-                # Use pymavlink to decode the full MAVLink v2 frame
-                from .mavlink_loader import decode_mavlink
-                mav_result = decode_mavlink(bytes(data))
-                if mav_result is not None:
-                    # Build a DecodedMessage-like output from pymavlink result
-                    from .codec import DecodedMessage, DecodedSignal
-                    signals = []
-                    msg_name = mav_result["msg_name"]
-                    for key, val in mav_result.items():
-                        if key in ("msg_name", "msg_id"):
-                            continue
-                        if isinstance(val, (list, tuple)):
-                            for i, item in enumerate(val):
-                                signals.append(DecodedSignal(
-                                    name=f"{key}_{i}", raw_value=0,
-                                    physical_value=item,
-                                ))
-                        else:
-                            signals.append(DecodedSignal(
-                                name=key, raw_value=0,
-                                physical_value=val,
-                            ))
-
-                    # Look up description from XML-loaded config
-                    desc = ""
-                    for dev in codec.devices:
-                        msg_def = dev.get_by_name(msg_name)
-                        if msg_def:
-                            desc = msg_def.description
-                            break
-
-                    decoded = DecodedMessage(
-                        msg_id=can_id,
-                        name=msg_name,
-                        description=desc,
-                        signals=signals,
-                        raw_data=data,
-                    )
-                else:
-                    print(f"Error: Failed to decode MAVLink frame (msg_id=0x{msg_id:X})", file=sys.stderr)
+                # Decode payload using the codec engine (message looked up by msg_id)
+                # Pad payload back to full DLC size (MAVLink v2 trims trailing zeros)
+                msg_id = hdr["msg_id"]
+                payload = hdr["payload"]
+                decoded = codec.decode(msg_id, payload)
+                if decoded is None:
+                    print(f"Error: Unknown MAVLink message ID 0x{msg_id:X}", file=sys.stderr)
                     sys.exit(1)
             else:
-                # Raw payload (not a full MAVLink frame)
                 print(f"Error: Expected MAVLink v2 frame (starting with 0xFD)", file=sys.stderr)
                 sys.exit(1)
         else:
@@ -295,54 +247,40 @@ def cmd_encode(args):
         fd_flag = "##1" if len(data) > 8 else "#"
         print(f"{args.bus} {msg_id:03X}{fd_flag}{data_nospaces}")
     elif args.mavlink:
-        # MAVLink CAN transport format (29-bit extended ID)
+        from .mavlink_loader import build_mavlink_v2_frame
+
         # CAN ID = 0x10000 | (system_id << 8) | component_id
         sys_id = args.sys_id if args.sys_id else 1
         comp_id = args.comp_id if args.comp_id else 1
         mavlink_can_id = 0x10000 | (sys_id << 8) | comp_id
 
-        # Build full MAVLink v2 frame:
-        # FD len incompat compat seq sys_id comp_id msg_id[3] payload crc[2]
-        mavlink_msg_id = msg_id  # The message ID from the codec
-        payload = data
-        payload_len = len(payload)
+        # Look up CRC_EXTRA for this message
+        entry = codec._by_name.get(args.message)
+        if entry is None:
+            print(f"Error: Unknown message '{args.message}'", file=sys.stderr)
+            sys.exit(1)
+        _, msg_def = entry
+        if msg_def.crc_extra is None:
+            print(f"Error: No CRC_EXTRA for '{args.message}' (not a MAVLink message?)", file=sys.stderr)
+            sys.exit(1)
 
-        # Build header
-        frame = bytearray()
-        frame.append(0xFD)  # MAVLink v2 magic
-        frame.append(payload_len)  # payload length
-        frame.append(0x00)  # incompat_flags
-        frame.append(0x00)  # compat_flags
-        frame.append(0x00)  # seq (0 for single message)
-        frame.append(sys_id)  # system_id
-        frame.append(comp_id)  # component_id
-        # msg_id is 3 bytes, little-endian
-        frame.append(mavlink_msg_id & 0xFF)
-        frame.append((mavlink_msg_id >> 8) & 0xFF)
-        frame.append((mavlink_msg_id >> 16) & 0xFF)
-        # payload
-        frame.extend(payload)
-        # CRC (X.25 checksum over bytes 1..end, plus CRC_EXTRA)
-        # For simplicity, use placeholder CRC (real implementation needs CRC_EXTRA per message)
-        crc = _mavlink_crc(frame[1:])
-        frame.append(crc & 0xFF)
-        frame.append((crc >> 8) & 0xFF)
+        frame = build_mavlink_v2_frame(
+            msg_id=msg_id,
+            payload=data,
+            crc_extra=msg_def.crc_extra,
+            sys_id=sys_id,
+            comp_id=comp_id,
+        )
 
         # Split into CAN FD frames (max 64 bytes each)
         max_frame_len = 64
         offset = 0
-        frame_num = 0
         while offset < len(frame):
             chunk = frame[offset:offset + max_frame_len]
             chunk_hex = chunk.hex().upper()
-            # Extended frame format for cansend: use 8 hex digits for 29-bit ID
             fd_flag = "##1" if len(chunk) > 8 else "#"
-            if frame_num > 0:
-                print(f"{args.bus} {mavlink_can_id:08X}{fd_flag}{chunk_hex}")
-            else:
-                print(f"{args.bus} {mavlink_can_id:08X}{fd_flag}{chunk_hex}")
+            print(f"{args.bus} {mavlink_can_id:08X}{fd_flag}{chunk_hex}")
             offset += max_frame_len
-            frame_num += 1
     else:
         print(f"ID:   0x{msg_id:03X}")
         if node_id != 0:

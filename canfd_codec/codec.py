@@ -65,6 +65,7 @@ class Message:
     node_count: int = 1  # Number of nodes (1 = single fixed ID, >1 = multi-node)
     node_id_start: int = 0  # First node_id (0 = 0-indexed, 1 = 1-indexed)
     signals: list[Signal] = field(default_factory=list)
+    crc_extra: int | None = None  # MAVLink CRC_EXTRA seed (computed from XML definition)
 
     def get_id_for_node(self, node_id: int = 0) -> int:
         """Calculate actual CAN ID for a given node_id."""
@@ -660,6 +661,9 @@ class Codec:
         if result is None:
             return None
         _, msg_def, node_id = result
+        # Pad data to expected DLC if shorter (e.g. MAVLink v2 zero-trimmed payloads)
+        if len(data) < msg_def.dlc:
+            data = data + b"\x00" * (msg_def.dlc - len(data))
         return decode(msg_def, data, actual_id=msg_id, node_id=node_id)
 
     def encode(self, msg_name: str, values: dict[str, Any], node_id: int = 0) -> tuple[int, bytes]:
