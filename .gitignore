@@ -1,4 +1,7 @@
 venv
 build
+.claude
+openspec
+docs
 *.egg-info*/
 */__pycache__/
