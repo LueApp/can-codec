@@ -31,6 +31,8 @@ class CANWebSocketServer:
         bus: str = "vcan0",
         interface: str = "socketcan",
         fd: bool = True,
+        bitrate: int | None = None,
+        data_bitrate: int | None = None,
         host: str = "0.0.0.0",
         port: int = 8765,
         filter_ids: set[int] | None = None,
@@ -38,6 +40,8 @@ class CANWebSocketServer:
         self.bus = bus
         self.interface = interface
         self.fd = fd
+        self.bitrate = bitrate
+        self.data_bitrate = data_bitrate
         self.host = host
         self.port = port
         self.filter_ids = filter_ids
@@ -81,12 +85,16 @@ class CANWebSocketServer:
         bus_config: dict = {"interface": self.interface, "channel": self.bus}
         if self.fd:
             bus_config["fd"] = True
+        if self.bitrate is not None:
+            bus_config["bitrate"] = self.bitrate
 
         print(f"  CAN bus: {self.bus} (interface={self.interface}, fd={self.fd})")
 
         while self._running:
             try:
                 with can.Bus(**bus_config) as bus_conn:
+                    if self.data_bitrate is not None and hasattr(bus_conn, "set_bitrate"):
+                        bus_conn.set_bitrate(self.bitrate, self.data_bitrate)
                     print(f"  CAN bus connected: {self.bus}")
                     self._notify_bus_status(loop, connected=True)
                     while self._running:

@@ -306,6 +306,8 @@ def cmd_monitor(args):
         bus=args.bus,
         interface=args.interface,
         fd=not args.no_fd,
+        bitrate=args.bitrate,
+        data_bitrate=args.data_bitrate,
         filter_ids=filter_ids,
         detailed=args.detailed,
         show_unknown=not args.hide_unknown,
@@ -345,6 +347,8 @@ def cmd_serve(args):
         bus=args.bus,
         interface=args.interface,
         fd=not args.no_fd,
+        bitrate=args.bitrate,
+        data_bitrate=args.data_bitrate,
         host=args.host,
         port=args.port,
         filter_ids=filter_ids,
@@ -413,6 +417,10 @@ def main():
                        help="CAN bus name (default: vcan0)")
     p_mon.add_argument("--interface", default="socketcan",
                        help="python-can interface (default: socketcan)")
+    p_mon.add_argument("--bitrate", type=int,
+                       help="CAN bus bitrate in bit/s (e.g., 1000000)")
+    p_mon.add_argument("--data-bitrate", type=int,
+                       help="CAN FD data phase bitrate in bit/s (e.g., 5000000)")
     p_mon.add_argument("--no-fd", action="store_true",
                        help="Disable CAN FD mode")
     p_mon.add_argument("--filter",
@@ -433,6 +441,10 @@ def main():
                        help="CAN bus name (default: vcan0)")
     p_srv.add_argument("--interface", default="socketcan",
                        help="python-can interface (default: socketcan)")
+    p_srv.add_argument("--bitrate", type=int,
+                       help="CAN bus bitrate in bit/s (e.g., 1000000)")
+    p_srv.add_argument("--data-bitrate", type=int,
+                       help="CAN FD data phase bitrate in bit/s (e.g., 5000000)")
     p_srv.add_argument("--no-fd", action="store_true",
                        help="Disable CAN FD mode")
     p_srv.add_argument("--host", default="0.0.0.0",

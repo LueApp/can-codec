@@ -120,6 +120,8 @@ class Monitor:
         bus: str = "vcan0",
         interface: str = "socketcan",
         fd: bool = True,
+        bitrate: int | None = None,
+        data_bitrate: int | None = None,
         filter_ids: list[int] | None = None,
         detailed: bool = False,
         show_unknown: bool = True,
@@ -129,6 +131,8 @@ class Monitor:
         self.bus = bus
         self.interface = interface
         self.fd = fd
+        self.bitrate = bitrate
+        self.data_bitrate = data_bitrate
         self.filter_ids = set(filter_ids) if filter_ids else None
         self.detailed = detailed
         self.show_unknown = show_unknown
@@ -172,11 +176,15 @@ class Monitor:
         signal_module.signal(signal_module.SIGINT, self._sigint_handler)
 
         try:
-            bus_config = {"interface": self.interface, "channel": self.bus}
+            bus_config: dict = {"interface": self.interface, "channel": self.bus}
             if self.fd:
                 bus_config["fd"] = True
+            if self.bitrate is not None:
+                bus_config["bitrate"] = self.bitrate
 
             with can.Bus(**bus_config) as bus_conn:
+                if self.data_bitrate is not None and hasattr(bus_conn, "set_bitrate"):
+                    bus_conn.set_bitrate(self.bitrate, self.data_bitrate)
                 while self._running:
                     msg = bus_conn.recv(timeout=1.0)
                     if msg is not None:

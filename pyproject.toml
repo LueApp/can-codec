@@ -14,9 +14,11 @@ dependencies = [
 [project.optional-dependencies]
 monitor = [
     "python-can>=4.0",
+    "pyserial>=3.5",
 ]
 serve = [
     "python-can>=4.0",
+    "pyserial>=3.5",
     "websockets>=12.0",
 ]
 
