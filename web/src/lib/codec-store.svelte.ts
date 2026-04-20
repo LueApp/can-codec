@@ -4,6 +4,7 @@
 
 import { Codec } from './codec';
 import { parseConfig, saveConfigsToStorage, loadConfigsFromStorage, type StoredConfig } from './config-loader';
+import { CONFIG_TEMPLATES } from './templates';
 
 class CodecStore {
   codec = $state(new Codec());
@@ -30,6 +31,12 @@ class CodecStore {
     } catch (e) {
       this.error = `Failed to parse ${filename}: ${e instanceof Error ? e.message : String(e)}`;
     }
+  }
+
+  loadTemplate(templateId: string): void {
+    const tmpl = CONFIG_TEMPLATES.find((t) => t.id === templateId);
+    if (!tmpl) return;
+    this.addConfig(tmpl.filename, tmpl.content);
   }
 
   removeConfig(filename: string): void {

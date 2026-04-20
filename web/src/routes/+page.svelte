@@ -1,5 +1,6 @@
 <script lang="ts">
   import { codecStore } from '$lib/codec-store.svelte';
+  import { CONFIG_TEMPLATES } from '$lib/templates';
 
   let search = $state('');
   let selectedDevice = $state('');
@@ -56,7 +57,16 @@
     </div>
     {#if codecStore.configs.length === 0}
       <div style="text-align: center; padding: 24px; color: var(--text-dim);">
-        Upload YAML or MAVLink XML config files to get started
+        <p style="margin-bottom: 16px;">Upload YAML or MAVLink XML config files to get started</p>
+        <p style="margin-bottom: 12px; font-size: 13px;">Or load an example template:</p>
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          {#each CONFIG_TEMPLATES as tmpl}
+            <button onclick={() => codecStore.loadTemplate(tmpl.id)} style="display: flex; flex-direction: column; align-items: center; padding: 12px 20px;">
+              <strong>{tmpl.name}</strong>
+              <span style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">{tmpl.description}</span>
+            </button>
+          {/each}
+        </div>
       </div>
     {:else}
       {#each codecStore.configs as cfg}
@@ -70,6 +80,14 @@
           <button class="danger" style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.removeConfig(cfg.filename)}>Remove</button>
         </div>
       {/each}
+      {#if CONFIG_TEMPLATES.some(t => !codecStore.configs.find(c => c.filename === t.filename))}
+        <div style="padding: 8px 0; border-top: 1px solid var(--border); margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span style="font-size: 12px; color: var(--text-dim);">Templates:</span>
+          {#each CONFIG_TEMPLATES.filter(t => !codecStore.configs.find(c => c.filename === t.filename)) as tmpl}
+            <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.loadTemplate(tmpl.id)}>+ {tmpl.name}</button>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 
