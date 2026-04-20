@@ -71,8 +71,12 @@ class CANWebSocketServer:
             print(f"  Client disconnected: {remote} ({len(self._clients)} total)")
 
     def _can_reader_thread(self, loop: asyncio.AbstractEventLoop):
-        """Thread that reads CAN frames and schedules broadcasts."""
+        """Thread that reads CAN frames and schedules broadcasts.
+
+        Automatically reconnects if the CAN bus goes down, retrying every 1 second.
+        """
         import can
+        import time
 
         bus_config: dict = {"interface": self.interface, "channel": self.bus}
         if self.fd:
@@ -80,30 +84,49 @@ class CANWebSocketServer:
 
         print(f"  CAN bus: {self.bus} (interface={self.interface}, fd={self.fd})")
 
-        try:
-            with can.Bus(**bus_config) as bus_conn:
-                while self._running:
-                    msg = bus_conn.recv(timeout=1.0)
-                    if msg is None:
-                        continue
-                    if self.filter_ids and msg.arbitration_id not in self.filter_ids:
-                        continue
-                    if not self._clients:
-                        continue
+        while self._running:
+            try:
+                with can.Bus(**bus_config) as bus_conn:
+                    print(f"  CAN bus connected: {self.bus}")
+                    self._notify_bus_status(loop, connected=True)
+                    while self._running:
+                        msg = bus_conn.recv(timeout=1.0)
+                        if msg is None:
+                            continue
+                        if self.filter_ids and msg.arbitration_id not in self.filter_ids:
+                            continue
+                        if not self._clients:
+                            continue
 
-                    frame_json = json.dumps({
-                        "type": "frame",
-                        "arbitration_id": msg.arbitration_id,
-                        "data": bytes(msg.data).hex().upper(),
-                        "timestamp": msg.timestamp,
-                        "is_fd": msg.is_fd,
-                    })
+                        frame_json = json.dumps({
+                            "type": "frame",
+                            "arbitration_id": msg.arbitration_id,
+                            "data": bytes(msg.data).hex().upper(),
+                            "timestamp": msg.timestamp,
+                            "is_fd": msg.is_fd,
+                        })
 
-                    loop.call_soon_threadsafe(self._broadcast_sync, frame_json)
-        except Exception as e:
-            logger.error("CAN reader error: %s", e)
-            print(f"  CAN reader error: {e}")
-            self._running = False
+                        loop.call_soon_threadsafe(self._broadcast_sync, frame_json)
+            except Exception as e:
+                logger.error("CAN reader error: %s", e)
+                print(f"  CAN bus lost: {e}")
+                self._notify_bus_status(loop, connected=False, error=str(e))
+                if not self._running:
+                    break
+                print(f"  Reconnecting to {self.bus} in 1s...")
+                time.sleep(1)
+
+    def _notify_bus_status(self, loop: asyncio.AbstractEventLoop, connected: bool, error: str | None = None):
+        """Notify connected WebSocket clients about CAN bus status changes."""
+        msg = json.dumps({
+            "type": "status",
+            "bus": self.bus,
+            "fd": self.fd,
+            "connected": connected,
+            **({"error": error} if error else {}),
+        })
+        if self._clients:
+            loop.call_soon_threadsafe(self._broadcast_sync, msg)
 
     def _broadcast_sync(self, message: str):
         """Schedule broadcast from the CAN reader thread."""

@@ -92,29 +92,43 @@ class CANWebSocketServer:
             print(f"  - Client {addr} ({len(self._clients)} connected)")
 
     def _reader_thread(self, loop):
+        import time
         cfg = {"interface": self.interface, "channel": self.bus}
         if self.fd:
             cfg["fd"] = True
         print(f"  CAN bus: {self.bus} (fd={self.fd})")
-        try:
-            with can.Bus(**cfg) as bus:
-                while self._running:
-                    msg = bus.recv(timeout=1.0)
-                    if msg is None or not self._clients:
-                        continue
-                    if self.filter_ids and msg.arbitration_id not in self.filter_ids:
-                        continue
-                    data = json.dumps({
-                        "type": "frame",
-                        "arbitration_id": msg.arbitration_id,
-                        "data": bytes(msg.data).hex().upper(),
-                        "timestamp": msg.timestamp,
-                        "is_fd": msg.is_fd,
-                    })
-                    loop.call_soon_threadsafe(websockets.broadcast, self._clients, data)
-        except Exception as e:
-            print(f"  CAN error: {e}")
-            self._running = False
+        while self._running:
+            try:
+                with can.Bus(**cfg) as bus:
+                    print(f"  CAN bus connected: {self.bus}")
+                    self._notify_bus(loop, True)
+                    while self._running:
+                        msg = bus.recv(timeout=1.0)
+                        if msg is None or not self._clients:
+                            continue
+                        if self.filter_ids and msg.arbitration_id not in self.filter_ids:
+                            continue
+                        data = json.dumps({
+                            "type": "frame",
+                            "arbitration_id": msg.arbitration_id,
+                            "data": bytes(msg.data).hex().upper(),
+                            "timestamp": msg.timestamp,
+                            "is_fd": msg.is_fd,
+                        })
+                        loop.call_soon_threadsafe(websockets.broadcast, self._clients, data)
+            except Exception as e:
+                print(f"  CAN bus lost: {e}")
+                self._notify_bus(loop, False, str(e))
+                if not self._running:
+                    break
+                print(f"  Reconnecting to {self.bus} in 1s...")
+                time.sleep(1)
+
+    def _notify_bus(self, loop, connected, error=None):
+        msg = json.dumps({"type": "status", "bus": self.bus, "fd": self.fd,
+                          "connected": connected, **({"error": error} if error else {})})
+        if self._clients:
+            loop.call_soon_threadsafe(websockets.broadcast, self._clients, msg)
 
     async def run(self):
         self._running = True
