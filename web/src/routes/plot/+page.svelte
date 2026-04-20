@@ -310,22 +310,33 @@ if __name__ == "__main__":
         timestamp = lineIndex;
       }
 
-      const groupLabel = mavlink
+      const baseLabel = mavlink
         ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
         : decoded.name;
 
-      for (const sig of decoded.signals) {
-        if (sig.bitfield_flags) continue;
-        const val = typeof sig.physical_value === 'number' ? sig.physical_value : NaN;
-        if (isNaN(val)) continue;
-
-        const key = `${groupLabel} / ${sig.name}`;
-        let series = seriesMap.get(key);
-        if (!series) {
-          series = { key, group: groupLabel, signal: sig.name, unit: sig.unit, samples: [] };
-          seriesMap.set(key, series);
+      const signalEntries: { signals: typeof decoded.signals; groupLabel: string }[] = [];
+      if (decoded.is_broadcast && decoded.sub_messages) {
+        for (const sub of decoded.sub_messages) {
+          signalEntries.push({ signals: sub.signals, groupLabel: `${baseLabel} / N${sub.node_id}` });
         }
-        series.samples.push({ time: timestamp, value: val });
+      } else {
+        signalEntries.push({ signals: decoded.signals, groupLabel: baseLabel });
+      }
+
+      for (const entry of signalEntries) {
+        for (const sig of entry.signals) {
+          if (sig.bitfield_flags) continue;
+          const val = typeof sig.physical_value === 'number' ? sig.physical_value : NaN;
+          if (isNaN(val)) continue;
+
+          const key = `${entry.groupLabel} / ${sig.name}`;
+          let series = seriesMap.get(key);
+          if (!series) {
+            series = { key, group: entry.groupLabel, signal: sig.name, unit: sig.unit, samples: [] };
+            seriesMap.set(key, series);
+          }
+          series.samples.push({ time: timestamp!, value: val });
+        }
       }
       lineIndex++;
     }
@@ -417,36 +428,29 @@ if __name__ == "__main__":
     mavlinkBuffers.delete(canId);
   }
 
-  function appendDecoded(decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number) {
-    if (liveStartTime === null) liveStartTime = timestamp;
-    const time = timestamp - liveStartTime;
-
-    const groupLabel = mavlink
-      ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
-      : decoded.name;
-
+  function appendSignalSamples(
+    signals: { name: string; physical_value: number; unit: string; bitfield_flags: Record<string, boolean> | null }[],
+    groupLabel: string,
+    time: number
+  ): boolean {
     let newSeriesAdded = false;
-
-    for (const sig of decoded.signals) {
+    for (const sig of signals) {
       if (sig.bitfield_flags) continue;
       const val = typeof sig.physical_value === 'number' ? sig.physical_value : NaN;
       if (isNaN(val)) continue;
 
       const key = `${groupLabel} / ${sig.name}`;
 
-      // Write to plain (non-reactive) sample store — avoids Svelte proxy overhead
       let samples = liveSampleStore.get(key);
       if (!samples) {
         samples = [];
         liveSampleStore.set(key, samples);
-        // Add metadata entry to reactive allSeries (samples array stays empty)
         const meta: SignalSeries = { key, group: groupLabel, signal: sig.name, unit: sig.unit, samples: [] };
         allSeries = [...allSeries, meta].sort((a, b) => a.key.localeCompare(b.key));
         newSeriesAdded = true;
       }
       samples.push({ time, value: val });
 
-      // Trim based on buffer mode
       if (bufferMode === 'samples' && samples.length > bufferSamples) {
         samples.splice(0, samples.length - bufferSamples);
       } else if (bufferMode === 'time') {
@@ -455,6 +459,28 @@ if __name__ == "__main__":
         while (trimTo < samples.length && samples[trimTo].time < cutoff) trimTo++;
         if (trimTo > 0) samples.splice(0, trimTo);
       }
+    }
+    return newSeriesAdded;
+  }
+
+  function appendDecoded(decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number) {
+    if (liveStartTime === null) liveStartTime = timestamp;
+    const time = timestamp - liveStartTime;
+
+    const baseLabel = mavlink
+      ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
+      : decoded.name;
+
+    let newSeriesAdded = false;
+
+    if (decoded.is_broadcast && decoded.sub_messages) {
+      // Broadcast: create per-node signal series
+      for (const sub of decoded.sub_messages) {
+        const groupLabel = `${baseLabel} / N${sub.node_id}`;
+        if (appendSignalSamples(sub.signals, groupLabel, time)) newSeriesAdded = true;
+      }
+    } else {
+      if (appendSignalSamples(decoded.signals, baseLabel, time)) newSeriesAdded = true;
     }
 
     // Auto-select new signals as solo panels if total is small
@@ -634,7 +660,7 @@ if __name__ == "__main__":
           const color = CHART_COLORS[j % CHART_COLORS.length];
           const samples = getSamples(series.key);
           return {
-            label: `${series.signal}${series.unit ? ` (${series.unit})` : ''}`,
+            label: `${series.group} / ${series.signal}${series.unit ? ` (${series.unit})` : ''}`,
             data: samples.map(s => ({ x: s.time, y: s.value })),
             borderColor: color,
             backgroundColor: color + '20',
@@ -663,7 +689,7 @@ if __name__ == "__main__":
                   title: (items) => `t = ${items[0].parsed.x.toFixed(3)}s`,
                   label: (item) => {
                     const s = seriesList[item.datasetIndex];
-                    return s ? `${s.signal}: ${item.parsed.y}${s.unit ? ' ' + s.unit : ''}` : '';
+                    return s ? `${s.group} / ${s.signal}: ${item.parsed.y}${s.unit ? ' ' + s.unit : ''}` : '';
                   },
                 },
               },
@@ -700,7 +726,7 @@ if __name__ == "__main__":
       const canvas = document.getElementById(`chart-${panel.id}`) as HTMLCanvasElement | null;
       if (!canvas) continue;
       const seriesList = panel.keys.map(k => allSeries.find(s => s.key === k)).filter(Boolean) as SignalSeries[];
-      const name = seriesList.length === 1 ? seriesList[0].signal : `chart-${panel.id}`;
+      const name = seriesList.length === 1 ? `${seriesList[0].group}_${seriesList[0].signal}` : `chart-${panel.id}`;
       const link = document.createElement('a');
       link.download = `${name}.png`;
       link.href = canvas.toDataURL('image/png');
@@ -910,7 +936,7 @@ if __name__ == "__main__":
               <div class="chart-signal-tags">
                 {#each seriesList as series, j}
                   <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[j % CHART_COLORS.length]}">
-                    {series.signal}{series.unit ? ` (${series.unit})` : ''}
+                    <span style="opacity: 0.6;">{series.group} /</span> {series.signal}{series.unit ? ` (${series.unit})` : ''}
                     {#if panel.keys.length > 1}
                       <button class="chart-signal-tag-remove" onclick={() => splitFromPanel(panel.id, series.key)} title="Split to own chart">x</button>
                     {/if}

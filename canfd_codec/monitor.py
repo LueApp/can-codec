@@ -64,6 +64,14 @@ def format_frame_line(decoded: DecodedMessage, timestamp: float | None = None) -
     if timestamp is not None:
         ts = f"{Colors.DIM}{timestamp:12.3f}{Colors.RESET} "
 
+    if decoded.is_broadcast and decoded.sub_messages:
+        header = f"{ts}{color}{Colors.BOLD}[0x{decoded.msg_id:03X}]{Colors.RESET} {color}{decoded.name} (broadcast){Colors.RESET}"
+        node_parts = []
+        for sub in decoded.sub_messages:
+            sigs = " ".join(f"{s.name}={s.display_value()}" for s in sub.signals)
+            node_parts.append(f"{Colors.DIM}N{sub.node_id}:{Colors.RESET}{sigs}")
+        return f"{header}  {'  '.join(node_parts)}"
+
     header = f"{ts}{color}{Colors.BOLD}[0x{decoded.msg_id:03X}]{Colors.RESET} {color}{decoded.name}{Colors.RESET}"
     signals = "  ".join(
         f"{Colors.DIM}{s.name}={Colors.RESET}{s.display_value()}"
@@ -79,6 +87,22 @@ def format_frame_detail(decoded: DecodedMessage, timestamp: float | None = None)
 
     ts = f" @ {timestamp:.3f}s" if timestamp is not None else ""
     raw_hex = decoded.raw_data.hex(" ").upper()
+
+    if decoded.is_broadcast and decoded.sub_messages:
+        lines.append(
+            f"{color}{Colors.BOLD}[0x{decoded.msg_id:03X}] {decoded.name} (broadcast, {len(decoded.sub_messages)} nodes){Colors.RESET}"
+            f"{Colors.DIM}{ts}  [{raw_hex}]{Colors.RESET}"
+        )
+        for sub in decoded.sub_messages:
+            lines.append(f"  {Colors.BOLD}Node {sub.node_id}:{Colors.RESET}")
+            for s in sub.signals:
+                val_str = s.display_value()
+                lines.append(
+                    f"    {Colors.DIM}{s.name}:{Colors.RESET} {val_str}"
+                    f"  {Colors.DIM}(raw=0x{s.raw_value:X}){Colors.RESET}"
+                )
+        return "\n".join(lines)
+
     lines.append(
         f"{color}{Colors.BOLD}[0x{decoded.msg_id:03X}] {decoded.name}{Colors.RESET}"
         f"{Colors.DIM}{ts}  [{raw_hex}]{Colors.RESET}"
