@@ -98,7 +98,10 @@ class CANWebSocketServer:
                     print(f"  CAN bus connected: {self.bus}")
                     self._notify_bus_status(loop, connected=True)
                     while self._running:
-                        msg = bus_conn.recv(timeout=1.0)
+                        try:
+                            msg = bus_conn.recv(timeout=1.0)
+                        except (ValueError, IndexError):
+                            continue  # skip corrupted/truncated SLCAN frame
                         if msg is None:
                             continue
                         if self.filter_ids and msg.arbitration_id not in self.filter_ids:

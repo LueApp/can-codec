@@ -186,7 +186,10 @@ class Monitor:
                 if self.data_bitrate is not None and hasattr(bus_conn, "set_bitrate"):
                     bus_conn.set_bitrate(self.bitrate, self.data_bitrate)
                 while self._running:
-                    msg = bus_conn.recv(timeout=1.0)
+                    try:
+                        msg = bus_conn.recv(timeout=1.0)
+                    except (ValueError, IndexError):
+                        continue  # skip corrupted/truncated SLCAN frame
                     if msg is not None:
                         self._process_frame(msg)
 
