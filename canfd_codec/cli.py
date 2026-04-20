@@ -327,6 +327,33 @@ def cmd_monitor(args):
             log_file.close()
 
 
+def cmd_serve(args):
+    """Start WebSocket server for live CAN frame streaming."""
+    try:
+        from .serve import CANWebSocketServer
+    except ImportError as e:
+        print(f"Error: Missing dependency: {e}\n"
+              f"Install with: pip install 'canfd-codec[serve]'",
+              file=sys.stderr)
+        sys.exit(1)
+
+    filter_ids = None
+    if args.filter:
+        filter_ids = {int(x, 0) for x in args.filter.split(",")}
+
+    server = CANWebSocketServer(
+        bus=args.bus,
+        interface=args.interface,
+        fd=not args.no_fd,
+        host=args.host,
+        port=args.port,
+        filter_ids=filter_ids,
+    )
+
+    import asyncio
+    asyncio.run(server.run())
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -400,6 +427,21 @@ def main():
                        help="Summary refresh rate in seconds (default: 0.25)")
     p_mon.add_argument("--log", help="Log decoded output to file")
 
+    # --- serve ---
+    p_srv = sub.add_parser("serve", help="WebSocket server for live CAN frame streaming")
+    p_srv.add_argument("--bus", default="vcan0",
+                       help="CAN bus name (default: vcan0)")
+    p_srv.add_argument("--interface", default="socketcan",
+                       help="python-can interface (default: socketcan)")
+    p_srv.add_argument("--no-fd", action="store_true",
+                       help="Disable CAN FD mode")
+    p_srv.add_argument("--host", default="0.0.0.0",
+                       help="WebSocket server bind address (default: 0.0.0.0)")
+    p_srv.add_argument("--port", type=int, default=8765,
+                       help="WebSocket server port (default: 8765)")
+    p_srv.add_argument("--filter",
+                       help="Comma-separated CAN IDs to filter (e.g., 0x201,0x202)")
+
     args = parser.parse_args()
 
     handlers = {
@@ -408,6 +450,7 @@ def main():
         "decode": cmd_decode,
         "encode": cmd_encode,
         "monitor": cmd_monitor,
+        "serve": cmd_serve,
     }
     handlers[args.command](args)
 

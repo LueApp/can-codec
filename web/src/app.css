@@ -462,8 +462,195 @@ tr:hover td {
 .chart-samples {
   font-size: 11px;
   color: var(--text-dim);
+  white-space: nowrap;
 }
 .chart-container {
   position: relative;
   height: 200px;
+}
+
+/* Chart signal tags (multi-signal overlay) */
+.chart-signal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.chart-signal-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: color-mix(in srgb, var(--tag-color, var(--accent)) 15%, transparent);
+  color: var(--tag-color, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--tag-color, var(--accent)) 30%, transparent);
+}
+.chart-signal-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 10px;
+  border-radius: 50%;
+}
+.chart-signal-tag-remove:hover {
+  opacity: 1;
+  background: rgba(255,255,255,0.1);
+}
+
+/* Chart add signal button & dropdown */
+.chart-add-wrapper {
+  position: relative;
+}
+.chart-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px dashed var(--border);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 50%;
+  transition: all 0.15s;
+}
+.chart-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chart-add-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 220px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+.chart-add-dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.chart-add-dropdown-item:hover {
+  background: var(--bg-input);
+}
+
+/* Mode tabs */
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.mode-tab {
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.mode-tab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.mode-tab-active {
+  background: rgba(88, 166, 255, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Connection status indicator */
+.connection-status {
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.connection-status::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.connection-status.connected::before { background: var(--green); }
+.connection-status.connecting::before { background: var(--orange); }
+.connection-status.error::before { background: var(--red); }
+.connection-status.disconnected::before { background: var(--text-dim); }
+
+/* Setup guide */
+.setup-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+.setup-toggle:hover {
+  color: var(--accent);
+}
+.setup-content {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.setup-content p {
+  margin: 6px 0;
+}
+.setup-content pre {
+  background: var(--bg-input);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--green);
+}
+.setup-content code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.setup-content p code {
+  background: var(--bg-input);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--accent);
 }

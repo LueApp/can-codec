@@ -15,6 +15,10 @@ dependencies = [
 monitor = [
     "python-can>=4.0",
 ]
+serve = [
+    "python-can>=4.0",
+    "websockets>=12.0",
+]
 
 [project.scripts]
 canfd-codec = "canfd_codec.cli:main"
