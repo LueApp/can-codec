@@ -277,6 +277,7 @@ export interface StoredConfig {
   filename: string;
   content: string;
   enabled: boolean;
+  disabledMessages: string[];
 }
 
 export function saveConfigsToStorage(configs: StoredConfig[]): void {
@@ -296,6 +297,7 @@ export function loadConfigsFromStorage(): StoredConfig[] {
         filename: c.filename as string,
         content: c.content as string,
         enabled: c.enabled !== false,
+        disabledMessages: Array.isArray(c.disabledMessages) ? c.disabledMessages as string[] : [],
       }));
     }
   } catch {

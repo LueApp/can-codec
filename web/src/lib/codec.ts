@@ -456,7 +456,7 @@ function dlcToBytes(dlc: number): number {
   return mapping[dlc] ?? dlc;
 }
 
-function getIdForNode(msg: Message, nodeId: number): number {
+export function getIdForNode(msg: Message, nodeId: number): number {
   if (msg.node_count <= 1) return msg.id;
   return msg.id + nodeId * msg.node_id_offset;
 }

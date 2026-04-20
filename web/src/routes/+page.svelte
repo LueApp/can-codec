@@ -8,7 +8,7 @@
   let fileInput = $state<HTMLInputElement>(null!);
   let folderInput = $state<HTMLInputElement>(null!);
 
-  const allMessages = $derived(codecStore.codec.listMessages());
+  const allMessages = $derived(codecStore.allMessages);
   const deviceNames = $derived([...new Set(allMessages.map((m) => m.device))]);
   const messages = $derived(
     allMessages
@@ -124,12 +124,20 @@
         <table>
           <thead>
             <tr>
-              <th>ID</th><th>Name</th><th>Dir</th><th>DLC</th><th>Description</th>
+              <th style="width: 36px;"></th><th>ID</th><th>Name</th><th>Dir</th><th>DLC</th><th>Description</th>
             </tr>
           </thead>
           <tbody>
             {#each msgs as msg}
-              <tr style="cursor: pointer;" onclick={() => expandedMsg = expandedMsg === msg.name ? null : msg.name}>
+              <tr style="cursor: pointer;" style:opacity={msg.enabled ? 1 : 0.4}
+                onclick={() => expandedMsg = expandedMsg === msg.name ? null : msg.name}>
+                <td onclick={(e) => e.stopPropagation()}>
+                  <label class="toggle" style="transform: scale(0.85);">
+                    <input type="checkbox" checked={msg.enabled}
+                      onchange={() => codecStore.toggleMessage(msg.filename, msg.name)} />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </td>
                 <td>
                   <code style="font-family: var(--font-mono); color: var(--orange);">{msg.id_range ?? msg.id}</code>
                 </td>
@@ -141,7 +149,7 @@
               {#if expandedMsg === msg.name}
                 {@const msgDef = codecStore.codec.getMessageByName(msg.name)}
                 <tr>
-                  <td colspan="5" style="background: var(--bg); padding: 16px;">
+                  <td colspan="6" style="background: var(--bg); padding: 16px;">
                     {#if msgDef}
                       <strong style="color: var(--text-dim); font-size: 13px;">Signals ({msgDef.signals.length})</strong>
                       <table style="margin-top: 8px; font-size: 13px;">
@@ -165,6 +173,8 @@
                           {/each}
                         </tbody>
                       </table>
+                    {:else if !msg.enabled}
+                      <span style="color: var(--text-dim); font-size: 13px;">Enable this message to view signal details</span>
                     {/if}
                   </td>
                 </tr>
