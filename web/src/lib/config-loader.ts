@@ -276,6 +276,7 @@ const CONFIG_STORAGE_KEY = 'cancodec_configs';
 export interface StoredConfig {
   filename: string;
   content: string;
+  enabled: boolean;
 }
 
 export function saveConfigsToStorage(configs: StoredConfig[]): void {
@@ -289,7 +290,14 @@ export function saveConfigsToStorage(configs: StoredConfig[]): void {
 export function loadConfigsFromStorage(): StoredConfig[] {
   try {
     const data = localStorage.getItem(CONFIG_STORAGE_KEY);
-    if (data) return JSON.parse(data);
+    if (data) {
+      const parsed = JSON.parse(data) as Array<Record<string, unknown>>;
+      return parsed.map((c) => ({
+        filename: c.filename as string,
+        content: c.content as string,
+        enabled: c.enabled !== false,
+      }));
+    }
   } catch {
     // Ignore
   }

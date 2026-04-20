@@ -148,9 +148,11 @@
       <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Press Ctrl+Enter to decode</div>
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
-      <button class="primary" onclick={decode} disabled={codecStore.configs.length === 0}>Decode</button>
-      {#if codecStore.configs.length === 0}
-        <span style="font-size: 13px; color: var(--text-dim);">Load a config first</span>
+      <button class="primary" onclick={decode} disabled={codecStore.enabledCount === 0}>Decode</button>
+      {#if codecStore.enabledCount === 0}
+        <span style="font-size: 13px; color: var(--text-dim);">
+          {codecStore.configs.length === 0 ? 'Load a config first' : 'Enable a config first'}
+        </span>
       {/if}
       {#if results.length > 0}
         {@const ok = results.filter(r => r.decoded).length}

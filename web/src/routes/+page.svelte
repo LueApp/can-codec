@@ -70,12 +70,19 @@
       </div>
     {:else}
       {#each codecStore.configs as cfg}
-        <div class="config-item">
-          <div>
-            <span class="config-name">{cfg.filename}</span>
-            <span style="font-size: 12px; color: var(--text-dim); margin-left: 8px;">
-              {cfg.filename.endsWith('.xml') ? 'MAVLink XML' : 'YAML'}
-            </span>
+        <div class="config-item" style:opacity={cfg.enabled ? 1 : 0.5}>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <label class="toggle">
+              <input type="checkbox" checked={cfg.enabled}
+                onchange={() => codecStore.toggleConfig(cfg.filename)} />
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <span class="config-name">{cfg.filename}</span>
+              <span style="font-size: 12px; color: var(--text-dim); margin-left: 8px;">
+                {cfg.filename.endsWith('.xml') ? 'MAVLink XML' : 'YAML'}
+              </span>
+            </div>
           </div>
           <button class="danger" style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.removeConfig(cfg.filename)}>Remove</button>
         </div>

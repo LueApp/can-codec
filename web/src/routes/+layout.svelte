@@ -25,7 +25,11 @@
     </div>
     <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
       <span style="font-size: 13px; color: var(--text-dim);">
-        {codecStore.configs.length} config{codecStore.configs.length !== 1 ? 's' : ''} loaded
+        {#if codecStore.enabledCount === codecStore.configs.length}
+          {codecStore.configs.length} config{codecStore.configs.length !== 1 ? 's' : ''} loaded
+        {:else}
+          {codecStore.enabledCount}/{codecStore.configs.length} configs enabled
+        {/if}
       </span>
       <input bind:this={fileInput} type="file" accept=".yaml,.yml,.xml" multiple
         style="display:none" onchange={(e) => handleFiles((e.target as HTMLInputElement).files)} />

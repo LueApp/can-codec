@@ -25,7 +25,7 @@ class CodecStore {
     this.error = null;
     try {
       parseConfig(content, filename);
-      this.configs = [...this.configs.filter((c) => c.filename !== filename), { filename, content }];
+      this.configs = [...this.configs.filter((c) => c.filename !== filename), { filename, content, enabled: true }];
       saveConfigsToStorage(this.configs);
       this.rebuildCodec();
     } catch (e) {
@@ -45,9 +45,22 @@ class CodecStore {
     this.rebuildCodec();
   }
 
+  toggleConfig(filename: string): void {
+    this.configs = this.configs.map((c) =>
+      c.filename === filename ? { ...c, enabled: !c.enabled } : c
+    );
+    saveConfigsToStorage(this.configs);
+    this.rebuildCodec();
+  }
+
+  get enabledCount(): number {
+    return this.configs.filter((c) => c.enabled).length;
+  }
+
   private rebuildCodec(): void {
     const c = new Codec();
     for (const cfg of this.configs) {
+      if (!cfg.enabled) continue;
       try { c.addDevice(parseConfig(cfg.content, cfg.filename)); } catch { /* skip */ }
     }
     this.codec = c;
