@@ -335,6 +335,7 @@ export interface CandumpFrame {
   data: Uint8Array;
   isFD: boolean;
   isExtended: boolean;
+  timestamp?: number;
 }
 
 /**
@@ -348,32 +349,34 @@ export function parseCandump(line: string): CandumpFrame | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
-  // Format: interface ID#DATA or interface ID##FDATA
+  // Format: [(timestamp)] interface ID#DATA or interface ID##FDATA
   const cansendMatch = trimmed.match(
-    /^(\S+)\s+([0-9A-Fa-f]+)(##([01]))?#?([0-9A-Fa-f]*)$/
+    /^(?:\((\d+\.\d+)\)\s+)?(\S+)\s+([0-9A-Fa-f]+)(##([01]))?#?([0-9A-Fa-f]*)$/
   );
   if (cansendMatch) {
-    const iface = cansendMatch[1];
-    const idStr = cansendMatch[2];
-    const isFD = cansendMatch[3] !== undefined;
-    const hexData = cansendMatch[5] || '';
+    const ts = cansendMatch[1] ? parseFloat(cansendMatch[1]) : undefined;
+    const iface = cansendMatch[2];
+    const idStr = cansendMatch[3];
+    const isFD = cansendMatch[4] !== undefined;
+    const hexData = cansendMatch[6] || '';
     const canId = parseInt(idStr, 16);
     const bytes = new Uint8Array(hexData.length / 2);
     for (let i = 0; i < bytes.length; i++)
       bytes[i] = parseInt(hexData.slice(i * 2, i * 2 + 2), 16);
-    return { interface: iface, canId, data: bytes, isFD, isExtended: idStr.length > 3 };
+    return { interface: iface, canId, data: bytes, isFD, isExtended: idStr.length > 3, timestamp: ts };
   }
 
   // Format: (timestamp) interface ID [DLC] HH HH HH ...
   const candumpMatch = trimmed.match(
-    /(?:\([^)]*\)\s+)?(\S+)\s+([0-9A-Fa-f]+)\s+\[(\d+)\]\s+((?:[0-9A-Fa-f]{2}\s*)+)/
+    /(?:\((\d+\.\d+)\)\s+)?(\S+)\s+([0-9A-Fa-f]+)\s+\[(\d+)\]\s+((?:[0-9A-Fa-f]{2}\s*)+)/
   );
   if (candumpMatch) {
-    const iface = candumpMatch[1];
-    const canId = parseInt(candumpMatch[2], 16);
-    const hexParts = candumpMatch[4].trim().split(/\s+/);
+    const ts = candumpMatch[1] ? parseFloat(candumpMatch[1]) : undefined;
+    const iface = candumpMatch[2];
+    const canId = parseInt(candumpMatch[3], 16);
+    const hexParts = candumpMatch[5].trim().split(/\s+/);
     const bytes = new Uint8Array(hexParts.map(h => parseInt(h, 16)));
-    return { interface: iface, canId, data: bytes, isFD: bytes.length > 8, isExtended: candumpMatch[2].length > 3 };
+    return { interface: iface, canId, data: bytes, isFD: bytes.length > 8, isExtended: candumpMatch[3].length > 3, timestamp: ts };
   }
 
   return null;
