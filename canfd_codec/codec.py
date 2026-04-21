@@ -114,6 +114,7 @@ class DeviceConfig:
     description: str = ""
     bus: str = "vcan0"
     fd: bool = True
+    mavlink: bool = False
     bitrate: int = 500000
     data_bitrate: int = 2000000
     messages: list[Message] = field(default_factory=list)
@@ -691,8 +692,8 @@ class Codec:
     def __init__(self, config_path: str | Path | None = None):
         self.devices: list[DeviceConfig] = []
         self._by_id: dict[int, tuple[DeviceConfig, Message]] = {}
+        self._by_mavlink_id: dict[int, tuple[DeviceConfig, Message]] = {}
         self._by_name: dict[str, tuple[DeviceConfig, Message]] = {}
-        # For multi-node messages, store all messages for range matching
         self._multi_node_messages: list[tuple[DeviceConfig, Message]] = []
 
         if config_path is not None:
@@ -735,16 +736,16 @@ class Codec:
 
     def _rebuild_lookups(self):
         self._by_id.clear()
+        self._by_mavlink_id.clear()
         self._by_name.clear()
         self._multi_node_messages.clear()
         for dev in self.devices:
+            id_map = self._by_mavlink_id if dev.mavlink else self._by_id
             for msg in dev.messages:
-                # For multi-node messages, store for range matching
                 if msg.node_count > 1:
                     self._multi_node_messages.append((dev, msg))
-                # Always add base ID to lookup
-                if msg.id not in self._by_id:
-                    self._by_id[msg.id] = (dev, msg)
+                if msg.id not in id_map:
+                    id_map[msg.id] = (dev, msg)
                 if msg.name not in self._by_name:
                     self._by_name[msg.name] = (dev, msg)
 
@@ -776,6 +777,10 @@ class Codec:
                     return c
 
         return candidates[0]
+
+    def find_mavlink_message(self, msg_id: int) -> tuple[DeviceConfig, Message] | None:
+        """Look up a MAVLink message by its MAVLink message ID."""
+        return self._by_mavlink_id.get(msg_id)
 
     def decode(self, msg_id: int, data: bytes) -> DecodedMessage | None:
         """Decode a CAN frame by ID. Returns None if ID is unknown."""

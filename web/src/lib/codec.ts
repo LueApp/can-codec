@@ -530,6 +530,7 @@ function decodeBroadcastFrame(msgDef: Message, data: Uint8Array, actualId: numbe
 export class Codec {
   devices: DeviceConfig[] = [];
   private byId: Map<number, { device: DeviceConfig; message: Message }> = new Map();
+  private byMavlinkId: Map<number, { device: DeviceConfig; message: Message }> = new Map();
   private byName: Map<string, { device: DeviceConfig; message: Message }> = new Map();
   private multiNodeMessages: { device: DeviceConfig; message: Message }[] = [];
 
@@ -540,12 +541,14 @@ export class Codec {
 
   private rebuildLookups(): void {
     this.byId.clear();
+    this.byMavlinkId.clear();
     this.byName.clear();
     this.multiNodeMessages = [];
     for (const dev of this.devices) {
+      const idMap = dev.mavlink ? this.byMavlinkId : this.byId;
       for (const msg of dev.messages) {
         if (msg.node_count > 1) this.multiNodeMessages.push({ device: dev, message: msg });
-        if (!this.byId.has(msg.id)) this.byId.set(msg.id, { device: dev, message: msg });
+        if (!idMap.has(msg.id)) idMap.set(msg.id, { device: dev, message: msg });
         if (!this.byName.has(msg.name)) this.byName.set(msg.name, { device: dev, message: msg });
       }
     }
@@ -614,9 +617,14 @@ export class Codec {
       mavlink.frame_sys_id = hdr.sysId;
       mavlink.frame_comp_id = hdr.compId;
       mavlink.msg_id = hdr.msgId;
-      const decoded = this.decode(hdr.msgId, hdr.payload);
-      if (!decoded) return null;
-      decoded.msg_id = canId;
+      const entry = this.byMavlinkId.get(hdr.msgId);
+      if (!entry) return null;
+      let paddedPayload = hdr.payload;
+      if (hdr.payload.length < entry.message.dlc) {
+        paddedPayload = new Uint8Array(entry.message.dlc);
+        paddedPayload.set(hdr.payload);
+      }
+      const decoded = decode(entry.message, paddedPayload, canId, 0);
       return { decoded, mavlink };
     }
 

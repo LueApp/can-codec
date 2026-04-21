@@ -259,6 +259,7 @@ def load_mavlink_xml(path: str | Path) -> DeviceConfig:
         version=f"MAVLink v{version}" if version else "MAVLink",
         description=f"MAVLink messages from {path.name}",
         fd=True,
+        mavlink=True,
         messages=messages,
     )
     config.build_lookups()
