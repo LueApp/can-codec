@@ -213,7 +213,7 @@ if __name__ == "__main__":
   let showRawLog = $state(false);
   let rawFrameLog: string[] = [];
   let rawFrameCount = $state(0);
-  const RAW_LOG_MAX = 2000;
+  let rawLogMax = $state(2000);
   let rawLogEl: HTMLPreElement | undefined;
   let rawLogAutoScroll = true;
 
@@ -390,12 +390,14 @@ if __name__ == "__main__":
     return `(${ts})  ${id}${sep}${hex}`;
   }
 
+  let rawLogVersion = 0;
   function appendRawFrame(frame: RawFrame) {
     rawFrameLog.push(formatRawFrame(frame));
-    if (rawFrameLog.length > RAW_LOG_MAX) {
-      rawFrameLog.splice(0, rawFrameLog.length - RAW_LOG_MAX);
+    if (rawFrameLog.length > rawLogMax) {
+      rawFrameLog.splice(0, rawFrameLog.length - rawLogMax);
     }
     rawFrameCount = rawFrameLog.length;
+    rawLogVersion++;
   }
 
   function handleLiveFrame(frame: RawFrame) {
@@ -536,12 +538,12 @@ if __name__ == "__main__":
     }, CHART_UPDATE_INTERVAL);
   }
 
-  let rawLogRendered = 0;
+  let rawLogRenderedVersion = 0;
   function updateRawLog() {
     if (!showRawLog || !rawLogEl) return;
-    if (rawFrameLog.length === rawLogRendered) return;
+    if (rawLogVersion === rawLogRenderedVersion) return;
     rawLogEl.textContent = rawFrameLog.join('\n');
-    rawLogRendered = rawFrameLog.length;
+    rawLogRenderedVersion = rawLogVersion;
     if (rawLogAutoScroll) {
       rawLogEl.scrollTop = rawLogEl.scrollHeight;
     }
@@ -911,7 +913,7 @@ if __name__ == "__main__":
       <!-- Raw frame log -->
       {#if wsClient.status === 'connected' || rawFrameCount > 0}
         <div style="margin-top: 16px;">
-          <button class="setup-toggle" onclick={() => { showRawLog = !showRawLog; if (showRawLog) { rawLogRendered = 0; setTimeout(() => updateRawLog(), 0); } }}>
+          <button class="setup-toggle" onclick={() => { showRawLog = !showRawLog; if (showRawLog) { rawLogRenderedVersion = 0; setTimeout(() => updateRawLog(), 0); } }}>
             {showRawLog ? '▾' : '▸'} Raw frames
             <span style="color: var(--text-dim); font-size: 12px; margin-left: 6px;">{rawFrameCount}</span>
           </button>
@@ -920,8 +922,11 @@ if __name__ == "__main__":
               <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;">
                 <input type="checkbox" bind:checked={rawLogAutoScroll} style="accent-color: var(--accent);" /> Auto-scroll
               </label>
-              <button class="btn-sm" onclick={() => { rawFrameLog = []; rawFrameCount = 0; rawLogRendered = 0; if (rawLogEl) rawLogEl.textContent = ''; }}>Clear</button>
+              <button class="btn-sm" onclick={() => { rawFrameLog = []; rawFrameCount = 0; rawLogRenderedVersion = 0; if (rawLogEl) rawLogEl.textContent = ''; }}>Clear</button>
               <button class="btn-sm" onclick={() => { const blob = new Blob([rawFrameLog.join('\n')], { type: 'text/plain' }); const a = document.createElement('a'); a.download = 'candump.log'; a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href); }}>Save log</button>
+              <span style="font-size: 12px; color: var(--text-dim);">Max lines</span>
+              <input type="number" bind:value={rawLogMax} min="100" step="500"
+                style="width: 70px; font-size: 12px; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
             </div>
             <pre
               class="raw-frame-log"
