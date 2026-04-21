@@ -120,6 +120,10 @@
           {#if msgs[0]?.mavlink}
             <span class="tag" style="background:rgba(139,148,158,0.15); color:var(--text-dim); font-size:10px;">MAVLink</span>
           {/if}
+          <span style="margin-left: auto; display: flex; gap: 4px;">
+            <button style="padding: 2px 8px; font-size: 11px;" onclick={() => codecStore.enableAllMessages(msgs[0].filename)}>All</button>
+            <button style="padding: 2px 8px; font-size: 11px;" onclick={() => codecStore.disableAllMessages(msgs[0].filename)}>None</button>
+          </span>
         </div>
         <table>
           <thead>

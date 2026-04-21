@@ -82,6 +82,28 @@ class CodecStore {
     this.rebuildCodec();
   }
 
+  enableAllMessages(filename: string): void {
+    this.configs = this.configs.map((c) =>
+      c.filename === filename ? { ...c, disabledMessages: [] } : c
+    );
+    saveConfigsToStorage(this.configs);
+    this.rebuildCodec();
+  }
+
+  disableAllMessages(filename: string): void {
+    this.configs = this.configs.map((c) => {
+      if (c.filename !== filename) return c;
+      try {
+        const device = parseConfig(c.content, c.filename);
+        return { ...c, disabledMessages: device.messages.map((m) => m.name) };
+      } catch {
+        return c;
+      }
+    });
+    saveConfigsToStorage(this.configs);
+    this.rebuildCodec();
+  }
+
   isMessageDisabled(filename: string, messageName: string): boolean {
     const cfg = this.configs.find((c) => c.filename === filename);
     return cfg?.disabledMessages.includes(messageName) ?? false;
