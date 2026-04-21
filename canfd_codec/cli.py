@@ -398,13 +398,7 @@ def cmd_monitor(args):
 
 def cmd_serve(args):
     """Start WebSocket server for live CAN frame streaming."""
-    try:
-        from .serve import CANWebSocketServer
-    except ImportError as e:
-        print(f"Error: Missing dependency: {e}\n"
-              f"Install with: pip install 'canfd-codec[serve]'",
-              file=sys.stderr)
-        sys.exit(1)
+    from .serve import CANWebSocketServer
 
     filter_ids = None
     if args.filter:
