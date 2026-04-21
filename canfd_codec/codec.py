@@ -67,6 +67,10 @@ class Message:
     signals: list[Signal] = field(default_factory=list)
     crc_extra: int | None = None  # MAVLink CRC_EXTRA seed (computed from XML definition)
     broadcast_node_id: int | None = None  # Special node_id for broadcast (e.g., 0x7F)
+    _node_signals: dict[int, list[Signal]] = field(default_factory=dict, repr=False)
+
+    def get_signals(self, node_id: int = 0) -> list[Signal]:
+        return self._node_signals.get(node_id, self.signals)
 
     def get_id_for_node(self, node_id: int = 0) -> int:
         """Calculate actual CAN ID for a given node_id."""
@@ -131,8 +135,24 @@ class DeviceConfig:
 # ---------------------------------------------------------------------------
 # Config loading
 # ---------------------------------------------------------------------------
-def _parse_signal(raw: dict) -> Signal:
+def _resolve_params(raw: dict, params: dict) -> dict:
+    """Replace $param_name strings with values from params dict."""
+    resolved = dict(raw)
+    for key in ('min', 'max', 'scale', 'offset'):
+        val = resolved.get(key)
+        if isinstance(val, str) and val.startswith('$'):
+            param_name = val[1:]
+            if param_name in params:
+                resolved[key] = params[param_name]
+            else:
+                raise ValueError(f"Unknown parameter '${param_name}' in signal '{raw.get('name', '?')}'")
+    return resolved
+
+
+def _parse_signal(raw: dict, params: dict | None = None) -> Signal:
     """Parse a signal definition from YAML dict."""
+    if params:
+        raw = _resolve_params(raw, params)
     bit_length = raw["bit_length"]
     value_type = raw.get("value_type", "unsigned")
 
@@ -189,7 +209,7 @@ def _parse_signal(raw: dict) -> Signal:
     return sig
 
 
-def _parse_message(raw: dict) -> Message:
+def _parse_message(raw: dict, params: dict | None = None) -> Message:
     """Parse a message definition from YAML dict."""
     msg_id = raw["id"]
     if isinstance(msg_id, str):
@@ -212,7 +232,7 @@ def _parse_message(raw: dict) -> Message:
         broadcast_node_id=broadcast_node_id,
     )
     for sig_raw in raw.get("signals", []):
-        msg.signals.append(_parse_signal(sig_raw))
+        msg.signals.append(_parse_signal(sig_raw, params))
     return msg
 
 
@@ -234,8 +254,20 @@ def load_config(path: str | Path) -> DeviceConfig:
         data_bitrate=dev_raw.get("data_bitrate", 2000000),
     )
 
+    default_params = raw.get("parameters", {})
+    node_groups = raw.get("node_groups", [])
+
     for msg_raw in raw.get("messages", []):
-        config.messages.append(_parse_message(msg_raw))
+        msg = _parse_message(msg_raw, default_params if default_params else None)
+
+        for group in node_groups:
+            merged = {**default_params, **group.get("parameters", {})}
+            if merged != default_params:
+                group_signals = [_parse_signal(s, merged) for s in msg_raw.get("signals", [])]
+                for nid in group["nodes"]:
+                    msg._node_signals[nid] = group_signals
+
+        config.messages.append(msg)
 
     config.build_lookups()
     return config
@@ -497,7 +529,7 @@ def decode(msg_def: Message, data: bytes, actual_id: int | None = None, node_id:
     """
     decoded_signals = []
 
-    for sig in msg_def.signals:
+    for sig in msg_def.get_signals(node_id):
         # Extract raw bits
         if sig.byte_order == "big_endian":
             raw = _extract_bits_be(data, sig.start_bit, sig.bit_length)
@@ -532,7 +564,7 @@ def decode(msg_def: Message, data: bytes, actual_id: int | None = None, node_id:
     )
 
 
-def encode(msg_def: Message, values: dict[str, Any]) -> bytes:
+def encode(msg_def: Message, values: dict[str, Any], node_id: int = 0) -> bytes:
     """
     Encode a dict of signal values into raw CAN data bytes.
 
@@ -547,7 +579,7 @@ def encode(msg_def: Message, values: dict[str, Any]) -> bytes:
     byte_count = dlc_to_bytes(msg_def.dlc)
     data = bytearray(byte_count)
 
-    for sig in msg_def.signals:
+    for sig in msg_def.get_signals(node_id):
         # Determine the value to use for this signal
         if sig.constant:
             # Constant signals always use their default value
@@ -598,9 +630,9 @@ def encode_broadcast(msg_def: Message, per_node_values: dict[int, dict[str, Any]
         Concatenated payload bytes (node_count * single_node_bytes)
     """
     segments = []
-    for node_id in range(msg_def.node_id_start, msg_def.node_id_start + msg_def.node_count):
-        values = per_node_values.get(node_id, {})
-        segments.append(encode(msg_def, values))
+    for nid in range(msg_def.node_id_start, msg_def.node_id_start + msg_def.node_count):
+        values = per_node_values.get(nid, {})
+        segments.append(encode(msg_def, values, node_id=nid))
     return b"".join(segments)
 
 
@@ -716,9 +748,10 @@ class Codec:
                 if msg.name not in self._by_name:
                     self._by_name[msg.name] = (dev, msg)
 
-    def _find_message_by_id(self, msg_id: int) -> tuple[DeviceConfig, Message, int] | None:
+    def _find_message_by_id(self, msg_id: int, dlc: int | None = None) -> tuple[DeviceConfig, Message, int] | None:
         """
         Find message definition for a CAN ID.
+        When dlc is provided, prefers messages whose DLC matches the frame length.
         Returns (device, message, node_id) or None.
         """
         # First try exact match
@@ -726,17 +759,27 @@ class Codec:
         if entry is not None:
             return (entry[0], entry[1], 0)
 
-        # Try multi-node range matching
+        # Try multi-node range matching — collect all candidates
+        candidates = []
         for dev, msg in self._multi_node_messages:
             node_id = msg.get_node_for_id(msg_id)
             if node_id is not None:
-                return (dev, msg, node_id)
+                candidates.append((dev, msg, node_id))
 
-        return None
+        if not candidates:
+            return None
+
+        # Prefer matching DLC when available
+        if dlc is not None:
+            for c in candidates:
+                if c[1].dlc == dlc:
+                    return c
+
+        return candidates[0]
 
     def decode(self, msg_id: int, data: bytes) -> DecodedMessage | None:
         """Decode a CAN frame by ID. Returns None if ID is unknown."""
-        result = self._find_message_by_id(msg_id)
+        result = self._find_message_by_id(msg_id, dlc=len(data))
         if result is None:
             return None
         _, msg_def, node_id = result
@@ -789,7 +832,7 @@ class Codec:
             actual_id = msg_def.get_id_for_node(msg_def.broadcast_node_id)
             return actual_id, data
 
-        data = encode(msg_def, values)
+        data = encode(msg_def, values, node_id=node_id)
         actual_id = msg_def.get_id_for_node(node_id)
         return actual_id, data
 
@@ -866,4 +909,26 @@ class Codec:
             lines.append(" ".join(parts))
             if sig.description:
                 lines.append(f"    {sig.description}")
+        if msg._node_signals:
+            lines.append("")
+            lines.append("Node group overrides:")
+            seen_groups: dict[int, list[int]] = {}
+            for nid, sigs in sorted(msg._node_signals.items()):
+                sig_id = id(sigs)
+                seen_groups.setdefault(sig_id, []).append(nid)
+            for sig_id, nids in seen_groups.items():
+                sigs = msg._node_signals[nids[0]]
+                lines.append(f"  Nodes {nids}:")
+                for sig, default_sig in zip(sigs, msg.signals):
+                    diffs = []
+                    if sig.min_val != default_sig.min_val:
+                        diffs.append(f"min={sig.min_val}")
+                    if sig.max_val != default_sig.max_val:
+                        diffs.append(f"max={sig.max_val}")
+                    if sig.scale != default_sig.scale:
+                        diffs.append(f"scale={sig.scale}")
+                    if sig.offset != default_sig.offset:
+                        diffs.append(f"offset={sig.offset}")
+                    if diffs:
+                        lines.append(f"    {sig.name}: {', '.join(diffs)}")
         return "\n".join(lines)
