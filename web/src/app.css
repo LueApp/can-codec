@@ -719,3 +719,20 @@ tr:hover td {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* Raw frame log */
+.raw-frame-log {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--green);
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre;
+  user-select: text;
+}

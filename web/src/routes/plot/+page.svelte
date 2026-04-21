@@ -209,6 +209,14 @@ if __name__ == "__main__":
   const liveSampleStore = new Map<string, SignalSample[]>();
   let liveSampleCounts = $state<Record<string, number>>({});
 
+  // Raw frame log (candump-style)
+  let showRawLog = $state(false);
+  let rawFrameLog: string[] = [];
+  let rawFrameCount = $state(0);
+  const RAW_LOG_MAX = 2000;
+  let rawLogEl: HTMLPreElement | undefined;
+  let rawLogAutoScroll = true;
+
   // Buffer mode
   type BufferMode = 'unlimited' | 'samples' | 'time';
   let bufferMode = $state<BufferMode>('samples');
@@ -239,6 +247,8 @@ if __name__ == "__main__":
     liveStartTime = null;
     liveSampleStore.clear();
     liveSampleCounts = {};
+    rawFrameLog = [];
+    rawFrameCount = 0;
   }
 
   // ---- Paste mode: analyze ----
@@ -372,8 +382,26 @@ if __name__ == "__main__":
     mavlinkBuffers.clear();
   }
 
+  function formatRawFrame(frame: RawFrame): string {
+    const ts = frame.timestamp.toFixed(6);
+    const id = frame.arbitration_id.toString(16).toUpperCase().padStart(3, '0');
+    const hex = Array.from(frame.data).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    const sep = frame.is_fd ? '##1' : '#';
+    return `(${ts})  ${id}${sep}${hex}`;
+  }
+
+  function appendRawFrame(frame: RawFrame) {
+    rawFrameLog.push(formatRawFrame(frame));
+    if (rawFrameLog.length > RAW_LOG_MAX) {
+      rawFrameLog.splice(0, rawFrameLog.length - RAW_LOG_MAX);
+    }
+    rawFrameCount = rawFrameLog.length;
+  }
+
   function handleLiveFrame(frame: RawFrame) {
     const canId = frame.arbitration_id;
+
+    appendRawFrame(frame);
 
     if (isMavlinkCanId(canId)) {
       const isStartFrame = frame.data.length > 0 && frame.data[0] === 0xFD;
@@ -501,10 +529,22 @@ if __name__ == "__main__":
     setTimeout(() => {
       try {
         updateLiveCharts();
+        updateRawLog();
       } finally {
         chartUpdatePending = false;
       }
     }, CHART_UPDATE_INTERVAL);
+  }
+
+  let rawLogRendered = 0;
+  function updateRawLog() {
+    if (!showRawLog || !rawLogEl) return;
+    if (rawFrameLog.length === rawLogRendered) return;
+    rawLogEl.textContent = rawFrameLog.join('\n');
+    rawLogRendered = rawFrameLog.length;
+    if (rawLogAutoScroll) {
+      rawLogEl.scrollTop = rawLogEl.scrollHeight;
+    }
   }
 
   function updateLiveCharts() {
@@ -867,6 +907,30 @@ if __name__ == "__main__":
           <span style="font-size: 12px; color: var(--text-dim);">seconds</span>
         {/if}
       </div>
+
+      <!-- Raw frame log -->
+      {#if wsClient.status === 'connected' || rawFrameCount > 0}
+        <div style="margin-top: 16px;">
+          <button class="setup-toggle" onclick={() => { showRawLog = !showRawLog; if (showRawLog) { rawLogRendered = 0; setTimeout(() => updateRawLog(), 0); } }}>
+            {showRawLog ? '▾' : '▸'} Raw frames
+            <span style="color: var(--text-dim); font-size: 12px; margin-left: 6px;">{rawFrameCount}</span>
+          </button>
+          {#if showRawLog}
+            <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+              <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                <input type="checkbox" bind:checked={rawLogAutoScroll} style="accent-color: var(--accent);" /> Auto-scroll
+              </label>
+              <button class="btn-sm" onclick={() => { rawFrameLog = []; rawFrameCount = 0; rawLogRendered = 0; if (rawLogEl) rawLogEl.textContent = ''; }}>Clear</button>
+              <button class="btn-sm" onclick={() => { const blob = new Blob([rawFrameLog.join('\n')], { type: 'text/plain' }); const a = document.createElement('a'); a.download = 'candump.log'; a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href); }}>Save log</button>
+            </div>
+            <pre
+              class="raw-frame-log"
+              bind:this={rawLogEl}
+              onscroll={() => { if (rawLogEl) rawLogAutoScroll = rawLogEl.scrollTop >= rawLogEl.scrollHeight - rawLogEl.clientHeight - 20; }}
+            ></pre>
+          {/if}
+        </div>
+      {/if}
 
       <!-- Setup guide -->
       <div class="setup-guide" style="margin-top: 16px;">
