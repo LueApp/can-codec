@@ -225,6 +225,11 @@ if __name__ == "__main__":
   let rawLogEl: HTMLPreElement | undefined;
   let rawLogAutoScroll = true;
 
+  // Stream-to-file recording (File System Access API)
+  let dumpWriter: FileSystemWritableFileStream | null = null;
+  let dumpFrameCount = $state(0);
+  let dumpActive = $state(false);
+
   // Copy-to-clipboard toast
   let copyToast = $state('');
   let copyToastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -244,6 +249,7 @@ if __name__ == "__main__":
 
   function switchMode(newMode: InputMode) {
     if (mode === 'live' && newMode !== 'live') {
+      stopDumpToFile();
       wsClient.disconnect();
       clearMavlinkBuffers();
     }
@@ -397,8 +403,28 @@ if __name__ == "__main__":
   }
 
   function disconnectLive() {
+    stopDumpToFile();
     wsClient.disconnect();
     clearMavlinkBuffers();
+  }
+
+  async function startDumpToFile() {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName: `candump_${ts}.log`,
+      types: [{ description: 'Log files', accept: { 'text/plain': ['.log'] } }],
+    });
+    dumpWriter = await handle.createWritable();
+    dumpFrameCount = 0;
+    dumpActive = true;
+  }
+
+  async function stopDumpToFile() {
+    if (!dumpWriter) return;
+    const w = dumpWriter;
+    dumpWriter = null;
+    dumpActive = false;
+    await w.close();
   }
 
   function clearMavlinkBuffers() {
@@ -420,12 +446,17 @@ if __name__ == "__main__":
 
   let rawLogVersion = 0;
   function appendRawFrame(frame: RawFrame) {
-    rawFrameLog.push(formatRawFrame(frame));
+    const line = formatRawFrame(frame);
+    rawFrameLog.push(line);
     if (rawFrameLog.length > rawLogMax) {
       rawFrameLog.splice(0, rawFrameLog.length - rawLogMax);
     }
     rawFrameCount = rawFrameLog.length;
     rawLogVersion++;
+    if (dumpWriter) {
+      dumpWriter.write(line + '\n');
+      dumpFrameCount++;
+    }
   }
 
   function handleLiveFrame(frame: RawFrame) {
@@ -942,6 +973,14 @@ if __name__ == "__main__":
           <span style="font-size: 13px; color: var(--text-dim);">
             {wsClient.frameCount} frames
           </span>
+          {#if dumpActive}
+            <button style="background: var(--red); font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" onclick={stopDumpToFile}>
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: dump-pulse 1s infinite;"></span>
+              Recording {dumpFrameCount} frames — Stop
+            </button>
+          {:else}
+            <button class="btn-sm" onclick={startDumpToFile}>Record to file</button>
+          {/if}
         {/if}
 
         {#if codecStore.configs.length === 0}

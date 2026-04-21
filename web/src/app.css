@@ -390,6 +390,11 @@ tr:hover td {
   border-color: var(--accent);
 }
 
+@keyframes dump-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* Plot page: signal selector */
 .signal-selector {
   display: flex;
