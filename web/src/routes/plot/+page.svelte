@@ -9,9 +9,17 @@
 
   // ---- Types ----
 
+  interface FrameRef {
+    id: number;
+    data: number[];
+    timestamp: number;
+    is_fd: boolean;
+  }
+
   interface SignalSample {
     time: number;
     value: number;
+    frame: FrameRef;
   }
 
   interface SignalSeries {
@@ -200,7 +208,7 @@ if __name__ == "__main__":
       : 'ws://localhost:8765'
   );
   let liveStartTime: number | null = null;
-  let mavlinkBuffers = new Map<number, { frames: Uint8Array[]; lastTs: number }>();
+  let mavlinkBuffers = new Map<number, { frames: Uint8Array[]; lastTs: number; is_fd: boolean }>();
   let mavlinkTimers = new Map<number, ReturnType<typeof setTimeout>>();
   let chartUpdatePending = false;
   const CHART_UPDATE_INTERVAL = 50; // ms (20 fps)
@@ -216,6 +224,15 @@ if __name__ == "__main__":
   let rawLogMax = $state(2000);
   let rawLogEl: HTMLPreElement | undefined;
   let rawLogAutoScroll = true;
+
+  // Copy-to-clipboard toast
+  let copyToast = $state('');
+  let copyToastTimer: ReturnType<typeof setTimeout> | undefined;
+  function showCopyToast(msg: string) {
+    copyToast = msg;
+    if (copyToastTimer) clearTimeout(copyToastTimer);
+    copyToastTimer = setTimeout(() => { copyToast = ''; }, 1500);
+  }
 
   // Buffer mode
   type BufferMode = 'unlimited' | 'samples' | 'time';
@@ -313,6 +330,10 @@ if __name__ == "__main__":
 
       if (!decoded) { lineIndex++; continue; }
 
+      const absTs = timestamp ?? 0;
+      const isFd = 'canId' in group ? true : (() => { const f = parseCandump(group.line); return f?.isFD ?? false; })();
+      const frameRef: FrameRef = { id: decoded.msg_id, data: decoded.raw_data, timestamp: absTs, is_fd: isFd };
+
       if (timestamp !== undefined) {
         if (firstTs === null) firstTs = timestamp;
         timestamp = timestamp - firstTs;
@@ -330,7 +351,11 @@ if __name__ == "__main__":
           signalEntries.push({ signals: sub.signals, groupLabel: `${baseLabel} / N${sub.node_id}` });
         }
       } else {
-        signalEntries.push({ signals: decoded.signals, groupLabel: baseLabel });
+        const msg = codecStore.codec.getMessageByName(decoded.name);
+        const groupLabel = (msg && msg.node_count > 1)
+          ? `${baseLabel} / N${decoded.node_id}`
+          : baseLabel;
+        signalEntries.push({ signals: decoded.signals, groupLabel });
       }
 
       for (const entry of signalEntries) {
@@ -345,7 +370,7 @@ if __name__ == "__main__":
             series = { key, group: entry.groupLabel, signal: sig.name, unit: sig.unit, samples: [] };
             seriesMap.set(key, series);
           }
-          series.samples.push({ time: timestamp!, value: val });
+          series.samples.push({ time: timestamp!, value: val, frame: frameRef });
         }
       }
       lineIndex++;
@@ -415,7 +440,7 @@ if __name__ == "__main__":
       }
 
       if (isStartFrame) {
-        mavlinkBuffers.set(canId, { frames: [frame.data], lastTs: frame.timestamp });
+        mavlinkBuffers.set(canId, { frames: [frame.data], lastTs: frame.timestamp, is_fd: frame.is_fd });
       } else if (buf) {
         buf.frames.push(frame.data);
         buf.lastTs = frame.timestamp;
@@ -438,7 +463,7 @@ if __name__ == "__main__":
       try {
         const res = codecStore.codec.smartDecode(canId, frame.data);
         if (res) {
-          appendDecoded(res.decoded, res.mavlink, frame.timestamp);
+          appendDecoded(res.decoded, res.mavlink, frame.timestamp, frame.is_fd);
         }
       } catch { /* skip */ }
     }
@@ -446,22 +471,37 @@ if __name__ == "__main__":
     scheduleChartUpdate();
   }
 
-  function flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; lastTs: number }) {
+  function flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; lastTs: number; is_fd: boolean }) {
     try {
       const res = buf.frames.length === 1
         ? codecStore.codec.smartDecode(canId, buf.frames[0])
         : codecStore.codec.smartDecodeMultiFrame(canId, buf.frames);
       if (res) {
-        appendDecoded(res.decoded, res.mavlink, buf.lastTs);
+        appendDecoded(res.decoded, res.mavlink, buf.lastTs, buf.is_fd);
       }
     } catch { /* skip */ }
     mavlinkBuffers.delete(canId);
   }
 
+  function formatFrameShort(f: FrameRef): string {
+    const id = f.id.toString(16).toUpperCase().padStart(3, '0');
+    const hex = f.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    return `0x${id}  ${hex}`;
+  }
+
+  function formatFrameCandump(f: FrameRef): string {
+    const ts = f.timestamp.toFixed(6);
+    const id = f.id.toString(16).toUpperCase().padStart(3, '0');
+    const hex = f.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    const sep = f.is_fd ? '##1' : '#';
+    return `(${ts})  ${id}${sep}${hex}`;
+  }
+
   function appendSignalSamples(
     signals: { name: string; physical_value: number; unit: string; bitfield_flags: Record<string, boolean> | null }[],
     groupLabel: string,
-    time: number
+    time: number,
+    frame: FrameRef
   ): boolean {
     let newSeriesAdded = false;
     for (const sig of signals) {
@@ -479,7 +519,7 @@ if __name__ == "__main__":
         allSeries = [...allSeries, meta].sort((a, b) => a.key.localeCompare(b.key));
         newSeriesAdded = true;
       }
-      samples.push({ time, value: val });
+      samples.push({ time, value: val, frame });
 
       if (bufferMode === 'samples' && samples.length > bufferSamples) {
         samples.splice(0, samples.length - bufferSamples);
@@ -493,9 +533,10 @@ if __name__ == "__main__":
     return newSeriesAdded;
   }
 
-  function appendDecoded(decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number) {
+  function appendDecoded(decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number, is_fd: boolean) {
     if (liveStartTime === null) liveStartTime = timestamp;
     const time = timestamp - liveStartTime;
+    const frame: FrameRef = { id: decoded.msg_id, data: decoded.raw_data, timestamp, is_fd };
 
     const baseLabel = mavlink
       ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
@@ -504,13 +545,16 @@ if __name__ == "__main__":
     let newSeriesAdded = false;
 
     if (decoded.is_broadcast && decoded.sub_messages) {
-      // Broadcast: create per-node signal series
       for (const sub of decoded.sub_messages) {
         const groupLabel = `${baseLabel} / N${sub.node_id}`;
-        if (appendSignalSamples(sub.signals, groupLabel, time)) newSeriesAdded = true;
+        if (appendSignalSamples(sub.signals, groupLabel, time, frame)) newSeriesAdded = true;
       }
     } else {
-      if (appendSignalSamples(decoded.signals, baseLabel, time)) newSeriesAdded = true;
+      const msg = codecStore.codec.getMessageByName(decoded.name);
+      const groupLabel = (msg && msg.node_count > 1)
+        ? `${baseLabel} / N${decoded.node_id}`
+        : baseLabel;
+      if (appendSignalSamples(decoded.signals, groupLabel, time, frame)) newSeriesAdded = true;
     }
 
     // Auto-select new signals as solo panels if total is small
@@ -580,7 +624,7 @@ if __name__ == "__main__":
         const samples = liveSampleStore.get(panel.keys[j]) ?? [];
         const ds = chart.data.datasets[j];
         if (!ds) continue;
-        const points = samples.map(s => ({ x: s.time, y: s.value }));
+        const points = samples.map(s => ({ x: s.time, y: s.value, frame: s.frame }));
         ds.data = points;
         (ds as any).pointRadius = points.length <= 100 ? 3 : 0;
         if (points.length > 0) {
@@ -703,7 +747,7 @@ if __name__ == "__main__":
           const samples = getSamples(series.key);
           return {
             label: `${series.group} / ${series.signal}${series.unit ? ` (${series.unit})` : ''}`,
-            data: samples.map(s => ({ x: s.time, y: s.value })),
+            data: samples.map(s => ({ x: s.time, y: s.value, frame: s.frame })),
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 1.5,
@@ -721,6 +765,18 @@ if __name__ == "__main__":
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
+            onClick: (_event, elements, chart) => {
+              if (elements.length === 0) return;
+              const el = elements[0];
+              const pt = chart.data.datasets[el.datasetIndex]?.data[el.index] as any;
+              if (pt?.frame) {
+                const text = formatFrameCandump(pt.frame);
+                navigator.clipboard.writeText(text).then(
+                  () => showCopyToast('Copied: ' + text),
+                  () => showCopyToast('Copy failed'),
+                );
+              }
+            },
             plugins: {
               legend: {
                 display: multi,
@@ -732,6 +788,10 @@ if __name__ == "__main__":
                   label: (item) => {
                     const s = seriesList[item.datasetIndex];
                     return s ? `${s.group} / ${s.signal}: ${item.parsed.y}${s.unit ? ' ' + s.unit : ''}` : '';
+                  },
+                  afterBody: (items) => {
+                    const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
+                    return f ? [`Frame: ${formatFrameShort(f)}`, '(click to copy with timestamp)'] : '';
                   },
                 },
               },
@@ -1043,3 +1103,7 @@ if __name__ == "__main__":
     {/if}
   {/if}
 </div>
+
+{#if copyToast}
+  <div style="position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg-card, #161b22); color: var(--text, #c9d1d9); border: 1px solid var(--border, #30363d); padding: 8px 16px; border-radius: 6px; font-size: 13px; z-index: 1000; pointer-events: none;">{copyToast}</div>
+{/if}
