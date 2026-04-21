@@ -1062,6 +1062,10 @@ if __name__ == "__main__":
               <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">More options</summary>
               <pre><code># Filter specific CAN IDs{'\n'}python can_ws_server.py --bus can0 --filter 0x101,0x201{'\n'}{'\n'}# Disable CAN FD{'\n'}python can_ws_server.py --bus can0 --no-fd{'\n'}{'\n'}# Custom port and bind address{'\n'}python can_ws_server.py --host 0.0.0.0 --port 9000{'\n'}{'\n'}# Test with virtual CAN{'\n'}sudo modprobe vcan{'\n'}sudo ip link add dev vcan0 type vcan{'\n'}sudo ip link set up vcan0{'\n'}python can_ws_server.py --bus vcan0</code></pre>
             </details>
+            <details style="margin-top: 8px;">
+              <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">Using SLCAN FD (USB-to-CAN adapters)</summary>
+              <pre><code># For USB-to-CAN adapters using SLCAN FD protocol{'\n'}# (e.g. CANable, canable2.0, USBtin, MKS CANable Pro){'\n'}{'\n'}# Option A: Use slcanfd interface directly via python-can{'\n'}pip install pyserial{'\n'}python can_ws_server.py --bus /dev/ttyACM0 --interface slcanfd{'\n'}{'\n'}# Option B: Create a SocketCAN interface with slcanfd{'\n'}sudo slcanfd_attach -f -s5 -o /dev/ttyACM0{'\n'}sudo ip link set up slcanfd0{'\n'}python can_ws_server.py --bus slcanfd0{'\n'}{'\n'}# Common bitrate flags for slcanfd_attach:{'\n'}#   -s5 = 250 kbit/s,  -s6 = 500 kbit/s{'\n'}#   -s7 = 800 kbit/s,  -s8 = 1 Mbit/s</code></pre>
+            </details>
           </div>
         {/if}
       </div>
