@@ -14,6 +14,7 @@
     data: number[];
     timestamp: number;
     is_fd: boolean;
+    extraFrames?: { data: number[]; timestamp: number }[];
   }
 
   interface SignalSample {
@@ -208,7 +209,7 @@ if __name__ == "__main__":
       : 'ws://localhost:8765'
   );
   let liveStartTime: number | null = null;
-  let mavlinkBuffers = new Map<number, { frames: Uint8Array[]; lastTs: number; is_fd: boolean }>();
+  let mavlinkBuffers = new Map<number, { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }>();
   let mavlinkTimers = new Map<number, ReturnType<typeof setTimeout>>();
   let chartUpdatePending = false;
   const CHART_UPDATE_INTERVAL = 50; // ms (20 fps)
@@ -338,7 +339,19 @@ if __name__ == "__main__":
 
       const absTs = timestamp ?? 0;
       const isFd = 'canId' in group ? true : (() => { const f = parseCandump(group.line); return f?.isFD ?? false; })();
-      const frameRef: FrameRef = { id: decoded.msg_id, data: decoded.raw_data, timestamp: absTs, is_fd: isFd };
+      let frameRef: FrameRef;
+      if ('canId' in group) {
+        frameRef = { id: decoded.msg_id, data: Array.from(group.datas[0]), timestamp: absTs, is_fd: isFd };
+        if (group.datas.length > 1) {
+          frameRef.extraFrames = group.datas.slice(1).map((d, i) => ({
+            data: Array.from(d),
+            timestamp: group.timestamps[i + 1] ?? absTs,
+          }));
+        }
+      } else {
+        const f = parseCandump(group.line);
+        frameRef = { id: decoded.msg_id, data: f ? Array.from(f.data) : decoded.raw_data, timestamp: absTs, is_fd: isFd };
+      }
 
       if (timestamp !== undefined) {
         if (firstTs === null) firstTs = timestamp;
@@ -474,10 +487,10 @@ if __name__ == "__main__":
       }
 
       if (isStartFrame) {
-        mavlinkBuffers.set(canId, { frames: [frame.data], lastTs: frame.timestamp, is_fd: frame.is_fd });
+        mavlinkBuffers.set(canId, { frames: [frame.data], timestamps: [frame.timestamp], is_fd: frame.is_fd });
       } else if (buf) {
         buf.frames.push(frame.data);
-        buf.lastTs = frame.timestamp;
+        buf.timestamps.push(frame.timestamp);
       }
       // else: non-start frame with no buffer — skip
 
@@ -505,33 +518,46 @@ if __name__ == "__main__":
     scheduleChartUpdate();
   }
 
-  function flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; lastTs: number; is_fd: boolean }) {
+  function flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }) {
     try {
       const res = buf.frames.length === 1
         ? codecStore.codec.smartDecode(canId, buf.frames[0])
         : codecStore.codec.smartDecodeMultiFrame(canId, buf.frames);
       if (res) {
-        appendDecoded(res.decoded, res.mavlink, buf.lastTs, buf.is_fd);
+        const ts = buf.timestamps[0] ?? 0;
+        appendDecoded(res.decoded, res.mavlink, ts, buf.is_fd, buf.frames, buf.timestamps);
       }
     } catch { /* skip */ }
     mavlinkBuffers.delete(canId);
   }
 
   function formatFrameShort(f: FrameRef): string {
-    const id = f.id.toString(16).toUpperCase().padStart(3, '0');
+    const id = f.id.toString(16).toUpperCase().padStart(f.id > 0x7FF ? 8 : 3, '0');
     const hex = f.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
-    return `0x${id}  ${hex}`;
+    const nFrames = 1 + (f.extraFrames?.length ?? 0);
+    const suffix = nFrames > 1 ? ` (+${nFrames - 1} frames)` : '';
+    return `0x${id}  ${hex}${suffix}`;
+  }
+
+  function formatOneFrame(id: string, iface: string, data: number[], timestamp: number): string {
+    const ts = timestamp.toFixed(6);
+    const dlc = data.length.toString().padStart(2, '0');
+    const hex = data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
   }
 
   function formatFrameCandump(f: FrameRef): string {
-    const ts = f.timestamp.toFixed(6);
     const iface = wsClient.busInfo?.bus ?? 'can0';
     const id = f.id > 0x7FF
       ? f.id.toString(16).toUpperCase().padStart(8, '0')
       : f.id.toString(16).toUpperCase().padStart(3, '0');
-    const dlc = f.data.length.toString().padStart(2, '0');
-    const hex = f.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
-    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
+    const lines = [formatOneFrame(id, iface, f.data, f.timestamp)];
+    if (f.extraFrames) {
+      for (const ef of f.extraFrames) {
+        lines.push(formatOneFrame(id, iface, ef.data, ef.timestamp));
+      }
+    }
+    return lines.join('\n');
   }
 
   function appendSignalSamples(
@@ -570,10 +596,20 @@ if __name__ == "__main__":
     return newSeriesAdded;
   }
 
-  function appendDecoded(decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number, is_fd: boolean) {
+  function appendDecoded(
+    decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number, is_fd: boolean,
+    rawFrames?: Uint8Array[], rawTimestamps?: number[]
+  ) {
     if (liveStartTime === null) liveStartTime = timestamp;
     const time = timestamp - liveStartTime;
-    const frame: FrameRef = { id: decoded.msg_id, data: decoded.raw_data, timestamp, is_fd };
+    const primaryData = rawFrames ? Array.from(rawFrames[0]) : decoded.raw_data;
+    const frame: FrameRef = { id: decoded.msg_id, data: primaryData, timestamp, is_fd };
+    if (rawFrames && rawFrames.length > 1) {
+      frame.extraFrames = rawFrames.slice(1).map((f, i) => ({
+        data: Array.from(f),
+        timestamp: rawTimestamps?.[i + 1] ?? timestamp,
+      }));
+    }
 
     const baseLabel = mavlink
       ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
