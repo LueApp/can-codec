@@ -2,7 +2,7 @@
   import { codecStore } from '$lib/codec-store.svelte';
   import { parseCandump } from '$lib/codec';
   import { WebSocketClient, type RawFrame } from '$lib/websocket-client.svelte';
-  import type { DecodedMessage, MavlinkInfo } from '$lib/types';
+  import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from '$lib/types';
   import { Chart, LineController, LineElement, PointElement, LinearScale, Tooltip, Legend, Filler } from 'chart.js';
 
   Chart.register(LineController, LineElement, PointElement, LinearScale, Tooltip, Legend, Filler);
@@ -364,16 +364,18 @@ if __name__ == "__main__":
         ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
         : decoded.name;
 
+      const msg = codecStore.codec.getMessageByName(decoded.name);
       const signalEntries: { signals: typeof decoded.signals; groupLabel: string }[] = [];
       if (decoded.is_broadcast && decoded.sub_messages) {
         for (const sub of decoded.sub_messages) {
-          signalEntries.push({ signals: sub.signals, groupLabel: `${baseLabel} / N${sub.node_id}` });
+          const mux = getMuxSuffix(msg, sub.signals);
+          signalEntries.push({ signals: sub.signals, groupLabel: `${baseLabel} / N${sub.node_id}${mux}` });
         }
       } else {
-        const msg = codecStore.codec.getMessageByName(decoded.name);
+        const mux = getMuxSuffix(msg, decoded.signals);
         const groupLabel = (msg && msg.node_count > 1)
-          ? `${baseLabel} / N${decoded.node_id}`
-          : baseLabel;
+          ? `${baseLabel} / N${decoded.node_id}${mux}`
+          : `${baseLabel}${mux}`;
         signalEntries.push({ signals: decoded.signals, groupLabel });
       }
 
@@ -560,6 +562,13 @@ if __name__ == "__main__":
     return lines.join('\n');
   }
 
+  function getMuxSuffix(msg: Message | null, signals: { name: string; enum_name?: string | null }[]): string {
+    if (!msg?.mux_signal) return '';
+    const muxSig = signals.find(s => s.name === msg.mux_signal);
+    if (muxSig?.enum_name) return ` / ${muxSig.enum_name}`;
+    return '';
+  }
+
   function appendSignalSamples(
     signals: { name: string; physical_value: number; unit: string; bitfield_flags: Record<string, boolean> | null }[],
     groupLabel: string,
@@ -617,16 +626,18 @@ if __name__ == "__main__":
 
     let newSeriesAdded = false;
 
+    const msg = codecStore.codec.getMessageByName(decoded.name);
     if (decoded.is_broadcast && decoded.sub_messages) {
       for (const sub of decoded.sub_messages) {
-        const groupLabel = `${baseLabel} / N${sub.node_id}`;
+        const mux = getMuxSuffix(msg, sub.signals);
+        const groupLabel = `${baseLabel} / N${sub.node_id}${mux}`;
         if (appendSignalSamples(sub.signals, groupLabel, time, frame)) newSeriesAdded = true;
       }
     } else {
-      const msg = codecStore.codec.getMessageByName(decoded.name);
+      const mux = getMuxSuffix(msg, decoded.signals);
       const groupLabel = (msg && msg.node_count > 1)
-        ? `${baseLabel} / N${decoded.node_id}`
-        : baseLabel;
+        ? `${baseLabel} / N${decoded.node_id}${mux}`
+        : `${baseLabel}${mux}`;
       if (appendSignalSamples(decoded.signals, groupLabel, time, frame)) newSeriesAdded = true;
     }
 

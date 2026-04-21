@@ -28,6 +28,7 @@ export interface Message {
   broadcast_node_id: number | null;
   signals: Signal[];
   crc_extra?: number;
+  mux_signal?: string;
 }
 
 export interface DeviceConfig {

@@ -97,6 +97,7 @@ function parseMessage(raw: Record<string, unknown>): Message {
     node_id_start: (raw['node_id_start'] as number) ?? 0,
     broadcast_node_id: broadcastNodeId,
     signals,
+    mux_signal: (raw['mux_signal'] as string) ?? undefined,
   };
 }
 

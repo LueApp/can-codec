@@ -67,6 +67,7 @@ class Message:
     signals: list[Signal] = field(default_factory=list)
     crc_extra: int | None = None  # MAVLink CRC_EXTRA seed (computed from XML definition)
     broadcast_node_id: int | None = None  # Special node_id for broadcast (e.g., 0x7F)
+    mux_signal: str | None = None  # Signal whose enum value sub-groups other signals in plots
     _node_signals: dict[int, list[Signal]] = field(default_factory=dict, repr=False)
 
     def get_signals(self, node_id: int = 0) -> list[Signal]:
@@ -231,6 +232,7 @@ def _parse_message(raw: dict, params: dict | None = None) -> Message:
         node_count=raw.get("node_count", 1),
         node_id_start=raw.get("node_id_start", 0),
         broadcast_node_id=broadcast_node_id,
+        mux_signal=raw.get("mux_signal"),
     )
     for sig_raw in raw.get("signals", []):
         msg.signals.append(_parse_signal(sig_raw, params))
