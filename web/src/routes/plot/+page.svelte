@@ -409,10 +409,13 @@ if __name__ == "__main__":
 
   function formatRawFrame(frame: RawFrame): string {
     const ts = frame.timestamp.toFixed(6);
-    const id = frame.arbitration_id.toString(16).toUpperCase().padStart(3, '0');
+    const iface = wsClient.busInfo?.bus ?? 'can0';
+    const id = frame.arbitration_id > 0x7FF
+      ? frame.arbitration_id.toString(16).toUpperCase().padStart(8, '0')
+      : frame.arbitration_id.toString(16).toUpperCase().padStart(3, '0');
+    const dlc = frame.data.length.toString().padStart(2, '0');
     const hex = Array.from(frame.data).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
-    const sep = frame.is_fd ? '##1' : '#';
-    return `(${ts})  ${id}${sep}${hex}`;
+    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
   }
 
   let rawLogVersion = 0;
@@ -491,10 +494,13 @@ if __name__ == "__main__":
 
   function formatFrameCandump(f: FrameRef): string {
     const ts = f.timestamp.toFixed(6);
-    const id = f.id.toString(16).toUpperCase().padStart(3, '0');
+    const iface = wsClient.busInfo?.bus ?? 'can0';
+    const id = f.id > 0x7FF
+      ? f.id.toString(16).toUpperCase().padStart(8, '0')
+      : f.id.toString(16).toUpperCase().padStart(3, '0');
+    const dlc = f.data.length.toString().padStart(2, '0');
     const hex = f.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
-    const sep = f.is_fd ? '##1' : '#';
-    return `(${ts})  ${id}${sep}${hex}`;
+    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
   }
 
   function appendSignalSamples(
