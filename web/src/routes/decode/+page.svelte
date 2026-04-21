@@ -107,11 +107,24 @@
     results = out;
   }
 
+  function decodedToJson(d: DecodedMessage): Record<string, unknown> {
+    if (d.is_broadcast && d.sub_messages) {
+      const nodes: Record<string, Record<string, string>> = {};
+      for (const sub of d.sub_messages) {
+        const obj: Record<string, string> = {};
+        for (const s of sub.signals) obj[s.name] = displayValue(s);
+        nodes[`node_${sub.node_id}`] = obj;
+      }
+      return { name: d.name, broadcast: true, nodes };
+    }
+    const obj: Record<string, string> = {};
+    for (const s of d.signals) obj[s.name] = displayValue(s);
+    return { name: d.name, signals: obj };
+  }
+
   function copyJson(r: DecodeResult) {
     if (!r.decoded) return;
-    const obj: Record<string, string> = {};
-    for (const s of r.decoded.signals) obj[s.name] = displayValue(s);
-    const out: Record<string, unknown> = { name: r.decoded.name, signals: obj };
+    const out = decodedToJson(r.decoded);
     if (r.mavlink) out.mavlink = r.mavlink;
     navigator.clipboard.writeText(JSON.stringify(out, null, 2));
     copied = r.line;
@@ -120,9 +133,7 @@
 
   function copyAllJson() {
     const all = results.filter(r => r.decoded).map(r => {
-      const obj: Record<string, string> = {};
-      for (const s of r.decoded!.signals) obj[s.name] = displayValue(s);
-      const out: Record<string, unknown> = { name: r.decoded!.name, signals: obj };
+      const out = decodedToJson(r.decoded!);
       if (r.mavlink) out.mavlink = r.mavlink;
       return out;
     });
@@ -185,7 +196,9 @@
               {r.mavlink ? `MAV:${r.mavlink.msg_id}` : `0x${res.msg_id.toString(16).toUpperCase().padStart(3, '0')}`}
             </span>
             <strong style="margin-left: 10px; font-size: 16px;">{res.name}</strong>
-            {#if res.node_id !== 0}
+            {#if res.is_broadcast}
+              <span class="tag" style="margin-left: 6px; background: rgba(88,166,255,0.15); color: var(--accent);">broadcast</span>
+            {:else if res.node_id !== 0}
               <span class="tag" style="margin-left: 6px; background: rgba(210,153,34,0.15); color: var(--orange);">node {res.node_id}</span>
             {/if}
             {#if res.description}
@@ -200,36 +213,62 @@
         </div>
 
         <div class="result" style="padding: 0; background: none; border: none;">
-          {#each groupArraySignals(res.signals).filter(g => g.items.length === 1) as group}
-            <div class="signal-row">
-              <span class="signal-name">{group.base}</span>
-              <span class="signal-value">{displayValue(group.items[0])}</span>
-            </div>
-          {/each}
-
-          {#if groupArraySignals(res.signals).some(g => g.items.length > 1)}
-            <div style="overflow-x: auto; margin-top: 6px;">
+          {#if res.is_broadcast && res.sub_messages}
+            <!-- Broadcast: show per-node signals as a table -->
+            <div style="overflow-x: auto;">
               <table style="border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; width: 100%;">
                 <thead>
                   <tr>
-                    <th style="padding: 3px 10px 3px 0; color: var(--text-dim); font-weight: 400; border-bottom: 1px solid var(--border); text-align: left;"></th>
-                    {#each {length: getMaxArrayLen(groupArraySignals(res.signals))} as _, i}
-                      <th style="padding: 3px 8px; color: var(--text-dim); font-weight: 400; border-bottom: 1px solid var(--border); text-align: right;">[{i}]</th>
+                    <th style="padding: 3px 10px 3px 0; color: var(--text-dim); font-weight: 400; border-bottom: 1px solid var(--border); text-align: left;">Signal</th>
+                    {#each res.sub_messages as sub}
+                      <th style="padding: 3px 8px; color: var(--text-dim); font-weight: 400; border-bottom: 1px solid var(--border); text-align: right;">N{sub.node_id}</th>
                     {/each}
                   </tr>
                 </thead>
                 <tbody>
-                  {#each groupArraySignals(res.signals).filter(g => g.items.length > 1) as group}
+                  {#each res.sub_messages[0].signals as sig, si}
                     <tr>
-                      <td style="padding: 3px 10px 3px 0; color: var(--accent); white-space: nowrap;">{group.base}</td>
-                      {#each group.items as item}
-                        <td style="padding: 3px 8px; color: var(--green); text-align: right; white-space: nowrap;">{displayValue(item)}</td>
+                      <td style="padding: 3px 10px 3px 0; color: var(--accent); white-space: nowrap;">{sig.name}{#if sig.unit} <span style="color:var(--text-dim)">({sig.unit})</span>{/if}</td>
+                      {#each res.sub_messages as sub}
+                        <td style="padding: 3px 8px; color: var(--green); text-align: right; white-space: nowrap;">{displayValue(sub.signals[si])}</td>
                       {/each}
                     </tr>
                   {/each}
                 </tbody>
               </table>
             </div>
+          {:else}
+            {#each groupArraySignals(res.signals).filter(g => g.items.length === 1) as group}
+              <div class="signal-row">
+                <span class="signal-name">{group.base}</span>
+                <span class="signal-value">{displayValue(group.items[0])}</span>
+              </div>
+            {/each}
+
+            {#if groupArraySignals(res.signals).some(g => g.items.length > 1)}
+              <div style="overflow-x: auto; margin-top: 6px;">
+                <table style="border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; width: 100%;">
+                  <thead>
+                    <tr>
+                      <th style="padding: 3px 10px 3px 0; color: var(--text-dim); font-weight: 400; border-bottom: 1px solid var(--border); text-align: left;"></th>
+                      {#each {length: getMaxArrayLen(groupArraySignals(res.signals))} as _, i}
+                        <th style="padding: 3px 8px; color: var(--text-dim); font-weight: 400; border-bottom: 1px solid var(--border); text-align: right;">[{i}]</th>
+                      {/each}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each groupArraySignals(res.signals).filter(g => g.items.length > 1) as group}
+                      <tr>
+                        <td style="padding: 3px 10px 3px 0; color: var(--accent); white-space: nowrap;">{group.base}</td>
+                        {#each group.items as item}
+                          <td style="padding: 3px 8px; color: var(--green); text-align: right; white-space: nowrap;">{displayValue(item)}</td>
+                        {/each}
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
           {/if}
         </div>
       </div>

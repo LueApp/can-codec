@@ -99,6 +99,45 @@ def parse_signal_values(args: list[str]) -> dict:
     return values
 
 
+def parse_broadcast_values(args: list[str]) -> dict:
+    """
+    Parse signal=value pairs for broadcast mode.
+
+    Array values stay as lists (distributed per-node), scalars stay scalar.
+      position=[1.5,2.0,2.5]  -> {"position": [1.5, 2.0, 2.5]}
+      velocity=0               -> {"velocity": 0.0}
+      mode=mit_control          -> {"mode": "mit_control"}
+    """
+    values: dict = {}
+    for arg in args:
+        if "=" not in arg:
+            print(f"Error: Invalid signal format '{arg}'. Expected: name=value",
+                  file=sys.stderr)
+            sys.exit(1)
+
+        name, val_str = arg.split("=", 1)
+        name = name.strip()
+        val_str = val_str.strip()
+
+        if val_str.startswith("[") and val_str.endswith("]"):
+            inner = val_str[1:-1]
+            items = [s.strip() for s in inner.split(",")]
+            parsed = []
+            for item in items:
+                try:
+                    parsed.append(float(item) if "." in item else int(item, 0))
+                except ValueError:
+                    parsed.append(item)
+            values[name] = parsed
+        else:
+            try:
+                values[name] = float(val_str) if "." in val_str else int(val_str, 0)
+            except ValueError:
+                values[name] = val_str
+
+    return values
+
+
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
@@ -186,24 +225,42 @@ def cmd_decode(args):
             "id": f"0x{decoded.msg_id:03X}",
             "name": decoded.name,
             "raw_hex": decoded.raw_data.hex(" "),
-            "signals": {},
         }
         if mavlink_info:
             result["mavlink"] = mavlink_info
-        if decoded.node_id != 0:
-            result["node_id"] = decoded.node_id
-            result["base_id"] = f"0x{decoded.base_id:03X}" if decoded.base_id else None
-        for s in decoded.signals:
-            sig_data = {
-                "raw": s.raw_value,
-                "value": s.physical_value,
-                "display": s.display_value(),
-            }
-            if s.enum_name:
-                sig_data["enum"] = s.enum_name
-            if s.bitfield_flags:
-                sig_data["flags"] = s.bitfield_flags
-            result["signals"][s.name] = sig_data
+        if decoded.is_broadcast and decoded.sub_messages:
+            result["broadcast"] = True
+            result["nodes"] = {}
+            for sub in decoded.sub_messages:
+                node_signals = {}
+                for s in sub.signals:
+                    sig_data = {
+                        "raw": s.raw_value,
+                        "value": s.physical_value,
+                        "display": s.display_value(),
+                    }
+                    if s.enum_name:
+                        sig_data["enum"] = s.enum_name
+                    if s.bitfield_flags:
+                        sig_data["flags"] = s.bitfield_flags
+                    node_signals[s.name] = sig_data
+                result["nodes"][str(sub.node_id)] = node_signals
+        else:
+            result["signals"] = {}
+            if decoded.node_id != 0:
+                result["node_id"] = decoded.node_id
+                result["base_id"] = f"0x{decoded.base_id:03X}" if decoded.base_id else None
+            for s in decoded.signals:
+                sig_data = {
+                    "raw": s.raw_value,
+                    "value": s.physical_value,
+                    "display": s.display_value(),
+                }
+                if s.enum_name:
+                    sig_data["enum"] = s.enum_name
+                if s.bitfield_flags:
+                    sig_data["flags"] = s.bitfield_flags
+                result["signals"][s.name] = sig_data
         print(json.dumps(result, indent=2))
     else:
         if mavlink_info:
@@ -220,11 +277,17 @@ def cmd_encode(args):
     """Encode signal values into a CAN frame."""
     codec = Codec(args.config)
 
-    values = parse_signal_values(args.signals)
+    is_broadcast = getattr(args, "broadcast", False)
+
+    if is_broadcast:
+        values = parse_broadcast_values(args.signals)
+    else:
+        values = parse_signal_values(args.signals)
     node_id = args.node if args.node else 0
 
     try:
-        msg_id, data = codec.encode(args.message, values, node_id=node_id)
+        msg_id, data = codec.encode(args.message, values, node_id=node_id,
+                                    broadcast=is_broadcast)
     except (KeyError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -238,7 +301,9 @@ def cmd_encode(args):
             "data_bytes": list(data),
             "dlc": len(data),
         }
-        if node_id != 0:
+        if is_broadcast:
+            result["broadcast"] = True
+        elif node_id != 0:
             result["node_id"] = node_id
         print(json.dumps(result, indent=2))
     elif args.cansend:
@@ -283,7 +348,9 @@ def cmd_encode(args):
             offset += max_frame_len
     else:
         print(f"ID:   0x{msg_id:03X}")
-        if node_id != 0:
+        if is_broadcast:
+            print(f"Mode: broadcast")
+        elif node_id != 0:
             print(f"Node: {node_id}")
         print(f"Data: [{hex_str}]")
         print(f"DLC:  {len(data)}")
@@ -399,6 +466,10 @@ def main():
                        help="Signal values as name=value pairs")
     p_enc.add_argument("-n", "--node", type=int,
                        help="Node ID for multi-node messages (actual_id = base_id + node_id * offset)")
+    p_enc.add_argument("-b", "--broadcast", action="store_true",
+                       help="Broadcast mode: concatenate all nodes into one frame. "
+                            "Array values (e.g. position=[1.5,2.0,...]) are distributed per-node; "
+                            "scalar values are shared across all nodes.")
     p_enc.add_argument("--json", action="store_true", help="Output as JSON")
     p_enc.add_argument("--cansend", action="store_true",
                        help="Output in cansend format")

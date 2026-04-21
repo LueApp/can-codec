@@ -8,6 +8,9 @@
   let sysId = $state(1);
   let compId = $state(1);
   let signalValues = $state<Record<string, string>>({});
+  let broadcastMode = $state(false);
+  let broadcastValues = $state<Record<number, Record<string, string>>>({});
+  let activeNode = $state(1);
   let error = $state<string | null>(null);
   let copied = $state('');
 
@@ -21,10 +24,14 @@
   const msgDef = $derived(selectedMsg ? codecStore.codec.getMessageByName(selectedMsg) : null);
   const editableSignals = $derived(msgDef?.signals.filter((s) => !s.constant) ?? []);
   const signalGroups = $derived(groupArraySignalDefs(editableSignals));
+  const hasBroadcast = $derived(msgDef !== null && msgDef.broadcast_node_id !== null && msgDef.node_count > 1);
+  const nodeRange = $derived(msgDef ? Array.from({ length: msgDef.node_count }, (_, i) => msgDef.node_id_start + i) : []);
 
   function onDeviceChange() {
     selectedMsg = '';
     signalValues = {};
+    broadcastMode = false;
+    broadcastValues = {};
     canResult = null;
     mavResult = null;
     error = null;
@@ -32,43 +39,75 @@
 
   function onMsgChange() {
     signalValues = {};
+    broadcastMode = false;
+    broadcastValues = {};
     canResult = null;
     mavResult = null;
     error = null;
     if (msgDef) {
+      const defaults: Record<string, string> = {};
       for (const sig of msgDef.signals) {
         if (!sig.constant && sig.default_value !== null)
-          signalValues[sig.name] = String(sig.default_value);
+          defaults[sig.name] = String(sig.default_value);
+      }
+      signalValues = { ...defaults };
+      // Initialize broadcast values for each node
+      if (msgDef.node_count > 1) {
+        const bv: Record<number, Record<string, string>> = {};
+        for (let i = 0; i < msgDef.node_count; i++) {
+          bv[msgDef.node_id_start + i] = { ...defaults };
+        }
+        broadcastValues = bv;
+        activeNode = msgDef.node_id_start;
       }
     }
+  }
+
+  function copyToAllNodes() {
+    if (!msgDef) return;
+    const src = broadcastValues[activeNode] ?? {};
+    const bv: Record<number, Record<string, string>> = {};
+    for (const nid of nodeRange) {
+      bv[nid] = { ...src };
+    }
+    broadcastValues = bv;
+  }
+
+  function parseValues(raw: Record<string, string>): Record<string, string | number> {
+    const values: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v === '') continue;
+      const group = signalGroups.find(g => g.key === k);
+      if (group && group.items.length > 1) {
+        const trimmed = v.trim().replace(/^\[|\]$/g, '');
+        const parts = trimmed.split(',').map(s => s.trim());
+        for (let i = 0; i < group.items.length; i++) {
+          const val = parts[i] ?? '';
+          if (val === '') continue;
+          const num = Number(val);
+          values[group.items[i].name] = isNaN(num) ? val : num;
+        }
+      } else {
+        const num = Number(v);
+        values[k] = isNaN(num) ? v : num;
+      }
+    }
+    return values;
   }
 
   function doEncode() {
     error = null; canResult = null; mavResult = null;
     try {
-      const values: Record<string, string | number> = {};
-      for (const [k, v] of Object.entries(signalValues)) {
-        if (v === '') continue;
-        // Expand array input "[v0, v1, ...]" back to name_0, name_1, ...
-        const group = signalGroups.find(g => g.key === k);
-        if (group && group.items.length > 1) {
-          const trimmed = v.trim().replace(/^\[|\]$/g, '');
-          const parts = trimmed.split(',').map(s => s.trim());
-          for (let i = 0; i < group.items.length; i++) {
-            const val = parts[i] ?? '';
-            if (val === '') continue;
-            const num = Number(val);
-            values[group.items[i].name] = isNaN(num) ? val : num;
-          }
-        } else {
-          const num = Number(v);
-          values[k] = isNaN(num) ? v : num;
+      if (broadcastMode && hasBroadcast && msgDef) {
+        const perNodeValues = new Map<number, Record<string, string | number | Record<string, boolean>>>();
+        for (const nid of nodeRange) {
+          perNodeValues.set(nid, parseValues(broadcastValues[nid] ?? {}));
         }
-      }
-      if (isMavlink) {
-        mavResult = codecStore.codec.encodeMavlink(selectedMsg, values, sysId, compId);
+        canResult = codecStore.codec.encodeBroadcast(selectedMsg, perNodeValues);
+      } else if (isMavlink) {
+        mavResult = codecStore.codec.encodeMavlink(selectedMsg, parseValues(signalValues), sysId, compId);
       } else {
-        canResult = codecStore.codec.encode(selectedMsg, values, nodeId);
+        canResult = codecStore.codec.encode(selectedMsg, parseValues(signalValues), nodeId);
       }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -135,6 +174,9 @@
               <input id="sys-id" type="number" bind:value={sysId} min="0" max="255" placeholder="sys_id" />
               <input type="number" bind:value={compId} min="0" max="255" placeholder="comp_id" />
             </div>
+          {:else if broadcastMode}
+            <label>Broadcast</label>
+            <div style="font-size:13px; color:var(--text-dim); padding:8px 0;">All {msgDef?.node_count} nodes in one frame</div>
           {:else}
             <label for="node-id">Node ID (multi-node)</label>
             <input id="node-id" type="number" bind:value={nodeId} min="0" />
@@ -149,35 +191,91 @@
       </div>
     {/if}
 
-    {#if editableSignals.length > 0}
-      <div style="margin-top: 20px;">
-        <span style="margin-bottom: 12px; display: block; font-size: 13px; font-weight: 500; color: var(--text-dim);">Signal Values</span>
-        <div class="signal-inputs">
-          {#each signalGroups as group}
-            <div class="form-group" style="margin-bottom: 0;">
-              <label for="sig-{group.key}">
-                {group.base}{#if group.items[0].unit}<span style="color:var(--text-dim);font-weight:400"> ({group.items[0].unit})</span>{/if}
-                {#if group.items.length > 1}<span style="color:var(--text-dim);font-weight:400;font-size:11px"> [{group.items.length}]</span>{/if}
-              </label>
-              {#if group.items.length === 1 && Object.keys(group.items[0].enum_map).length > 0}
-                <select id="sig-{group.key}" bind:value={signalValues[group.key]}>
-                  <option value="">-- select --</option>
-                  {#each Object.entries(group.items[0].enum_map) as [k, v]}
-                    <option value={v}>{v} ({k})</option>
-                  {/each}
-                </select>
-              {:else}
-                <input id="sig-{group.key}" bind:value={signalValues[group.key]}
-                  placeholder={group.items.length > 1 ? `[${group.items.map((_, i) => i).join(', ')}]` : (group.items[0].default_value !== null ? `default: ${group.items[0].default_value}` : '')}
-                  onkeydown={(e) => e.key === 'Enter' && doEncode()} />
-              {/if}
-              {#if group.items[0].description}
-                <div style="font-size:11px;color:var(--text-dim);margin-top:3px">{group.items[0].description}</div>
-              {/if}
-            </div>
-          {/each}
-        </div>
+    {#if hasBroadcast}
+      <div style="margin-top: 16px; display: flex; align-items: center; gap: 12px;">
+        <label class="toggle" style="cursor:pointer;">
+          <input type="checkbox" bind:checked={broadcastMode} />
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-size:13px;">Broadcast mode</span>
+        <span style="font-size:12px;color:var(--text-dim)">
+          Combine all {msgDef?.node_count} nodes into one CAN FD frame
+        </span>
       </div>
+    {/if}
+
+    {#if editableSignals.length > 0}
+      {#if broadcastMode && hasBroadcast}
+        <!-- Broadcast: per-node tabs -->
+        <div style="margin-top: 20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            {#each nodeRange as nid}
+              <button
+                class="node-tab"
+                class:active={activeNode === nid}
+                onclick={() => activeNode = nid}
+              >Node {nid}</button>
+            {/each}
+            <button class="copy-btn" style="margin-left:auto;font-size:11px;" onclick={copyToAllNodes}>
+              Copy to all nodes
+            </button>
+          </div>
+          <div class="signal-inputs">
+            {#each signalGroups as group}
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="bsig-{activeNode}-{group.key}">
+                  {group.base}{#if group.items[0].unit}<span style="color:var(--text-dim);font-weight:400"> ({group.items[0].unit})</span>{/if}
+                </label>
+                {#if group.items.length === 1 && Object.keys(group.items[0].enum_map).length > 0}
+                  <select id="bsig-{activeNode}-{group.key}" bind:value={broadcastValues[activeNode][group.key]}>
+                    <option value="">-- select --</option>
+                    {#each Object.entries(group.items[0].enum_map) as [k, v]}
+                      <option value={v}>{v} ({k})</option>
+                    {/each}
+                  </select>
+                {:else}
+                  <input id="bsig-{activeNode}-{group.key}" bind:value={broadcastValues[activeNode][group.key]}
+                    placeholder={group.items[0].default_value !== null ? `default: ${group.items[0].default_value}` : ''}
+                    onkeydown={(e) => e.key === 'Enter' && doEncode()} />
+                {/if}
+                {#if group.items[0].description}
+                  <div style="font-size:11px;color:var(--text-dim);margin-top:3px">{group.items[0].description}</div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <!-- Normal single-node signal inputs -->
+        <div style="margin-top: 20px;">
+          <span style="margin-bottom: 12px; display: block; font-size: 13px; font-weight: 500; color: var(--text-dim);">Signal Values</span>
+          <div class="signal-inputs">
+            {#each signalGroups as group}
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="sig-{group.key}">
+                  {group.base}{#if group.items[0].unit}<span style="color:var(--text-dim);font-weight:400"> ({group.items[0].unit})</span>{/if}
+                  {#if group.items.length > 1}<span style="color:var(--text-dim);font-weight:400;font-size:11px"> [{group.items.length}]</span>{/if}
+                </label>
+                {#if group.items.length === 1 && Object.keys(group.items[0].enum_map).length > 0}
+                  <select id="sig-{group.key}" bind:value={signalValues[group.key]}>
+                    <option value="">-- select --</option>
+                    {#each Object.entries(group.items[0].enum_map) as [k, v]}
+                      <option value={v}>{v} ({k})</option>
+                    {/each}
+                  </select>
+                {:else}
+                  <input id="sig-{group.key}" bind:value={signalValues[group.key]}
+                    placeholder={group.items.length > 1 ? `[${group.items.map((_, i) => i).join(', ')}]` : (group.items[0].default_value !== null ? `default: ${group.items[0].default_value}` : '')}
+                    onkeydown={(e) => e.key === 'Enter' && doEncode()} />
+                {/if}
+                {#if group.items[0].description}
+                  <div style="font-size:11px;color:var(--text-dim);margin-top:3px">{group.items[0].description}</div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
     {/if}
 
     <div style="margin-top: 20px;">

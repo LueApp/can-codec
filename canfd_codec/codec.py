@@ -66,6 +66,7 @@ class Message:
     node_id_start: int = 0  # First node_id (0 = 0-indexed, 1 = 1-indexed)
     signals: list[Signal] = field(default_factory=list)
     crc_extra: int | None = None  # MAVLink CRC_EXTRA seed (computed from XML definition)
+    broadcast_node_id: int | None = None  # Special node_id for broadcast (e.g., 0x7F)
 
     def get_id_for_node(self, node_id: int = 0) -> int:
         """Calculate actual CAN ID for a given node_id."""
@@ -78,6 +79,7 @@ class Message:
         """
         Given a CAN ID, return the node_id if it matches this message.
         Returns None if the ID doesn't match any valid node.
+        For broadcast IDs, returns broadcast_node_id.
         """
         if self.node_count <= 1:
             # Single fixed ID
@@ -92,6 +94,9 @@ class Message:
         if offset % self.node_id_offset != 0:
             return None
         node_id = offset // self.node_id_offset
+        # Check broadcast address
+        if self.broadcast_node_id is not None and node_id == self.broadcast_node_id:
+            return self.broadcast_node_id
         max_node_id = self.node_id_start + self.node_count - 1
         if self.node_id_start <= node_id <= max_node_id:
             return node_id
@@ -190,6 +195,11 @@ def _parse_message(raw: dict) -> Message:
     if isinstance(msg_id, str):
         msg_id = int(msg_id, 0)  # handles "0x101"
 
+    broadcast_raw = raw.get("broadcast_node_id")
+    broadcast_node_id = None
+    if broadcast_raw is not None:
+        broadcast_node_id = int(str(broadcast_raw), 0) if isinstance(broadcast_raw, str) else int(broadcast_raw)
+
     msg = Message(
         id=msg_id,
         name=raw["name"],
@@ -199,6 +209,7 @@ def _parse_message(raw: dict) -> Message:
         node_id_offset=raw.get("node_id_offset", 1),
         node_count=raw.get("node_count", 1),
         node_id_start=raw.get("node_id_start", 0),
+        broadcast_node_id=broadcast_node_id,
     )
     for sig_raw in raw.get("signals", []):
         msg.signals.append(_parse_signal(sig_raw))
@@ -442,15 +453,29 @@ class DecodedMessage:
     raw_data: bytes
     node_id: int = 0  # Node ID (0 for single-node messages)
     base_id: int | None = None  # Base ID from config (for multi-node)
+    is_broadcast: bool = False
+    sub_messages: list["DecodedMessage"] | None = None  # Per-node messages for broadcast
 
     def to_dict(self) -> dict:
         """Return a flat dict of signal_name -> display_value."""
+        if self.is_broadcast and self.sub_messages:
+            result: dict = {}
+            for sub in self.sub_messages:
+                node_key = f"node_{sub.node_id}"
+                result[node_key] = {s.name: s.display_value() for s in sub.signals}
+            return result
         result = {s.name: s.display_value() for s in self.signals}
         if self.node_id != 0:
             result["_node_id"] = self.node_id
         return result
 
     def __str__(self) -> str:
+        if self.is_broadcast and self.sub_messages:
+            lines = [f"[0x{self.msg_id:03X}] {self.name} (broadcast, {len(self.sub_messages)} nodes): {self.description}"]
+            for sub in self.sub_messages:
+                sig_parts = [f"{s.name}={s.display_value()}" for s in sub.signals]
+                lines.append(f"  Node {sub.node_id}: {', '.join(sig_parts)}")
+            return "\n".join(lines)
         if self.node_id != 0:
             lines = [f"[0x{self.msg_id:03X}] {self.name} (node {self.node_id}): {self.description}"]
         else:
@@ -561,6 +586,60 @@ def encode(msg_def: Message, values: dict[str, Any]) -> bytes:
     return bytes(data)
 
 
+def encode_broadcast(msg_def: Message, per_node_values: dict[int, dict[str, Any]]) -> bytes:
+    """
+    Encode a broadcast frame by concatenating per-node payloads.
+
+    Args:
+        msg_def: Message definition (must have broadcast_node_id set)
+        per_node_values: dict mapping node_id -> signal values dict
+
+    Returns:
+        Concatenated payload bytes (node_count * single_node_bytes)
+    """
+    segments = []
+    for node_id in range(msg_def.node_id_start, msg_def.node_id_start + msg_def.node_count):
+        values = per_node_values.get(node_id, {})
+        segments.append(encode(msg_def, values))
+    return b"".join(segments)
+
+
+def decode_broadcast(msg_def: Message, data: bytes, actual_id: int) -> DecodedMessage:
+    """
+    Decode a broadcast frame by splitting into per-node segments.
+
+    Args:
+        msg_def: Message definition
+        data: Full broadcast payload (node_count * single_node_bytes)
+        actual_id: The broadcast CAN ID
+
+    Returns:
+        DecodedMessage with is_broadcast=True and sub_messages populated.
+    """
+    byte_count = dlc_to_bytes(msg_def.dlc)
+    sub_messages = []
+    for i in range(msg_def.node_count):
+        node_id = msg_def.node_id_start + i
+        segment = data[i * byte_count: (i + 1) * byte_count]
+        # Pad if segment is shorter than expected
+        if len(segment) < byte_count:
+            segment = segment + b"\x00" * (byte_count - len(segment))
+        sub = decode(msg_def, segment, actual_id=msg_def.get_id_for_node(node_id), node_id=node_id)
+        sub_messages.append(sub)
+
+    return DecodedMessage(
+        msg_id=actual_id,
+        name=msg_def.name,
+        description=msg_def.description,
+        signals=[],
+        raw_data=data,
+        node_id=msg_def.broadcast_node_id or 0,
+        base_id=msg_def.id,
+        is_broadcast=True,
+        sub_messages=sub_messages,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Multi-device codec manager
 # ---------------------------------------------------------------------------
@@ -661,19 +740,25 @@ class Codec:
         if result is None:
             return None
         _, msg_def, node_id = result
+        # Broadcast frame detection
+        if msg_def.broadcast_node_id is not None and node_id == msg_def.broadcast_node_id:
+            return decode_broadcast(msg_def, data, actual_id=msg_id)
         # Pad data to expected DLC if shorter (e.g. MAVLink v2 zero-trimmed payloads)
         if len(data) < msg_def.dlc:
             data = data + b"\x00" * (msg_def.dlc - len(data))
         return decode(msg_def, data, actual_id=msg_id, node_id=node_id)
 
-    def encode(self, msg_name: str, values: dict[str, Any], node_id: int = 0) -> tuple[int, bytes]:
+    def encode(self, msg_name: str, values: dict[str, Any], node_id: int = 0,
+               broadcast: bool = False) -> tuple[int, bytes]:
         """
         Encode a message by name. Returns (can_id, data_bytes).
 
         Args:
             msg_name: Message name from config
-            values: Dict of signal_name -> value
-            node_id: Node ID for multi-node messages (default 0)
+            values: Dict of signal_name -> value. For broadcast mode, values
+                    that are lists are distributed per-node; scalars are shared.
+            node_id: Node ID for multi-node messages (default 0, ignored if broadcast)
+            broadcast: If True, encode a broadcast frame (all nodes concatenated)
 
         Raises KeyError if message name is unknown.
         """
@@ -684,6 +769,26 @@ class Codec:
                 f"Available: {sorted(self._by_name.keys())}"
             )
         _, msg_def = entry
+
+        if broadcast:
+            if msg_def.broadcast_node_id is None:
+                raise ValueError(f"Message '{msg_name}' does not support broadcast mode")
+            # Build per-node values from mixed scalar/list input
+            per_node: dict[int, dict[str, Any]] = {}
+            for i in range(msg_def.node_count):
+                nid = msg_def.node_id_start + i
+                node_vals: dict[str, Any] = {}
+                for k, v in values.items():
+                    if isinstance(v, list):
+                        if i < len(v):
+                            node_vals[k] = v[i]
+                    else:
+                        node_vals[k] = v
+                per_node[nid] = node_vals
+            data = encode_broadcast(msg_def, per_node)
+            actual_id = msg_def.get_id_for_node(msg_def.broadcast_node_id)
+            return actual_id, data
+
         data = encode(msg_def, values)
         actual_id = msg_def.get_id_for_node(node_id)
         return actual_id, data
@@ -711,6 +816,9 @@ class Codec:
                     max_id = msg.get_id_for_node(max_node_id)
                     info["id_range"] = f"0x{msg.id:03X}-0x{max_id:03X}"
                     info["node_range"] = f"{msg.node_id_start}-{max_node_id}"
+                    if msg.broadcast_node_id is not None:
+                        bcast_id = msg.get_id_for_node(msg.broadcast_node_id)
+                        info["broadcast_id"] = f"0x{bcast_id:03X}"
                 result.append(info)
         return result
 
@@ -730,6 +838,10 @@ class Codec:
             max_node_id = msg.node_id_start + msg.node_count - 1
             max_id = msg.get_id_for_node(max_node_id)
             lines.append(f"Nodes:   {msg.node_id_start}-{max_node_id} (IDs 0x{msg.id:03X}-0x{max_id:03X}, offset {msg.node_id_offset})")
+            if msg.broadcast_node_id is not None:
+                bcast_id = msg.get_id_for_node(msg.broadcast_node_id)
+                bcast_dlc = dlc_to_bytes(msg.dlc) * msg.node_count
+                lines.append(f"Bcast:   0x{bcast_id:03X} (node_id=0x{msg.broadcast_node_id:02X}, {bcast_dlc} bytes)")
         lines.extend([
             f"Desc:    {msg.description}",
             "",

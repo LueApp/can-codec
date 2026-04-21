@@ -697,3 +697,25 @@ tr:hover td {
   transform: translateX(16px);
   background: var(--accent);
 }
+
+/* Node tabs for broadcast mode */
+.node-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.node-tab:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.node-tab.active {
+  background: rgba(88, 166, 255, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}

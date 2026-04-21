@@ -25,6 +25,7 @@ export interface Message {
   node_id_offset: number;
   node_count: number;
   node_id_start: number;
+  broadcast_node_id: number | null;
   signals: Signal[];
   crc_extra?: number;
 }
@@ -56,6 +57,8 @@ export interface DecodedMessage {
   signals: DecodedSignal[];
   raw_data: number[];
   node_id: number;
+  is_broadcast?: boolean;
+  sub_messages?: DecodedMessage[];
 }
 
 export interface MavlinkInfo {
@@ -82,4 +85,5 @@ export interface MessageInfo {
   node_id_start?: number;
   id_range?: string;
   node_range?: string;
+  broadcast_id?: string;
 }

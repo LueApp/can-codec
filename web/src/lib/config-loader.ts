@@ -80,6 +80,12 @@ function parseMessage(raw: Record<string, unknown>): Message {
     }
   }
 
+  let broadcastNodeId: number | null = null;
+  const broadcastRaw = raw['broadcast_node_id'];
+  if (broadcastRaw !== undefined && broadcastRaw !== null) {
+    broadcastNodeId = typeof broadcastRaw === 'string' ? parseInt(broadcastRaw, 0) : Number(broadcastRaw);
+  }
+
   return {
     id: msgId as number,
     name: raw['name'] as string,
@@ -89,6 +95,7 @@ function parseMessage(raw: Record<string, unknown>): Message {
     node_id_offset: (raw['node_id_offset'] as number) ?? 1,
     node_count: (raw['node_count'] as number) ?? 1,
     node_id_start: (raw['node_id_start'] as number) ?? 0,
+    broadcast_node_id: broadcastNodeId,
     signals,
   };
 }
@@ -234,6 +241,7 @@ export function parseMavlinkXml(xmlText: string, filename: string = 'unknown'): 
       node_id_offset: 1,
       node_count: 1,
       node_id_start: 0,
+      broadcast_node_id: null,
       signals,
       crc_extra,
     });

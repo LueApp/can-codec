@@ -467,8 +467,60 @@ function getNodeForId(msg: Message, canId: number): number | null {
   if (msg.node_id_offset === 0) return offset === 0 ? msg.node_id_start : null;
   if (offset % msg.node_id_offset !== 0) return null;
   const nodeId = Math.floor(offset / msg.node_id_offset);
+  // Check broadcast address
+  if (msg.broadcast_node_id !== null && nodeId === msg.broadcast_node_id) return msg.broadcast_node_id;
   const maxNodeId = msg.node_id_start + msg.node_count - 1;
   return (nodeId >= msg.node_id_start && nodeId <= maxNodeId) ? nodeId : null;
+}
+
+// ---------------------------------------------------------------------------
+// Broadcast encode / decode
+// ---------------------------------------------------------------------------
+
+function encodeBroadcastFrame(
+  msgDef: Message,
+  perNodeValues: Map<number, Record<string, string | number | Record<string, boolean>>>
+): Uint8Array {
+  const byteCount = dlcToBytes(msgDef.dlc);
+  const segments: Uint8Array[] = [];
+  for (let i = 0; i < msgDef.node_count; i++) {
+    const nodeId = msgDef.node_id_start + i;
+    const values = perNodeValues.get(nodeId) ?? {};
+    segments.push(encode(msgDef, values));
+  }
+  const result = new Uint8Array(byteCount * msgDef.node_count);
+  let offset = 0;
+  for (const seg of segments) {
+    result.set(seg, offset);
+    offset += byteCount;
+  }
+  return result;
+}
+
+function decodeBroadcastFrame(msgDef: Message, data: Uint8Array, actualId: number): DecodedMessage {
+  const byteCount = dlcToBytes(msgDef.dlc);
+  const subMessages: DecodedMessage[] = [];
+  for (let i = 0; i < msgDef.node_count; i++) {
+    const nodeId = msgDef.node_id_start + i;
+    let segment = data.slice(i * byteCount, (i + 1) * byteCount);
+    if (segment.length < byteCount) {
+      const padded = new Uint8Array(byteCount);
+      padded.set(segment);
+      segment = padded;
+    }
+    const sub = decode(msgDef, segment, getIdForNode(msgDef, nodeId), nodeId);
+    subMessages.push(sub);
+  }
+  return {
+    msg_id: actualId,
+    name: msgDef.name,
+    description: msgDef.description,
+    signals: [],
+    raw_data: Array.from(data),
+    node_id: msgDef.broadcast_node_id ?? 0,
+    is_broadcast: true,
+    sub_messages: subMessages,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +581,10 @@ export class Codec {
   decode(msgId: number, data: Uint8Array): DecodedMessage | null {
     const result = this.findMessageById(msgId);
     if (!result) return null;
+    // Broadcast frame detection
+    if (result.message.broadcast_node_id !== null && result.nodeId === result.message.broadcast_node_id) {
+      return decodeBroadcastFrame(result.message, data, msgId);
+    }
     let paddedData = data;
     if (data.length < result.message.dlc) {
       paddedData = new Uint8Array(result.message.dlc);
@@ -587,6 +643,23 @@ export class Codec {
   }
 
   /**
+   * Encode a broadcast frame with per-node values.
+   * Returns { canId, data } where data is the concatenated payload of all nodes.
+   */
+  encodeBroadcast(
+    msgName: string,
+    perNodeValues: Map<number, Record<string, string | number | Record<string, boolean>>>
+  ): { canId: number; data: Uint8Array } {
+    const entry = this.byName.get(msgName);
+    if (!entry) throw new Error(`Unknown message '${msgName}'.`);
+    const msg = entry.message;
+    if (msg.broadcast_node_id === null) throw new Error(`Message '${msgName}' does not support broadcast mode.`);
+    const data = encodeBroadcastFrame(msg, perNodeValues);
+    const canId = getIdForNode(msg, msg.broadcast_node_id);
+    return { canId, data };
+  }
+
+  /**
    * Encode a MAVLink message: builds the MAVLink v2 frame and splits into CAN FD frames.
    * Returns cansend-format strings ready for use.
    */
@@ -632,6 +705,10 @@ export class Codec {
           const maxId = getIdForNode(msg, maxNodeId);
           info.id_range = `0x${msg.id.toString(16).toUpperCase().padStart(3, '0')}-0x${maxId.toString(16).toUpperCase().padStart(3, '0')}`;
           info.node_range = `${msg.node_id_start}-${maxNodeId}`;
+          if (msg.broadcast_node_id !== null) {
+            const bcastId = getIdForNode(msg, msg.broadcast_node_id);
+            info.broadcast_id = `0x${bcastId.toString(16).toUpperCase().padStart(3, '0')}`;
+          }
         }
         result.push(info);
       }

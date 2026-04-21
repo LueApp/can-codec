@@ -140,6 +140,7 @@ messages:
     node_count: 4          # Number of nodes sharing this message format (default: 1)
     node_id_offset: 1      # ID offset per node (default: 1)
     node_id_start: 0       # First node_id (default: 0)
+    broadcast_node_id: 0x7F  # Special node_id for broadcast (all nodes in one frame)
     signals:
       - name: "signal_name"
         start_bit: 0       # Bit offset in payload
@@ -223,6 +224,37 @@ canfd-codec -c ./configs encode PositionControl target_position=1.5 --node 1
 # Decode automatically detects node from ID
 canfd-codec -c ./configs decode 0x482 "..."
 # => [0x482] PositionControl (node 2): ...
+```
+
+### Broadcast Mode
+
+When `broadcast_node_id` is set on a multi-node message, a single CAN FD frame can address all nodes at once. The payload is the concatenation of each node's individual payload in node order.
+
+```yaml
+messages:
+  - id: 0x480
+    name: "PositionControl"
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    broadcast_node_id: 0x7F   # All lower 7 bits set = broadcast
+```
+
+Broadcast CAN ID = `base_id + broadcast_node_id * node_id_offset` (e.g., 0x480 + 0x7F = 0x4FF).
+Broadcast payload size = `single_node_bytes * node_count` (e.g., 8 * 7 = 56 bytes).
+
+CLI usage:
+```bash
+# Encode broadcast: array values distributed per-node, scalars shared
+canfd-codec -c ./configs encode MITControl --broadcast \
+  'position=[1.5,2.0,2.5,3.0,3.5,4.0,4.5]' velocity=0 kp=1 kd=0.01 ff=0
+# => ID: 0x47F, 56 bytes
+
+# Decode: broadcast frames are detected automatically
+canfd-codec -c ./configs decode 0x47F "..."
+# => [0x47F] MITControl (broadcast, 7 nodes):
+#      Node 1: position=1.500 rad, ...
+#      Node 2: position=2.000 rad, ...
 ```
 
 ### MAVLink XML Support
