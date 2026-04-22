@@ -59,7 +59,7 @@ Usage:
 import argparse, asyncio, base64, hashlib, json, re, signal
 import struct, subprocess, threading, time
 
-WS_MAGIC = b"258EAFA5-E914-47DA-95CA-5AB5E17A1265"
+WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 CANDUMP_RE = re.compile(
     r"^\\s*\\((\\d+\\.\\d+)\\)\\s+(\\S+)\\s+([0-9A-Fa-f]+)\\s+\\[(\\d+)\\]\\s+(.+)$"
 )
@@ -112,50 +112,64 @@ class CANWebSocketServer:
 
     async def _handle(self, reader, writer):
         remote = writer.get_extra_info("peername")
+        reason = "unknown"
         try:
             req = await asyncio.wait_for(reader.readuntil(b"\\r\\n\\r\\n"), timeout=10)
         except Exception:
             writer.close(); return
+        req_text = req.decode(errors="replace")
+        lines = req_text.split("\\r\\n")
+        method = lines[0].split(" ")[0] if lines else ""
         headers = {}
-        for line in req.decode(errors="replace").split("\\r\\n")[1:]:
+        for line in lines[1:]:
             if ":" in line:
                 k, v = line.split(":", 1)
                 headers[k.strip().lower()] = v.strip()
+        origin = headers.get("origin", "*")
+        if method == "OPTIONS":
+            resp = f"HTTP/1.1 204 No Content\\r\\nAccess-Control-Allow-Origin: {origin}\\r\\nAccess-Control-Allow-Methods: GET, OPTIONS\\r\\nAccess-Control-Allow-Headers: *\\r\\nAccess-Control-Allow-Private-Network: true\\r\\nAccess-Control-Max-Age: 86400\\r\\n\\r\\n"
+            writer.write(resp.encode())
+            await writer.drain(); writer.close(); return
         key = headers.get("sec-websocket-key")
         if not key:
             writer.write(b"HTTP/1.1 400 Bad Request\\r\\n\\r\\n")
             await writer.drain(); writer.close(); return
-        writer.write(f"HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Accept: {ws_accept(key)}\\r\\n\\r\\n".encode())
+        accept = ws_accept(key)
+        resp = f"HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Accept: {accept}\\r\\nAccess-Control-Allow-Origin: {origin}\\r\\nAccess-Control-Allow-Private-Network: true\\r\\n\\r\\n"
+        writer.write(resp.encode())
         await writer.drain()
         with self._lock: self._clients.add(writer)
         print(f"  + Client {remote} ({len(self._clients)} connected)")
         try:
             writer.write(ws_frame(json.dumps({"type":"status","bus":self.bus,"fd":self.fd}).encode()))
             await writer.drain()
-        except Exception: pass
+        except Exception as e:
+            reason = f"status write failed: {e}"
         buf = b""
         try:
             while self._running:
                 try: chunk = await asyncio.wait_for(reader.read(4096), timeout=30)
                 except asyncio.TimeoutError:
                     try: writer.write(ws_frame(b"", opcode=0x9)); await writer.drain()
-                    except Exception: break
+                    except Exception: reason = "ping failed"; break
                     continue
-                if not chunk: break
+                if not chunk: reason = "client closed (EOF)"; break
                 buf += chunk
                 while True:
                     r = ws_read(buf)
                     if not r: break
                     op, payload, consumed = r; buf = buf[consumed:]
                     if op == 0x8:
+                        reason = "close frame"
                         writer.write(ws_frame(payload[:2] if payload else b"", opcode=0x8))
                         await writer.drain(); return
                     elif op == 0x9:
                         writer.write(ws_frame(payload, opcode=0xA)); await writer.drain()
-        except (ConnectionError, OSError): pass
+        except (ConnectionError, OSError) as e: reason = f"connection error: {e}"
+        except Exception as e: reason = f"unexpected: {e}"
         finally:
             with self._lock: self._clients.discard(writer)
-            print(f"  - Client {remote} ({len(self._clients)} connected)")
+            print(f"  - Client {remote} ({len(self._clients)} connected) reason: {reason}")
             try: writer.close()
             except Exception: pass
 

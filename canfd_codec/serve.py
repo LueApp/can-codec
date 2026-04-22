@@ -22,7 +22,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-_WS_MAGIC = b"258EAFA5-E914-47DA-95CA-5AB5E17A1265"
+_WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 _CANDUMP_RE = re.compile(
     r"^\s*\((\d+\.\d+)\)\s+(\S+)\s+([0-9A-Fa-f]+)\s+\[(\d+)\]\s+(.+)$"
@@ -135,6 +135,7 @@ class CANWebSocketServer:
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
         remote = writer.get_extra_info("peername")
+        disconnect_reason = "unknown"
 
         try:
             request = await asyncio.wait_for(
@@ -144,11 +145,31 @@ class CANWebSocketServer:
             writer.close()
             return
 
+        req_text = request.decode(errors="replace")
+        lines = req_text.split("\r\n")
+        method = lines[0].split(" ")[0] if lines else ""
         headers = {}
-        for line in request.decode(errors="replace").split("\r\n")[1:]:
+        for line in lines[1:]:
             if ":" in line:
                 k, v = line.split(":", 1)
                 headers[k.strip().lower()] = v.strip()
+
+        origin = headers.get("origin", "*")
+
+        if method == "OPTIONS":
+            response = (
+                "HTTP/1.1 204 No Content\r\n"
+                f"Access-Control-Allow-Origin: {origin}\r\n"
+                "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+                "Access-Control-Allow-Headers: *\r\n"
+                "Access-Control-Allow-Private-Network: true\r\n"
+                "Access-Control-Max-Age: 86400\r\n"
+                "\r\n"
+            )
+            writer.write(response.encode())
+            await writer.drain()
+            writer.close()
+            return
 
         ws_key = headers.get("sec-websocket-key")
         if not ws_key:
@@ -163,6 +184,8 @@ class CANWebSocketServer:
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
             f"Sec-WebSocket-Accept: {accept}\r\n"
+            f"Access-Control-Allow-Origin: {origin}\r\n"
+            "Access-Control-Allow-Private-Network: true\r\n"
             "\r\n"
         )
         writer.write(response.encode())
@@ -189,9 +212,11 @@ class CANWebSocketServer:
                         writer.write(_ws_build_frame(b"", opcode=0x9))
                         await writer.drain()
                     except Exception:
+                        disconnect_reason = "ping write failed"
                         break
                     continue
                 if not chunk:
+                    disconnect_reason = "EOF (client closed connection)"
                     break
                 buf += chunk
                 while True:
@@ -201,24 +226,33 @@ class CANWebSocketServer:
                     opcode, payload, consumed = result
                     buf = buf[consumed:]
                     if opcode == 0x8:
-                        writer.write(
-                            _ws_build_frame(payload[:2] if payload else b"", opcode=0x8)
-                        )
-                        await writer.drain()
-                        writer.close()
+                        disconnect_reason = "close frame received"
+                        try:
+                            writer.write(
+                                _ws_build_frame(
+                                    payload[:2] if payload else b"", opcode=0x8
+                                )
+                            )
+                            await writer.drain()
+                        except Exception:
+                            pass
                         return
                     elif opcode == 0x9:
                         writer.write(_ws_build_frame(payload, opcode=0xA))
                         await writer.drain()
                     elif opcode == 0xA:
                         pass
-        except (ConnectionError, OSError):
-            pass
+        except (ConnectionError, OSError) as e:
+            disconnect_reason = f"connection error: {e}"
+        except Exception as e:
+            disconnect_reason = f"unexpected error: {e}"
         finally:
             with self._clients_lock:
                 self._clients.discard(writer)
             print(
-                f"  Client disconnected: {remote} ({len(self._clients)} total)"
+                f"  Client disconnected: {remote}"
+                f" ({len(self._clients)} total)"
+                f" reason: {disconnect_reason}"
             )
             try:
                 writer.close()

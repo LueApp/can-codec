@@ -49,7 +49,21 @@ export class WebSocketClient {
     this.frameCount = 0;
     this.busInfo = null;
 
-    const ws = new WebSocket(url);
+    this._connectAsync(url);
+  }
+
+  private async _connectAsync(url: string): Promise<void> {
+    let connectUrl = url;
+    try {
+      const target = new URL(url.replace(/^ws/, 'http'));
+      if (typeof window !== 'undefined' && target.hostname !== window.location.hostname) {
+        const resp = await fetch('/__ws_proxy');
+        const { port } = await resp.json();
+        connectUrl = `ws://${window.location.hostname}:${port}/?target=${encodeURIComponent(target.host)}`;
+      }
+    } catch { /* use original url */ }
+
+    const ws = new WebSocket(connectUrl);
 
     ws.onopen = () => {
       this.status = 'connected';
@@ -75,12 +89,14 @@ export class WebSocketClient {
       }
     };
 
-    ws.onerror = () => {
+    ws.onerror = (e) => {
+      console.error('[WS] error:', e);
       this.status = 'error';
       this.error = 'Connection failed';
     };
 
-    ws.onclose = () => {
+    ws.onclose = (e) => {
+      console.warn(`[WS] close: code=${e.code} reason="${e.reason}" clean=${e.wasClean}`);
       if (this.status !== 'error') {
         this.status = 'disconnected';
       }
