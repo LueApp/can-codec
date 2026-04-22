@@ -413,6 +413,7 @@ def cmd_serve(args):
         host=args.host,
         port=args.port,
         filter_ids=filter_ids,
+        source_url=args.source,
     )
 
     import asyncio
@@ -518,6 +519,9 @@ def main():
                        help="WebSocket server port (default: 8765)")
     p_srv.add_argument("--filter",
                        help="Comma-separated CAN IDs to filter (e.g., 0x201,0x202)")
+    p_srv.add_argument("--source",
+                       help="Connect to a remote serve.py instead of local candump "
+                            "(e.g. ws://192.168.25.201:8765)")
 
     args = parser.parse_args()
 

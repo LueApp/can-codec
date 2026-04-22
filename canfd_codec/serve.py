@@ -13,8 +13,10 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import re
 import signal as signal_module
+import socket as socket_mod
 import struct
 import subprocess
 import threading
@@ -50,15 +52,22 @@ def _ws_accept_key(client_key: str) -> str:
     return base64.b64encode(hashlib.sha1(raw).digest()).decode()
 
 
-def _ws_build_frame(payload: bytes, opcode: int = 0x1) -> bytes:
+def _ws_build_frame(payload: bytes, opcode: int = 0x1, masked: bool = False) -> bytes:
     fin_op = 0x80 | opcode
     length = len(payload)
+    mask_bit = 0x80 if masked else 0
     if length < 126:
-        header = struct.pack("!BB", fin_op, length)
+        header = struct.pack("!BB", fin_op, mask_bit | length)
     elif length < 65536:
-        header = struct.pack("!BBH", fin_op, 126, length)
+        header = struct.pack("!BBH", fin_op, mask_bit | 126, length)
     else:
-        header = struct.pack("!BBQ", fin_op, 127, length)
+        header = struct.pack("!BBQ", fin_op, mask_bit | 127, length)
+    if masked:
+        mask_key = os.urandom(4)
+        masked_payload = bytearray(payload)
+        for i in range(len(masked_payload)):
+            masked_payload[i] ^= mask_key[i % 4]
+        return header + mask_key + bytes(masked_payload)
     return header + payload
 
 
@@ -118,6 +127,7 @@ class CANWebSocketServer:
         host: str = "0.0.0.0",
         port: int = 8765,
         filter_ids: set[int] | None = None,
+        source_url: str | None = None,
     ):
         self.bus = bus
         self.interface = interface
@@ -127,6 +137,7 @@ class CANWebSocketServer:
         self.host = host
         self.port = port
         self.filter_ids = filter_ids
+        self.source_url = source_url
         self._running = False
         self._clients: set[asyncio.StreamWriter] = set()
         self._clients_lock = threading.Lock()
@@ -331,6 +342,79 @@ class CANWebSocketServer:
                 print(f"  Reconnecting to {self.bus} in 1s...")
                 time.sleep(1)
 
+    def _pycan_reader_thread(self, loop: asyncio.AbstractEventLoop):
+        """Thread that reads frames via python-can (for slcanfd etc.)."""
+        try:
+            import can
+        except ImportError:
+            print("  Error: python-can not installed. Run: pip install python-can")
+            return
+
+        print(f"  CAN bus: {self.bus} (python-can, interface={self.interface}, fd={self.fd})")
+
+        while self._running:
+            try:
+                kwargs: dict = {
+                    "interface": self.interface,
+                    "channel": self.bus,
+                    "fd": self.fd,
+                }
+                if self.bitrate:
+                    kwargs["bitrate"] = self.bitrate
+                bus = can.Bus(**kwargs)
+                if self.data_bitrate and hasattr(bus, "set_bitrate"):
+                    bus.set_bitrate(self.bitrate, self.data_bitrate)
+            except Exception as e:
+                print(f"  Error opening CAN bus: {e}")
+                if self._running:
+                    print(f"  Reconnecting in 1s...")
+                    time.sleep(1)
+                continue
+
+            print(f"  CAN bus connected: {self.bus}")
+            self._notify_bus_status(loop, connected=True)
+
+            try:
+                while self._running:
+                    try:
+                        msg = bus.recv(timeout=1.0)
+                    except (ValueError, IndexError):
+                        continue
+                    if msg is None:
+                        continue
+                    arb_id = msg.arbitration_id
+                    if self.filter_ids and arb_id not in self.filter_ids:
+                        continue
+                    with self._clients_lock:
+                        if not self._clients:
+                            continue
+                    data_hex = msg.data.hex().upper()
+                    frame_json = json.dumps(
+                        {
+                            "type": "frame",
+                            "arbitration_id": arb_id,
+                            "data": data_hex,
+                            "timestamp": msg.timestamp or time.time(),
+                            "is_fd": msg.is_fd,
+                        }
+                    )
+                    loop.call_soon_threadsafe(self._broadcast_sync, frame_json)
+            except (ConnectionError, OSError) as e:
+                logger.error("python-can reader error: %s", e)
+            finally:
+                try:
+                    bus.shutdown()
+                except Exception:
+                    pass
+
+            if not self._running:
+                break
+            print(f"  CAN bus lost")
+            self._notify_bus_status(loop, connected=False)
+            if self._running:
+                print(f"  Reconnecting to {self.bus} in 1s...")
+                time.sleep(1)
+
     def _notify_bus_status(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -349,6 +433,106 @@ class CANWebSocketServer:
         with self._clients_lock:
             if self._clients:
                 loop.call_soon_threadsafe(self._broadcast_sync, msg)
+
+    def _ws_source_reader_thread(self, loop: asyncio.AbstractEventLoop):
+        """Thread that connects to a remote serve.py and re-broadcasts frames."""
+        from urllib.parse import urlparse
+
+        parsed = urlparse(self.source_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 8765
+
+        print(f"  Source: {self.source_url}")
+
+        while self._running:
+            sock = None
+            try:
+                sock = socket_mod.create_connection((host, port), timeout=5)
+                key = base64.b64encode(os.urandom(16)).decode()
+                sock.sendall(
+                    f"GET / HTTP/1.1\r\n"
+                    f"Host: {host}:{port}\r\n"
+                    f"Upgrade: websocket\r\n"
+                    f"Connection: Upgrade\r\n"
+                    f"Sec-WebSocket-Version: 13\r\n"
+                    f"Sec-WebSocket-Key: {key}\r\n"
+                    f"\r\n".encode()
+                )
+
+                resp_buf = b""
+                while b"\r\n\r\n" not in resp_buf:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        raise ConnectionError("EOF during handshake")
+                    resp_buf += chunk
+
+                header_end = resp_buf.index(b"\r\n\r\n")
+                resp_header = resp_buf[:header_end].decode(errors="replace")
+                if "101" not in resp_header.split("\r\n")[0]:
+                    raise ConnectionError(f"Bad handshake: {resp_header.split(chr(13))[0]}")
+
+                trailing = resp_buf[header_end + 4:]
+                print(f"  Source connected: {host}:{port}")
+                self._notify_bus_status(loop, connected=True)
+
+                buf = trailing
+                sock.settimeout(30)
+                while self._running:
+                    try:
+                        chunk = sock.recv(4096)
+                    except socket_mod.timeout:
+                        try:
+                            sock.sendall(_ws_build_frame(b"", opcode=0x9, masked=True))
+                        except Exception:
+                            break
+                        continue
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while True:
+                        result = _ws_read_frame(buf)
+                        if result is None:
+                            break
+                        opcode, payload, consumed = result
+                        buf = buf[consumed:]
+                        if opcode == 0x1:
+                            msg_str = payload.decode(errors="replace")
+                            try:
+                                msg = json.loads(msg_str)
+                            except json.JSONDecodeError:
+                                continue
+                            if msg.get("type") == "status":
+                                self.bus = msg.get("bus", self.bus)
+                                self.fd = msg.get("fd", self.fd)
+                            if msg.get("type") == "frame" and self.filter_ids:
+                                if msg.get("arbitration_id") not in self.filter_ids:
+                                    continue
+                            with self._clients_lock:
+                                if self._clients:
+                                    loop.call_soon_threadsafe(
+                                        self._broadcast_sync, msg_str
+                                    )
+                        elif opcode == 0x9:
+                            sock.sendall(
+                                _ws_build_frame(payload, opcode=0xA, masked=True)
+                            )
+                        elif opcode == 0x8:
+                            break
+
+            except (ConnectionError, OSError, socket_mod.timeout) as e:
+                print(f"  Source lost: {e}")
+                self._notify_bus_status(loop, connected=False, error=str(e))
+            finally:
+                if sock:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+
+            if not self._running:
+                break
+            print(f"  Reconnecting to source in 1s...")
+            time.sleep(1)
 
     def _broadcast_sync(self, message: str):
         frame = _ws_build_frame(message.encode())
@@ -376,8 +560,14 @@ class CANWebSocketServer:
 
         print(f"WebSocket server listening on ws://{self.host}:{self.port}")
 
+        if self.source_url:
+            target = self._ws_source_reader_thread
+        elif self.interface != "socketcan":
+            target = self._pycan_reader_thread
+        else:
+            target = self._candump_reader_thread
         reader_thread = threading.Thread(
-            target=self._candump_reader_thread,
+            target=target,
             args=(loop,),
             daemon=True,
         )
