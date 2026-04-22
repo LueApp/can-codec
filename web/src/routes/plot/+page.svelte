@@ -54,10 +54,13 @@ Usage:
     python can_ws_server.py --bus can0         # use real CAN interface
     python can_ws_server.py --port 9000        # custom port
     python can_ws_server.py --filter 0x101,0x201  # only forward these IDs
+
+    # Relay mode: connect to a remote server on the LAN
+    python can_ws_server.py --source ws://192.168.25.201:8765
 """
 
-import argparse, asyncio, base64, hashlib, json, re, signal
-import struct, subprocess, threading, time
+import argparse, asyncio, base64, hashlib, json, os, re, signal
+import socket as socket_mod, struct, subprocess, threading, time
 
 WS_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 CANDUMP_RE = re.compile(
@@ -76,11 +79,15 @@ def parse_candump(line):
 def ws_accept(key):
     return base64.b64encode(hashlib.sha1(key.encode() + WS_MAGIC).digest()).decode()
 
-def ws_frame(payload, opcode=0x1):
-    n = len(payload)
-    if n < 126: hdr = struct.pack("!BB", 0x80|opcode, n)
-    elif n < 65536: hdr = struct.pack("!BBH", 0x80|opcode, 126, n)
-    else: hdr = struct.pack("!BBQ", 0x80|opcode, 127, n)
+def ws_frame(payload, opcode=0x1, masked=False):
+    n = len(payload); mb = 0x80 if masked else 0
+    if n < 126: hdr = struct.pack("!BB", 0x80|opcode, mb|n)
+    elif n < 65536: hdr = struct.pack("!BBH", 0x80|opcode, mb|126, n)
+    else: hdr = struct.pack("!BBQ", 0x80|opcode, mb|127, n)
+    if masked:
+        mk = os.urandom(4); mp = bytearray(payload)
+        for i in range(len(mp)): mp[i] ^= mk[i%4]
+        return hdr + mk + bytes(mp)
     return hdr + payload
 
 def ws_read(data):
@@ -103,9 +110,13 @@ def ws_read(data):
 
 
 class CANWebSocketServer:
-    def __init__(self, bus="vcan0", fd=True, host="0.0.0.0", port=8765, filter_ids=None):
-        self.bus, self.fd, self.host, self.port = bus, fd, host, port
+    def __init__(self, bus="vcan0", interface="socketcan", fd=True, bitrate=None,
+                 data_bitrate=None, host="0.0.0.0", port=8765, filter_ids=None, source_url=None):
+        self.bus, self.interface, self.fd = bus, interface, fd
+        self.bitrate, self.data_bitrate = bitrate, data_bitrate
+        self.host, self.port = host, port
         self.filter_ids = filter_ids
+        self.source_url = source_url
         self._running = False
         self._clients = set()
         self._lock = threading.Lock()
@@ -203,6 +214,102 @@ class CANWebSocketServer:
             print(f"  CAN lost: {err or 'exited'}"); self._notify(loop, False, err or None)
             if self._running: print(f"  Reconnecting in 1s..."); time.sleep(1)
 
+    def _source_reader(self, loop):
+        from urllib.parse import urlparse
+        parsed = urlparse(self.source_url)
+        host = parsed.hostname or "localhost"; port = parsed.port or 8765
+        print(f"  Source: {self.source_url}")
+        while self._running:
+            sock = None
+            try:
+                sock = socket_mod.create_connection((host, port), timeout=5)
+                key = base64.b64encode(os.urandom(16)).decode()
+                sock.sendall(f"GET / HTTP/1.1\\r\\nHost: {host}:{port}\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Version: 13\\r\\nSec-WebSocket-Key: {key}\\r\\n\\r\\n".encode())
+                resp = b""
+                while b"\\r\\n\\r\\n" not in resp:
+                    c = sock.recv(4096)
+                    if not c: raise ConnectionError("EOF during handshake")
+                    resp += c
+                idx = resp.index(b"\\r\\n\\r\\n")
+                if "101" not in resp[:idx].decode(errors="replace").split("\\r\\n")[0]:
+                    raise ConnectionError("Bad handshake")
+                buf = resp[idx+4:]
+                print(f"  Source connected: {host}:{port}")
+                self._notify(loop, True)
+                sock.settimeout(30)
+                while self._running:
+                    try: chunk = sock.recv(4096)
+                    except socket_mod.timeout:
+                        try: sock.sendall(ws_frame(b"", opcode=0x9, masked=True))
+                        except Exception: break
+                        continue
+                    if not chunk: break
+                    buf += chunk
+                    while True:
+                        r = ws_read(buf)
+                        if not r: break
+                        op, payload, consumed = r; buf = buf[consumed:]
+                        if op == 0x1:
+                            msg_str = payload.decode(errors="replace")
+                            try: msg = json.loads(msg_str)
+                            except json.JSONDecodeError: continue
+                            if msg.get("type") == "status":
+                                self.bus = msg.get("bus", self.bus)
+                                self.fd = msg.get("fd", self.fd)
+                            if msg.get("type") == "frame" and self.filter_ids:
+                                if msg.get("arbitration_id") not in self.filter_ids: continue
+                            with self._lock:
+                                if self._clients: loop.call_soon_threadsafe(self._bcast, msg_str)
+                        elif op == 0x9: sock.sendall(ws_frame(payload, opcode=0xA, masked=True))
+                        elif op == 0x8: break
+            except (ConnectionError, OSError, socket_mod.timeout) as e:
+                print(f"  Source lost: {e}"); self._notify(loop, False, str(e))
+            finally:
+                if sock:
+                    try: sock.close()
+                    except Exception: pass
+            if not self._running: break
+            print(f"  Reconnecting to source in 1s..."); time.sleep(1)
+
+    def _pycan_reader(self, loop):
+        try: import can
+        except ImportError:
+            print("  Error: python-can not installed. Run: pip install python-can"); return
+        print(f"  CAN bus: {self.bus} (python-can, interface={self.interface}, fd={self.fd})")
+        while self._running:
+            try:
+                kw = {"interface": self.interface, "channel": self.bus, "fd": self.fd}
+                if self.bitrate: kw["bitrate"] = self.bitrate
+                bus = can.Bus(**kw)
+                if self.data_bitrate and hasattr(bus, "set_bitrate"):
+                    bus.set_bitrate(self.bitrate, self.data_bitrate)
+            except Exception as e:
+                print(f"  Error opening CAN bus: {e}")
+                if self._running: print("  Reconnecting in 1s..."); time.sleep(1)
+                continue
+            print(f"  CAN connected: {self.bus}")
+            self._notify(loop, True)
+            try:
+                while self._running:
+                    try: msg = bus.recv(timeout=1.0)
+                    except (ValueError, IndexError): continue
+                    if msg is None: continue
+                    aid = msg.arbitration_id
+                    if self.filter_ids and aid not in self.filter_ids: continue
+                    with self._lock:
+                        if not self._clients: continue
+                    loop.call_soon_threadsafe(self._bcast,
+                        json.dumps({"type":"frame","arbitration_id":aid,
+                            "data":msg.data.hex().upper(),"timestamp":msg.timestamp or time.time(),
+                            "is_fd":msg.is_fd}))
+            except (ConnectionError, OSError) as e: print(f"  python-can error: {e}")
+            finally:
+                try: bus.shutdown()
+                except Exception: pass
+            if not self._running: break
+            print(f"  CAN lost"); self._notify(loop, False)
+            if self._running: print("  Reconnecting in 1s..."); time.sleep(1)
+
     def _notify(self, loop, connected, error=None):
         msg = json.dumps({"type":"status","bus":self.bus,"fd":self.fd,
                           "connected":connected,**({"error":error} if error else {})})
@@ -220,7 +327,10 @@ class CANWebSocketServer:
         for s in (signal.SIGINT, signal.SIGTERM): loop.add_signal_handler(s, self.stop)
         srv = await asyncio.start_server(self._handle, self.host, self.port)
         print(f"WebSocket server on ws://{self.host}:{self.port}")
-        t = threading.Thread(target=self._reader, args=(loop,), daemon=True); t.start()
+        if self.source_url: target = self._source_reader
+        elif self.interface != "socketcan": target = self._pycan_reader
+        else: target = self._reader
+        t = threading.Thread(target=target, args=(loop,), daemon=True); t.start()
         while self._running: await asyncio.sleep(0.5)
         srv.close(); await srv.wait_closed(); t.join(timeout=3)
         print("\\nStopped.")
@@ -234,15 +344,22 @@ def _try_write(w, data):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="CAN-to-WebSocket bridge (zero dependencies)")
     p.add_argument("--bus", default="vcan0", help="CAN interface (default: vcan0)")
+    p.add_argument("--interface", default="socketcan",
+        help="python-can interface type (default: socketcan, use slcan for USB adapters)")
     p.add_argument("--no-fd", action="store_true", help="Disable CAN FD")
+    p.add_argument("--bitrate", type=int, help="CAN bitrate in bit/s (e.g. 1000000)")
+    p.add_argument("--data-bitrate", type=int, help="CAN FD data bitrate in bit/s (e.g. 5000000)")
     p.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
     p.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
     p.add_argument("--filter", help="CAN IDs to forward (e.g. 0x101,0x202)")
+    p.add_argument("--source", help="Connect to remote server instead of candump (e.g. ws://192.168.25.201:8765)")
     args = p.parse_args()
     fids = {int(x, 0) for x in args.filter.split(",")} if args.filter else None
     asyncio.run(CANWebSocketServer(
-        bus=args.bus, fd=not args.no_fd,
+        bus=args.bus, interface=args.interface, fd=not args.no_fd,
+        bitrate=args.bitrate, data_bitrate=args.data_bitrate,
         host=args.host, port=args.port, filter_ids=fids,
+        source_url=args.source,
     ).run())
 `;
 
@@ -1169,23 +1286,43 @@ if __name__ == "__main__":
         </button>
         {#if showSetup}
           <div class="setup-content">
-            <p><strong>1.</strong> Download the server script and copy it to your Ubuntu machine with the CAN interface:</p>
+            <p><strong>1.</strong> Download the server script:</p>
             <div style="margin: 8px 0;">
               <button class="btn-sm" onclick={downloadServer}>Download can_ws_server.py</button>
             </div>
-            <p><strong>2.</strong> Ensure <code>can-utils</code> is installed (provides <code>candump</code>):</p>
+            <p style="font-size: 12px; color: var(--text-dim);">Zero dependencies — uses only Python 3.10+ stdlib + candump (can-utils).</p>
+
+            <p><strong>2.</strong> Install <code>can-utils</code> on the machine with the CAN interface:</p>
             <pre><code>sudo apt install can-utils</code></pre>
-            <p style="font-size: 12px; color: var(--text-dim);">No pip packages required — the script uses only Python stdlib + candump.</p>
-            <p><strong>3.</strong> Run the server:</p>
-            <pre><code>python3 can_ws_server.py --bus can0 --port 8765</code></pre>
-            <p><strong>4.</strong> Enter <code>ws://&lt;server-ip&gt;:8765</code> above and click Connect.</p>
+
+            <p style="margin-top: 12px;"><strong>3.</strong> Choose your setup:</p>
+
+            <details open style="margin-top: 8px;">
+              <summary style="cursor: pointer; font-size: 13px; font-weight: 600;">CAN device is this PC (or reachable from browser)</summary>
+              <div style="padding: 4px 0 4px 8px;">
+                <p style="font-size: 12px;">Run the server on the machine with the CAN interface:</p>
+                <pre><code>python3 can_ws_server.py --bus can0</code></pre>
+                <p style="font-size: 12px;">Then enter <code>ws://localhost:8765</code> above and click Connect.</p>
+              </div>
+            </details>
+
+            <details style="margin-top: 8px;">
+              <summary style="cursor: pointer; font-size: 13px; font-weight: 600;">CAN device is on a LAN (not reachable from browser)</summary>
+              <div style="padding: 4px 0 4px 8px;">
+                <p style="font-size: 12px;">Copy <code>can_ws_server.py</code> to both the CAN device and your PC.</p>
+                <pre><code># On the CAN device (e.g. 192.168.x.x):{'\n'}python3 can_ws_server.py --bus can0{'\n'}{'\n'}# On your PC:{'\n'}python3 can_ws_server.py --source ws://192.168.x.x:8765</code></pre>
+                <p style="font-size: 12px;">Then enter <code>ws://localhost:8765</code> above and click Connect.</p>
+                <p style="font-size: 12px; color: var(--text-dim);">The <code>--source</code> flag connects to the remote server and re-serves frames locally.</p>
+              </div>
+            </details>
+
             <details style="margin-top: 8px;">
               <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">More options</summary>
               <pre><code># Filter specific CAN IDs{'\n'}python3 can_ws_server.py --bus can0 --filter 0x101,0x201{'\n'}{'\n'}# Disable CAN FD{'\n'}python3 can_ws_server.py --bus can0 --no-fd{'\n'}{'\n'}# Custom port and bind address{'\n'}python3 can_ws_server.py --host 0.0.0.0 --port 9000{'\n'}{'\n'}# Test with virtual CAN{'\n'}sudo modprobe vcan{'\n'}sudo ip link add dev vcan0 type vcan{'\n'}sudo ip link set up vcan0{'\n'}python3 can_ws_server.py --bus vcan0</code></pre>
             </details>
             <details style="margin-top: 8px;">
-              <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">Using SLCAN FD (USB-to-CAN adapters)</summary>
-              <pre><code># For USB-to-CAN adapters using SLCAN FD protocol{'\n'}# (e.g. CANable, canable2.0, USBtin, MKS CANable Pro){'\n'}{'\n'}# Option A: Use slcanfd interface directly via python-can{'\n'}pip install pyserial{'\n'}python can_ws_server.py --bus /dev/ttyACM0 --interface slcanfd{'\n'}{'\n'}# Option B: Create a SocketCAN interface with slcanfd{'\n'}sudo slcanfd_attach -f -s5 -o /dev/ttyACM0{'\n'}sudo ip link set up slcanfd0{'\n'}python can_ws_server.py --bus slcanfd0{'\n'}{'\n'}# Common bitrate flags for slcanfd_attach:{'\n'}#   -s5 = 250 kbit/s,  -s6 = 500 kbit/s{'\n'}#   -s7 = 800 kbit/s,  -s8 = 1 Mbit/s</code></pre>
+              <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">USB-to-CAN adapters</summary>
+              <pre><code># SLCAN adapters with CAN FD (requires: pip install python-can pyserial){'\n'}python3 can_ws_server.py --bus /dev/ttyACM0 --interface slcan \\{'\n'}    --bitrate 1000000 --data-bitrate 5000000{'\n'}{'\n'}# SLCAN classic CAN only (via slcand, no pip needed){'\n'}sudo slcand -o -c -s6 /dev/ttyACM0 slcan0{'\n'}sudo ip link set up slcan0{'\n'}python3 can_ws_server.py --bus slcan0{'\n'}{'\n'}# gs_usb adapters (e.g. CANable with candleLight firmware){'\n'}sudo ip link set can0 type can bitrate 1000000{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0{'\n'}{'\n'}# gs_usb with CAN FD{'\n'}sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0</code></pre>
             </details>
           </div>
         {/if}
