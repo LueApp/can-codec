@@ -3,9 +3,10 @@
   import { parseCandump } from '$lib/codec';
   import { WebSocketClient, type RawFrame } from '$lib/websocket-client.svelte';
   import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from '$lib/types';
-  import { Chart, LineController, LineElement, PointElement, LinearScale, Tooltip, Legend, Filler } from 'chart.js';
+  import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, ScatterController } from 'chart.js';
+  import zoomPlugin from 'chartjs-plugin-zoom';
 
-  Chart.register(LineController, LineElement, PointElement, LinearScale, Tooltip, Legend, Filler);
+  Chart.register(LineController, ScatterController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, zoomPlugin);
 
   // ---- Types ----
 
@@ -34,6 +35,11 @@
   interface ChartPanel {
     id: string;          // unique panel ID
     keys: string[];      // signal keys rendered as datasets on this chart
+  }
+
+  interface MessageTimingEntry {
+    time: number;
+    frame: FrameRef;
   }
 
   // ---- Server script (embedded for download) ----
@@ -391,6 +397,23 @@ if __name__ == "__main__":
   let chartInstances = new Map<string, Chart>();
   let addDropdownOpen = $state<string | null>(null); // panel ID of open "+" dropdown
 
+  // Chart view mode (multi-select, reorderable)
+  type ChartView = 'signals' | 'timeline' | 'interval';
+  let activeViews = $state<Set<ChartView>>(new Set(['signals']));
+  let viewOrder = $state<ChartView[]>(['signals', 'timeline', 'interval']);
+  let dragView = $state<ChartView | null>(null);
+  let dragOverView = $state<ChartView | null>(null);
+
+  // Message-level timing store (non-reactive, same pattern as liveSampleStore)
+  const messageTimingStore = new Map<string, MessageTimingEntry[]>();
+  let messageTimingLabels = $state<string[]>([]);
+  let timelineChart: Chart | null = null;
+
+  // Interval view panels (reuse ChartPanel pattern)
+  let intervalPanels = $state<ChartPanel[]>([]);
+  let intervalSelected = $derived(new Set(intervalPanels.flatMap(p => p.keys)));
+  let intervalInstances = new Map<string, Chart>();
+
   // Live mode state
   let wsClient = new WebSocketClient();
   let wsUrl = $state(
@@ -453,14 +476,20 @@ if __name__ == "__main__":
   function resetCharts() {
     for (const [, chart] of chartInstances) chart.destroy();
     chartInstances.clear();
+    if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
+    for (const [, chart] of intervalInstances) chart.destroy();
+    intervalInstances.clear();
     allSeries = [];
     chartPanels = [];
+    intervalPanels = [];
     nextPanelId = 0;
     addDropdownOpen = null;
     status = '';
     liveStartTime = null;
     liveSampleStore.clear();
     liveSampleCounts = {};
+    messageTimingStore.clear();
+    messageTimingLabels = [];
     rawFrameLog = [];
     rawFrameCount = 0;
   }
@@ -569,6 +598,13 @@ if __name__ == "__main__":
         signalEntries.push({ signals: decoded.signals, groupLabel });
       }
 
+      // Message-level timing entry
+      for (const entry of signalEntries) {
+        let timingArr = messageTimingStore.get(entry.groupLabel);
+        if (!timingArr) { timingArr = []; messageTimingStore.set(entry.groupLabel, timingArr); }
+        timingArr.push({ time: timestamp!, frame: frameRef });
+      }
+
       for (const entry of signalEntries) {
         for (const sig of entry.signals) {
           if (sig.bitfield_flags) continue;
@@ -587,12 +623,18 @@ if __name__ == "__main__":
       lineIndex++;
     }
 
+    messageTimingLabels = Array.from(messageTimingStore.keys()).sort();
+
     allSeries = Array.from(seriesMap.values()).sort((a, b) => a.key.localeCompare(b.key));
     if (allSeries.length <= 12) {
       chartPanels = allSeries.map(s => ({ id: `p${nextPanelId++}`, keys: [s.key] }));
     }
+    // Auto-select interval panels
+    if (messageTimingLabels.length <= 12) {
+      intervalPanels = messageTimingLabels.map(k => ({ id: `ip${nextPanelId++}`, keys: [k] }));
+    }
     status = `${allSeries.length} signals found from ${groups.length} frames`;
-    renderCharts();
+    renderCurrentView();
   }
 
   // ---- Live mode ----
@@ -815,12 +857,14 @@ if __name__ == "__main__":
       : decoded.name;
 
     let newSeriesAdded = false;
+    let newTimingAdded = false;
 
     const msg = codecStore.codec.getMessageByName(decoded.name);
     if (decoded.is_broadcast && decoded.sub_messages) {
       for (const sub of decoded.sub_messages) {
         const mux = getMuxSuffix(msg, sub.signals);
         const groupLabel = `${baseLabel} / N${sub.node_id}${mux}`;
+        if (appendMessageTiming(groupLabel, time, frame)) newTimingAdded = true;
         if (appendSignalSamples(sub.signals, groupLabel, time, frame)) newSeriesAdded = true;
       }
     } else {
@@ -828,6 +872,7 @@ if __name__ == "__main__":
       const groupLabel = (msg && msg.node_count > 1)
         ? `${baseLabel} / N${decoded.node_id}${mux}`
         : `${baseLabel}${mux}`;
+      if (appendMessageTiming(groupLabel, time, frame)) newTimingAdded = true;
       if (appendSignalSamples(decoded.signals, groupLabel, time, frame)) newSeriesAdded = true;
     }
 
@@ -841,6 +886,37 @@ if __name__ == "__main__":
         chartPanels = [...chartPanels, ...newPanels];
       }
     }
+
+    if (newTimingAdded && messageTimingLabels.length <= 12) {
+      const inPanels = new Set(intervalPanels.flatMap(p => p.keys));
+      const newPanels = messageTimingLabels
+        .filter(k => !inPanels.has(k))
+        .map(k => ({ id: `ip${nextPanelId++}`, keys: [k] }));
+      if (newPanels.length > 0) {
+        intervalPanels = [...intervalPanels, ...newPanels];
+      }
+    }
+  }
+
+  function appendMessageTiming(groupLabel: string, time: number, frame: FrameRef): boolean {
+    let arr = messageTimingStore.get(groupLabel);
+    let isNew = false;
+    if (!arr) {
+      arr = [];
+      messageTimingStore.set(groupLabel, arr);
+      messageTimingLabels = Array.from(messageTimingStore.keys()).sort();
+      isNew = true;
+    }
+    arr.push({ time, frame });
+    if (bufferMode === 'samples' && arr.length > bufferSamples) {
+      arr.splice(0, arr.length - bufferSamples);
+    } else if (bufferMode === 'time') {
+      const cutoff = time - bufferSeconds;
+      let trimTo = 0;
+      while (trimTo < arr.length && arr[trimTo].time < cutoff) trimTo++;
+      if (trimTo > 0) arr.splice(0, trimTo);
+    }
+    return isNew;
   }
 
   function scheduleChartUpdate() {
@@ -868,10 +944,15 @@ if __name__ == "__main__":
   }
 
   function updateLiveCharts() {
-    // Check if charts need rebuild (panel set changed)
+    if (activeViews.has('timeline')) updateLiveTimeline();
+    if (activeViews.has('interval')) updateLiveIntervalCharts();
+    if (activeViews.has('signals')) updateLiveSignalCharts();
+    updateLiveCounts();
+  }
+
+  function updateLiveSignalCharts() {
     let needsRebuild = chartPanels.some(p => !chartInstances.has(p.id));
     if (chartInstances.size !== chartPanels.length) needsRebuild = true;
-    // Also rebuild if any panel's dataset count changed
     if (!needsRebuild) {
       for (const panel of chartPanels) {
         const chart = chartInstances.get(panel.id);
@@ -884,11 +965,9 @@ if __name__ == "__main__":
 
     if (needsRebuild) {
       renderCharts();
-      updateLiveCounts();
       return;
     }
 
-    // Incremental update — read from plain (non-reactive) sample store
     for (const panel of chartPanels) {
       const chart = chartInstances.get(panel.id);
       if (!chart) continue;
@@ -913,8 +992,6 @@ if __name__ == "__main__":
       }
       chart.update('none');
     }
-
-    updateLiveCounts();
   }
 
   function updateLiveCounts() {
@@ -996,6 +1073,26 @@ if __name__ == "__main__":
     '#39d2c0', '#f78166', '#7ee787', '#a5d6ff', '#ffa657',
   ];
 
+  const zoomOptions = {
+    zoom: {
+      wheel: { enabled: true },
+      pinch: { enabled: true },
+      drag: {
+        enabled: true,
+        backgroundColor: 'rgba(88, 166, 255, 0.15)',
+        borderColor: 'rgba(88, 166, 255, 0.5)',
+        borderWidth: 1,
+      },
+      mode: 'xy' as const,
+    },
+  };
+
+  function resetAllZoom() {
+    for (const [, chart] of chartInstances) chart.resetZoom();
+    if (timelineChart) timelineChart.resetZoom();
+    for (const [, chart] of intervalInstances) chart.resetZoom();
+  }
+
   function getSamples(key: string): SignalSample[] {
     return mode === 'live' ? (liveSampleStore.get(key) ?? []) : (allSeries.find(s => s.key === key)?.samples ?? []);
   }
@@ -1052,6 +1149,7 @@ if __name__ == "__main__":
               }
             },
             plugins: {
+              zoom: zoomOptions,
               legend: {
                 display: multi,
                 labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12 },
@@ -1095,9 +1193,472 @@ if __name__ == "__main__":
     });
   }
 
+  // ---- View switching ----
+
+  function renderCurrentView() {
+    if (activeViews.has('signals')) renderCharts();
+    if (activeViews.has('timeline')) renderTimeline();
+    if (activeViews.has('interval')) renderIntervalCharts();
+  }
+
+  function toggleView(view: ChartView) {
+    const next = new Set(activeViews);
+    if (next.has(view)) {
+      if (next.size > 1) next.delete(view);
+    } else {
+      next.add(view);
+    }
+    activeViews = next;
+    requestAnimationFrame(() => renderCurrentView());
+  }
+
+  function onViewDragStart(view: ChartView, e: DragEvent) {
+    dragView = view;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', view);
+    }
+  }
+
+  function onViewDragOver(view: ChartView, e: DragEvent) {
+    if (!dragView || dragView === view) { dragOverView = null; return; }
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    dragOverView = view;
+  }
+
+  function onViewDrop(view: ChartView, e: DragEvent) {
+    e.preventDefault();
+    if (!dragView || dragView === view) { dragView = null; dragOverView = null; return; }
+    const fromIdx = viewOrder.indexOf(dragView);
+    const toIdx = viewOrder.indexOf(view);
+    if (fromIdx < 0 || toIdx < 0) { dragView = null; dragOverView = null; return; }
+    const next = [...viewOrder];
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, dragView);
+    viewOrder = next;
+    dragView = null;
+    dragOverView = null;
+    requestAnimationFrame(() => renderCurrentView());
+  }
+
+  function onViewDragEnd() {
+    dragView = null;
+    dragOverView = null;
+  }
+
+  // ---- Panel drag-to-reorder ----
+  let dragPanelId = $state<string | null>(null);
+  let dragOverPanelId = $state<string | null>(null);
+  let dragPanelType = $state<'signals' | 'interval' | null>(null);
+
+  function onPanelDragStart(type: 'signals' | 'interval', panelId: string, e: DragEvent) {
+    dragPanelId = panelId;
+    dragPanelType = type;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', panelId);
+    }
+    e.stopPropagation();
+  }
+
+  function onPanelDragOver(type: 'signals' | 'interval', panelId: string, e: DragEvent) {
+    if (!dragPanelId || dragPanelType !== type || dragPanelId === panelId) { dragOverPanelId = null; return; }
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    dragOverPanelId = panelId;
+  }
+
+  function onPanelDrop(type: 'signals' | 'interval', panelId: string, e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragPanelId || dragPanelType !== type || dragPanelId === panelId) {
+      dragPanelId = null; dragOverPanelId = null; dragPanelType = null; return;
+    }
+    const panels = type === 'signals' ? chartPanels : intervalPanels;
+    const fromIdx = panels.findIndex(p => p.id === dragPanelId);
+    const toIdx = panels.findIndex(p => p.id === panelId);
+    if (fromIdx < 0 || toIdx < 0) { dragPanelId = null; dragOverPanelId = null; dragPanelType = null; return; }
+    const next = [...panels];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    if (type === 'signals') chartPanels = next;
+    else intervalPanels = next;
+    dragPanelId = null;
+    dragOverPanelId = null;
+    dragPanelType = null;
+    if (mode === 'live') scheduleChartUpdate();
+    else renderCurrentView();
+  }
+
+  function onPanelDragEnd() {
+    dragPanelId = null;
+    dragOverPanelId = null;
+    dragPanelType = null;
+  }
+
+  // ---- Timeline rendering ----
+
+  function renderTimeline() {
+    if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
+
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById('timeline-chart') as HTMLCanvasElement | null;
+      if (!canvas) return;
+
+      const labels = messageTimingLabels;
+      if (labels.length === 0) return;
+
+      const datasets = labels.map((label, laneIdx) => {
+        const color = CHART_COLORS[laneIdx % CHART_COLORS.length];
+        const entries = messageTimingStore.get(label) ?? [];
+        return {
+          label,
+          data: entries.map(e => ({ x: e.time, y: laneIdx, frame: e.frame })),
+          backgroundColor: color,
+          borderColor: color,
+          pointRadius: entries.length <= 500 ? 4 : 2,
+          pointHoverRadius: 6,
+          showLine: false,
+        };
+      });
+
+      timelineChart = new Chart(canvas, {
+        type: 'scatter',
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          onClick: (_event, elements, chart) => {
+            if (elements.length === 0) return;
+            const el = elements[0];
+            const pt = chart.data.datasets[el.datasetIndex]?.data[el.index] as any;
+            if (pt?.frame) {
+              const text = formatFrameCandump(pt.frame);
+              navigator.clipboard.writeText(text).then(
+                () => showCopyToast('Copied: ' + text),
+                () => showCopyToast('Copy failed'),
+              );
+            }
+          },
+          plugins: {
+            zoom: zoomOptions,
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => `t = ${items[0].parsed.x.toFixed(3)}s`,
+                label: (item) => {
+                  const msgLabel = labels[item.parsed.y] ?? '';
+                  return msgLabel;
+                },
+                afterBody: (items) => {
+                  const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
+                  return f ? [`Frame: ${formatFrameShort(f)}`, '(click to copy)'] : '';
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'time (s)', color: '#8b949e', font: { size: 11 } },
+              grid: { color: '#2d354833' },
+              ticks: { color: '#8b949e', font: { size: 11 } },
+            },
+            y: {
+              type: 'linear',
+              reverse: false,
+              min: -0.5,
+              max: labels.length - 0.5,
+              grid: { color: '#2d354833' },
+              ticks: {
+                color: '#8b949e',
+                font: { size: 11, family: "'JetBrains Mono', 'Fira Code', monospace" },
+                stepSize: 1,
+                callback: (value: any) => labels[value] ?? '',
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  function updateLiveTimeline() {
+    if (!timelineChart) {
+      renderTimeline();
+      return;
+    }
+
+    const labels = messageTimingLabels;
+    const needsRebuild = timelineChart.data.datasets.length !== labels.length;
+    if (needsRebuild) {
+      renderTimeline();
+      return;
+    }
+
+    let xMin = Infinity, xMax = -Infinity;
+    for (let i = 0; i < labels.length; i++) {
+      const entries = messageTimingStore.get(labels[i]) ?? [];
+      const ds = timelineChart.data.datasets[i];
+      if (!ds) continue;
+      const points = entries.map(e => ({ x: e.time, y: i, frame: e.frame }));
+      ds.data = points;
+      (ds as any).pointRadius = points.length <= 500 ? 4 : 2;
+      if (points.length > 0) {
+        if (points[0].x < xMin) xMin = points[0].x;
+        if (points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
+      }
+    }
+    if (xMin < Infinity) {
+      const xScale = timelineChart.options.scales!.x as any;
+      xScale.min = xMin;
+      xScale.max = xMax;
+    }
+    const yScale = timelineChart.options.scales!.y as any;
+    yScale.max = labels.length - 0.5;
+    (yScale.ticks as any).callback = (value: any) => labels[value] ?? '';
+    timelineChart.update('none');
+  }
+
+  // ---- Interval chart rendering ----
+
+  function getIntervalData(label: string): { time: number; dt: number; frame: FrameRef }[] {
+    const entries = messageTimingStore.get(label) ?? [];
+    const result: { time: number; dt: number; frame: FrameRef }[] = [];
+    for (let i = 1; i < entries.length; i++) {
+      const dt = (entries[i].time - entries[i - 1].time) * 1000;
+      result.push({ time: entries[i].time, dt, frame: entries[i].frame });
+    }
+    return result;
+  }
+
+  function renderIntervalCharts() {
+    for (const [, chart] of intervalInstances) chart.destroy();
+    intervalInstances.clear();
+
+    requestAnimationFrame(() => {
+      for (const panel of intervalPanels) {
+        const canvas = document.getElementById(`interval-${panel.id}`) as HTMLCanvasElement | null;
+        if (!canvas) continue;
+
+        const multi = panel.keys.length > 1;
+        const datasets = panel.keys.map((key, j) => {
+          const color = CHART_COLORS[j % CHART_COLORS.length];
+          const data = getIntervalData(key);
+          return {
+            label: key,
+            data: data.map(d => ({ x: d.time, y: d.dt, frame: d.frame })),
+            borderColor: color,
+            backgroundColor: color + '20',
+            borderWidth: 1.5,
+            pointRadius: data.length <= 100 ? 3 : 0,
+            pointHoverRadius: 4,
+            fill: !multi,
+            tension: 0,
+          };
+        });
+
+        const chart = new Chart(canvas, {
+          type: 'line',
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            onClick: (_event, elements, chart) => {
+              if (elements.length === 0) return;
+              const el = elements[0];
+              const pt = chart.data.datasets[el.datasetIndex]?.data[el.index] as any;
+              if (pt?.frame) {
+                const text = formatFrameCandump(pt.frame);
+                navigator.clipboard.writeText(text).then(
+                  () => showCopyToast('Copied: ' + text),
+                  () => showCopyToast('Copy failed'),
+                );
+              }
+            },
+            plugins: {
+              zoom: zoomOptions,
+              legend: {
+                display: multi,
+                labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12 },
+              },
+              tooltip: {
+                callbacks: {
+                  title: (items) => `t = ${items[0].parsed.x.toFixed(3)}s`,
+                  label: (item) => {
+                    const key = panel.keys[item.datasetIndex] ?? '';
+                    return `${key}: ${item.parsed.y.toFixed(2)} ms`;
+                  },
+                  afterBody: (items) => {
+                    const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
+                    return f ? [`Frame: ${formatFrameShort(f)}`, '(click to copy)'] : '';
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                title: { display: true, text: 'time (s)', color: '#8b949e', font: { size: 11 } },
+                grid: { color: '#2d354833' },
+                ticks: { color: '#8b949e', font: { size: 11 } },
+              },
+              y: {
+                title: { display: true, text: 'interval (ms)', color: '#8b949e', font: { size: 11 } },
+                grid: { color: '#2d354833' },
+                ticks: { color: '#8b949e', font: { size: 11 } },
+              },
+            },
+          },
+        });
+        intervalInstances.set(panel.id, chart);
+      }
+    });
+  }
+
+  function updateLiveIntervalCharts() {
+    let needsRebuild = intervalPanels.some(p => !intervalInstances.has(p.id));
+    if (intervalInstances.size !== intervalPanels.length) needsRebuild = true;
+    if (!needsRebuild) {
+      for (const panel of intervalPanels) {
+        const chart = intervalInstances.get(panel.id);
+        if (chart && chart.data.datasets.length !== panel.keys.length) {
+          needsRebuild = true;
+          break;
+        }
+      }
+    }
+
+    if (needsRebuild) {
+      renderIntervalCharts();
+      return;
+    }
+
+    for (const panel of intervalPanels) {
+      const chart = intervalInstances.get(panel.id);
+      if (!chart) continue;
+
+      let xMin = Infinity, xMax = -Infinity;
+      for (let j = 0; j < panel.keys.length; j++) {
+        const data = getIntervalData(panel.keys[j]);
+        const ds = chart.data.datasets[j];
+        if (!ds) continue;
+        const points = data.map(d => ({ x: d.time, y: d.dt, frame: d.frame }));
+        ds.data = points;
+        (ds as any).pointRadius = points.length <= 100 ? 3 : 0;
+        if (points.length > 0) {
+          if (points[0].x < xMin) xMin = points[0].x;
+          if (points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
+        }
+      }
+      if (xMin < Infinity) {
+        const xScale = chart.options.scales!.x as any;
+        xScale.min = xMin;
+        xScale.max = xMax;
+      }
+      chart.update('none');
+    }
+  }
+
+  // ---- Interval panel management ----
+
+  function toggleIntervalSignal(key: string) {
+    const panelIdx = intervalPanels.findIndex(p => p.keys.includes(key));
+    if (panelIdx >= 0) {
+      const panel = intervalPanels[panelIdx];
+      if (panel.keys.length === 1) {
+        intervalPanels = intervalPanels.filter((_, i) => i !== panelIdx);
+      } else {
+        intervalPanels = intervalPanels.map((p, i) =>
+          i === panelIdx ? { ...p, keys: p.keys.filter(k => k !== key) } : p
+        );
+      }
+    } else {
+      intervalPanels = [...intervalPanels, { id: `ip${nextPanelId++}`, keys: [key] }];
+    }
+    if (mode === 'live') scheduleChartUpdate();
+    else renderIntervalCharts();
+  }
+
+  function selectAllInterval() {
+    const already = new Set(intervalPanels.flatMap(p => p.keys));
+    const newPanels = messageTimingLabels
+      .filter(k => !already.has(k))
+      .map(k => ({ id: `ip${nextPanelId++}`, keys: [k] }));
+    intervalPanels = [...intervalPanels, ...newPanels];
+    if (mode === 'live') scheduleChartUpdate();
+    else renderIntervalCharts();
+  }
+
+  function selectNoneInterval() {
+    intervalPanels = [];
+    renderIntervalCharts();
+  }
+
+  function addToIntervalPanel(panelId: string, key: string) {
+    intervalPanels = intervalPanels
+      .map(p => {
+        if (p.id === panelId) return { ...p, keys: [...p.keys, key] };
+        if (p.keys.includes(key)) return { ...p, keys: p.keys.filter(k => k !== key) };
+        return p;
+      })
+      .filter(p => p.keys.length > 0);
+    addDropdownOpen = null;
+    if (mode === 'live') scheduleChartUpdate();
+    else renderIntervalCharts();
+  }
+
+  function splitFromIntervalPanel(panelId: string, key: string) {
+    intervalPanels = [
+      ...intervalPanels.map(p =>
+        p.id === panelId ? { ...p, keys: p.keys.filter(k => k !== key) } : p
+      ).filter(p => p.keys.length > 0),
+      { id: `ip${nextPanelId++}`, keys: [key] },
+    ];
+    if (mode === 'live') scheduleChartUpdate();
+    else renderIntervalCharts();
+  }
+
+  function getAvailableForIntervalPanel(panelId: string): string[] {
+    const panel = intervalPanels.find(p => p.id === panelId);
+    if (!panel) return [];
+    const panelKeys = new Set(panel.keys);
+    return messageTimingLabels.filter(k => intervalSelected.has(k) && !panelKeys.has(k));
+  }
+
+  function getIntervalPanelSampleCount(panel: ChartPanel): number {
+    return panel.keys.reduce((sum, k) => sum + Math.max(0, (messageTimingStore.get(k)?.length ?? 0) - 1), 0);
+  }
+
   // ---- Export ----
 
   function savePng() {
+    if (chartView === 'timeline') {
+      const canvas = document.getElementById('timeline-chart') as HTMLCanvasElement | null;
+      if (canvas) {
+        const link = document.createElement('a');
+        link.download = 'timeline.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
+      return;
+    }
+    if (chartView === 'interval') {
+      for (const panel of intervalPanels) {
+        const canvas = document.getElementById(`interval-${panel.id}`) as HTMLCanvasElement | null;
+        if (!canvas) continue;
+        const name = panel.keys.length === 1 ? `interval_${panel.keys[0]}` : `interval-${panel.id}`;
+        const link = document.createElement('a');
+        link.download = `${name}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
+      return;
+    }
     for (const panel of chartPanels) {
       const canvas = document.getElementById(`chart-${panel.id}`) as HTMLCanvasElement | null;
       if (!canvas) continue;
@@ -1330,84 +1891,244 @@ if __name__ == "__main__":
     {/if}
   </div>
 
-  {#if allSeries.length > 0}
-    <div class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <strong style="font-size: 14px;">Signals</strong>
-        <div style="display: flex; gap: 8px;">
-          <button class="btn-sm" onclick={selectAll}>All</button>
-          <button class="btn-sm" onclick={selectNone}>None</button>
-          {#if chartPanels.length > 0}
-            <button class="btn-sm" onclick={savePng}>Save PNG</button>
-          {/if}
-        </div>
-      </div>
-      <div class="signal-selector">
-        {#each getGroups() as { group, signals }}
-          <div class="signal-group">
-            <div class="signal-group-label">{group}</div>
-            <div class="signal-chips">
-              {#each signals as s}
-                <button
-                  class="chip"
-                  class:chip-active={selected.has(s.key)}
-                  onclick={() => toggleSignal(s.key)}
-                >
-                  {s.signal}{s.unit ? ` (${s.unit})` : ''}
-                  <span class="chip-count">{mode === 'live' ? (liveSampleCounts[s.key] ?? 0) : s.samples.length}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/each}
-      </div>
+  {#if allSeries.length > 0 || messageTimingLabels.length > 0}
+    <!-- View tabs (multi-select) -->
+    <div class="view-tabs">
+      <button class="mode-tab" class:mode-tab-active={activeViews.has('signals')} onclick={() => toggleView('signals')}>
+        Signals
+      </button>
+      <button class="mode-tab" class:mode-tab-active={activeViews.has('timeline')} onclick={() => toggleView('timeline')}>
+        Timeline
+      </button>
+      <button class="mode-tab" class:mode-tab-active={activeViews.has('interval')} onclick={() => toggleView('interval')}>
+        Interval
+      </button>
     </div>
 
-    {#if chartPanels.length > 0}
-      <div class="chart-stack">
-        {#each chartPanels as panel (panel.id)}
-          {@const seriesList = panel.keys.map(k => allSeries.find(s => s.key === k)).filter(Boolean) as SignalSeries[]}
-          <div class="chart-card">
-            <div class="chart-header">
-              <div class="chart-signal-tags">
-                {#each seriesList as series, j}
-                  <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[j % CHART_COLORS.length]}">
-                    <span style="opacity: 0.6;">{series.group} /</span> {series.signal}{series.unit ? ` (${series.unit})` : ''}
-                    {#if panel.keys.length > 1}
-                      <button class="chart-signal-tag-remove" onclick={() => splitFromPanel(panel.id, series.key)} title="Split to own chart">x</button>
-                    {/if}
-                  </span>
-                {/each}
-                <div class="chart-add-wrapper">
-                  <button class="chart-add-btn" onclick={() => addDropdownOpen = addDropdownOpen === panel.id ? null : panel.id} title="Add signal to this chart">+</button>
-                  {#if addDropdownOpen === panel.id}
-                    {@const available = getAvailableForPanel(panel.id)}
-                    {#if available.length > 0}
-                      <div class="chart-add-dropdown">
-                        {#each available as s}
-                          <button class="chart-add-dropdown-item" onclick={() => addToPanel(panel.id, s.key)}>
-                            {s.signal}{s.unit ? ` (${s.unit})` : ''}
-                            <span style="color: var(--text-dim); font-size: 11px; margin-left: 4px;">{s.group}</span>
-                          </button>
-                        {/each}
-                      </div>
-                    {:else}
-                      <div class="chart-add-dropdown">
-                        <span style="color: var(--text-dim); font-size: 12px; padding: 8px;">No other selected signals</span>
-                      </div>
-                    {/if}
+    {#each viewOrder as view (view)}
+      {#if activeViews.has(view)}
+        <div
+          class="view-section"
+          class:view-drag-over={dragOverView === view}
+          ondragover={(e) => onViewDragOver(view, e)}
+          ondrop={(e) => onViewDrop(view, e)}
+        >
+          <div
+            class="view-drag-handle"
+            title="Drag to reorder"
+            draggable="true"
+            ondragstart={(e) => onViewDragStart(view, e)}
+            ondragend={onViewDragEnd}
+          >&#x2630;</div>
+
+          {#if view === 'signals'}
+            <div class="card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">Signals</strong>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-sm" onclick={selectAll}>All</button>
+                  <button class="btn-sm" onclick={selectNone}>None</button>
+                  {#if chartPanels.length > 0}
+                    <button class="btn-sm" onclick={resetAllZoom}>Reset Zoom</button>
+                    <button class="btn-sm" onclick={savePng}>Save PNG</button>
                   {/if}
                 </div>
               </div>
-              <span class="chart-samples">{getPanelSampleCount(panel)} samples</span>
+              <div class="signal-selector">
+                {#each getGroups() as { group, signals }}
+                  <div class="signal-group">
+                    <div class="signal-group-label">{group}</div>
+                    <div class="signal-chips">
+                      {#each signals as s}
+                        <button
+                          class="chip"
+                          class:chip-active={selected.has(s.key)}
+                          onclick={() => toggleSignal(s.key)}
+                        >
+                          {s.signal}{s.unit ? ` (${s.unit})` : ''}
+                          <span class="chip-count">{mode === 'live' ? (liveSampleCounts[s.key] ?? 0) : s.samples.length}</span>
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+                {/each}
+              </div>
             </div>
-            <div class="chart-container">
-              <canvas id="chart-{panel.id}"></canvas>
+
+            {#if chartPanels.length > 0}
+              <div class="chart-stack">
+                {#each chartPanels as panel (panel.id)}
+                  {@const seriesList = panel.keys.map(k => allSeries.find(s => s.key === k)).filter(Boolean) as SignalSeries[]}
+                  <div
+                    class="chart-card"
+                    class:panel-drag-over={dragOverPanelId === panel.id && dragPanelType === 'signals'}
+                    ondragover={(e) => onPanelDragOver('signals', panel.id, e)}
+                    ondrop={(e) => onPanelDrop('signals', panel.id, e)}
+                  >
+                    <div class="chart-header">
+                      <div class="chart-signal-tags">
+                        <span
+                          class="panel-drag-handle"
+                          title="Drag to reorder"
+                          draggable="true"
+                          ondragstart={(e) => onPanelDragStart('signals', panel.id, e)}
+                          ondragend={onPanelDragEnd}
+                        >&#x2630;</span>
+                        {#each seriesList as series, j}
+                          <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[j % CHART_COLORS.length]}">
+                            <span style="opacity: 0.6;">{series.group} /</span> {series.signal}{series.unit ? ` (${series.unit})` : ''}
+                            {#if panel.keys.length > 1}
+                              <button class="chart-signal-tag-remove" onclick={() => splitFromPanel(panel.id, series.key)} title="Split to own chart">x</button>
+                            {/if}
+                          </span>
+                        {/each}
+                        <div class="chart-add-wrapper">
+                          <button class="chart-add-btn" onclick={() => addDropdownOpen = addDropdownOpen === panel.id ? null : panel.id} title="Add signal to this chart">+</button>
+                          {#if addDropdownOpen === panel.id}
+                            {@const available = getAvailableForPanel(panel.id)}
+                            {#if available.length > 0}
+                              <div class="chart-add-dropdown">
+                                {#each available as s}
+                                  <button class="chart-add-dropdown-item" onclick={() => addToPanel(panel.id, s.key)}>
+                                    {s.signal}{s.unit ? ` (${s.unit})` : ''}
+                                    <span style="color: var(--text-dim); font-size: 11px; margin-left: 4px;">{s.group}</span>
+                                  </button>
+                                {/each}
+                              </div>
+                            {:else}
+                              <div class="chart-add-dropdown">
+                                <span style="color: var(--text-dim); font-size: 12px; padding: 8px;">No other selected signals</span>
+                              </div>
+                            {/if}
+                          {/if}
+                        </div>
+                      </div>
+                      <span class="chart-samples">{getPanelSampleCount(panel)} samples</span>
+                    </div>
+                    <div class="chart-container">
+                      <canvas id="chart-{panel.id}"></canvas>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
+          {:else if view === 'timeline'}
+            <div class="card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">Message Timeline</strong>
+                <div style="display: flex; gap: 8px;">
+                  {#if messageTimingLabels.length > 0}
+                    <button class="btn-sm" onclick={resetAllZoom}>Reset Zoom</button>
+                    <button class="btn-sm" onclick={savePng}>Save PNG</button>
+                  {/if}
+                </div>
+              </div>
+              {#if messageTimingLabels.length > 0}
+                <div class="signal-selector" style="margin-bottom: 12px;">
+                  {#each messageTimingLabels as label, i}
+                    <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[i % CHART_COLORS.length]}">
+                      {label}
+                      <span class="chip-count">{messageTimingStore.get(label)?.length ?? 0}</span>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
             </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
+            {#if messageTimingLabels.length > 0}
+              <div class="chart-card">
+                <div class="chart-container" style="height: {Math.max(200, messageTimingLabels.length * 40 + 60)}px;">
+                  <canvas id="timeline-chart"></canvas>
+                </div>
+              </div>
+            {/if}
+
+          {:else if view === 'interval'}
+            <div class="card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">Message Intervals</strong>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-sm" onclick={selectAllInterval}>All</button>
+                  <button class="btn-sm" onclick={selectNoneInterval}>None</button>
+                  {#if intervalPanels.length > 0}
+                    <button class="btn-sm" onclick={resetAllZoom}>Reset Zoom</button>
+                    <button class="btn-sm" onclick={savePng}>Save PNG</button>
+                  {/if}
+                </div>
+              </div>
+              <div class="signal-chips" style="flex-wrap: wrap;">
+                {#each messageTimingLabels as label, i}
+                  <button
+                    class="chip"
+                    class:chip-active={intervalSelected.has(label)}
+                    onclick={() => toggleIntervalSignal(label)}
+                  >
+                    {label}
+                    <span class="chip-count">{Math.max(0, (messageTimingStore.get(label)?.length ?? 0) - 1)}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            {#if intervalPanels.length > 0}
+              <div class="chart-stack">
+                {#each intervalPanels as panel (panel.id)}
+                  <div
+                    class="chart-card"
+                    class:panel-drag-over={dragOverPanelId === panel.id && dragPanelType === 'interval'}
+                    ondragover={(e) => onPanelDragOver('interval', panel.id, e)}
+                    ondrop={(e) => onPanelDrop('interval', panel.id, e)}
+                  >
+                    <div class="chart-header">
+                      <div class="chart-signal-tags">
+                        <span
+                          class="panel-drag-handle"
+                          title="Drag to reorder"
+                          draggable="true"
+                          ondragstart={(e) => onPanelDragStart('interval', panel.id, e)}
+                          ondragend={onPanelDragEnd}
+                        >&#x2630;</span>
+                        {#each panel.keys as key, j}
+                          <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[j % CHART_COLORS.length]}">
+                            {key}
+                            {#if panel.keys.length > 1}
+                              <button class="chart-signal-tag-remove" onclick={() => splitFromIntervalPanel(panel.id, key)} title="Split to own chart">x</button>
+                            {/if}
+                          </span>
+                        {/each}
+                        <div class="chart-add-wrapper">
+                          <button class="chart-add-btn" onclick={() => addDropdownOpen = addDropdownOpen === panel.id ? null : panel.id} title="Add message to this chart">+</button>
+                          {#if addDropdownOpen === panel.id}
+                            {@const available = getAvailableForIntervalPanel(panel.id)}
+                            {#if available.length > 0}
+                              <div class="chart-add-dropdown">
+                                {#each available as k}
+                                  <button class="chart-add-dropdown-item" onclick={() => addToIntervalPanel(panel.id, k)}>
+                                    {k}
+                                  </button>
+                                {/each}
+                              </div>
+                            {:else}
+                              <div class="chart-add-dropdown">
+                                <span style="color: var(--text-dim); font-size: 12px; padding: 8px;">No other selected messages</span>
+                              </div>
+                            {/if}
+                          {/if}
+                        </div>
+                      </div>
+                      <span class="chart-samples">{getIntervalPanelSampleCount(panel)} intervals</span>
+                    </div>
+                    <div class="chart-container">
+                      <canvas id="interval-{panel.id}"></canvas>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          {/if}
+        </div>
+      {/if}
+    {/each}
   {/if}
 </div>
 
