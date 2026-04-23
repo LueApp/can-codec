@@ -45,7 +45,12 @@
   <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: {codecStore.configs.length > 0 ? '16px' : '0'};">
       <h2 style="margin-bottom: 0;">Configs ({codecStore.configs.length})</h2>
-      <div style="display: flex; gap: 8px;">
+      <div style="display: flex; gap: 8px; align-items: center;">
+        {#if codecStore.configs.length > 1}
+          <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.enableAllConfigs()}>All</button>
+          <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.disableAllConfigs()}>None</button>
+          <span style="width: 1px; height: 20px; background: var(--border);"></span>
+        {/if}
         <input bind:this={fileInput} type="file" accept=".yaml,.yml,.xml" multiple
           style="display:none" onchange={(e) => handleFiles((e.target as HTMLInputElement).files)} />
         <input bind:this={folderInput} type="file" accept=".yaml,.yml,.xml"

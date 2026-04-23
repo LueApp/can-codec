@@ -62,6 +62,18 @@ class CodecStore {
     this.rebuildCodec();
   }
 
+  enableAllConfigs(): void {
+    this.configs = this.configs.map((c) => ({ ...c, enabled: true }));
+    saveConfigsToStorage(this.configs);
+    this.rebuildCodec();
+  }
+
+  disableAllConfigs(): void {
+    this.configs = this.configs.map((c) => ({ ...c, enabled: false }));
+    saveConfigsToStorage(this.configs);
+    this.rebuildCodec();
+  }
+
   toggleConfig(filename: string): void {
     this.configs = this.configs.map((c) =>
       c.filename === filename ? { ...c, enabled: !c.enabled } : c
