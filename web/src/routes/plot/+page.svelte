@@ -455,6 +455,8 @@ if __name__ == "__main__":
   let dumpWriter: FileSystemWritableFileStream | null = null;
   let dumpFrameCount = $state(0);
   let dumpActive = $state(false);
+  let dumpMatchedOnly = $state(false);
+  let matchedFrameCount = $state(0);
 
   // Copy-to-clipboard toast
   let copyToast = $state('');
@@ -504,6 +506,7 @@ if __name__ == "__main__":
     messageTimingLabels = [];
     rawFrameLog = [];
     rawFrameCount = 0;
+    matchedFrameCount = 0;
   }
 
   // ---- Paste mode: analyze ----
@@ -705,7 +708,7 @@ if __name__ == "__main__":
   }
 
   let rawLogVersion = 0;
-  function appendRawFrame(frame: RawFrame) {
+  function appendRawFrame(frame: RawFrame, matched?: boolean) {
     const line = formatRawFrame(frame);
     rawFrameLog.push(line);
     if (rawFrameLog.length > rawLogMax) {
@@ -713,7 +716,7 @@ if __name__ == "__main__":
     }
     rawFrameCount = rawFrameLog.length;
     rawLogVersion++;
-    if (dumpWriter) {
+    if (dumpWriter && (!dumpMatchedOnly || matched === true)) {
       dumpWriter.write(line + '\n');
       dumpFrameCount++;
     }
@@ -722,9 +725,9 @@ if __name__ == "__main__":
   function handleLiveFrame(frame: RawFrame) {
     const canId = frame.arbitration_id;
 
-    appendRawFrame(frame);
-
     if (isMavlinkCanId(canId)) {
+      appendRawFrame(frame);
+
       const isStartFrame = frame.data.length > 0 && frame.data[0] === 0xFD;
       const buf = mavlinkBuffers.get(canId);
 
@@ -753,28 +756,49 @@ if __name__ == "__main__":
         mavlinkTimers.delete(canId);
       }, 100));
     } else {
-      // Standard CAN — decode immediately
+      // Standard CAN — decode first to know match status for dump filtering
+      let matched = false;
       try {
         const res = codecStore.codec.smartDecode(canId, frame.data);
         if (res) {
+          matched = true;
+          matchedFrameCount++;
           appendDecoded(res.decoded, res.mavlink, frame.timestamp, frame.is_fd);
         }
       } catch { /* skip */ }
+      appendRawFrame(frame, matched);
     }
 
     scheduleChartUpdate();
   }
 
   function flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }) {
+    let decoded = false;
     try {
       const res = buf.frames.length === 1
         ? codecStore.codec.smartDecode(canId, buf.frames[0])
         : codecStore.codec.smartDecodeMultiFrame(canId, buf.frames);
       if (res) {
+        decoded = true;
+        matchedFrameCount += buf.frames.length;
         const ts = buf.timestamps[0] ?? 0;
         appendDecoded(res.decoded, res.mavlink, ts, buf.is_fd, buf.frames, buf.timestamps);
       }
     } catch { /* skip */ }
+    if (decoded && dumpMatchedOnly && dumpWriter) {
+      const iface = wsClient.busInfo?.bus ?? 'can0';
+      const id = canId > 0x7FF
+        ? canId.toString(16).toUpperCase().padStart(8, '0')
+        : canId.toString(16).toUpperCase().padStart(3, '0');
+      for (let i = 0; i < buf.frames.length; i++) {
+        const ts = (buf.timestamps[i] ?? 0).toFixed(6);
+        const data = buf.frames[i];
+        const dlc = data.length.toString().padStart(2, '0');
+        const hex = Array.from(data).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+        dumpWriter.write(` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}\n`);
+        dumpFrameCount++;
+      }
+    }
     mavlinkBuffers.delete(canId);
   }
 
@@ -1020,7 +1044,7 @@ if __name__ == "__main__":
     const counts: Record<string, number> = {};
     for (const [key, samples] of liveSampleStore) counts[key] = samples.length;
     liveSampleCounts = counts;
-    status = `${allSeries.length} signals, ${wsClient.frameCount} frames`;
+    status = `${allSeries.length} signals`;
   }
 
   // ---- Signal selection & panel management ----
@@ -1968,7 +1992,7 @@ if __name__ == "__main__":
 
         {#if wsClient.status === 'connected'}
           <span style="font-size: 13px; color: var(--text-dim);">
-            {wsClient.frameCount} frames{paused ? ' (paused)' : ''}
+            {#if dumpMatchedOnly}{matchedFrameCount} / {/if}{wsClient.frameCount} frames{paused ? ' (paused)' : ''}
           </span>
           {#if dumpActive}
             <button style="background: var(--red); font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" onclick={stopDumpToFile}>
@@ -1978,6 +2002,9 @@ if __name__ == "__main__":
           {:else}
             <button class="btn-sm" onclick={startDumpToFile}>Record to file</button>
           {/if}
+          <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;">
+            <input type="checkbox" bind:checked={dumpMatchedOnly} style="accent-color: var(--accent);" /> Matched only
+          </label>
         {/if}
 
         {#if codecStore.configs.length === 0}
