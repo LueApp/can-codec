@@ -1,0 +1,919 @@
+import { codecStore } from './codec-store.svelte';
+import { parseCandump } from './codec';
+import { WebSocketClient, type RawFrame } from './websocket-client.svelte';
+import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from './types';
+import type {
+  FrameRef, SignalSample, SignalSeries, ChartPanel, MessageTimingEntry,
+  InputMode, ChartView, BufferMode, PlotLayoutConfig,
+} from './plot-types';
+import yaml from 'js-yaml';
+
+const CHART_UPDATE_INTERVAL = 50;
+
+class PlotStore {
+  // --- Reactive state ---
+  mode = $state<InputMode>('paste');
+  input = $state('');
+  allSeries = $state<SignalSeries[]>([]);
+  chartPanels = $state<ChartPanel[]>([]);
+  status = $state('');
+  activeViews = $state<Set<ChartView>>(new Set(['signals']));
+  viewOrder = $state<ChartView[]>(['signals', 'timeline', 'interval']);
+  messageTimingLabels = $state<string[]>([]);
+  intervalPanels = $state<ChartPanel[]>([]);
+  wsUrl = $state(
+    typeof localStorage !== 'undefined'
+      ? (localStorage.getItem('cancodec_ws_url') ?? 'ws://localhost:8765')
+      : 'ws://localhost:8765'
+  );
+  liveSampleCounts = $state<Record<string, number>>({});
+  rawFrameCount = $state(0);
+  rawLogMax = $state(2000);
+  showRawLog = $state(false);
+  paused = $state(false);
+  dumpFrameCount = $state(0);
+  dumpActive = $state(false);
+  dumpMatchedOnly = $state(false);
+  matchedFrameCount = $state(0);
+  bufferMode = $state<BufferMode>('samples');
+  bufferSamples = $state(5000);
+  bufferSeconds = $state(60);
+  pendingLayoutConfig = $state<PlotLayoutConfig | null>(null);
+
+  // --- Non-reactive state (performance) ---
+  nextPanelId = 0;
+  wsClient = new WebSocketClient();
+  liveSampleStore = new Map<string, SignalSample[]>();
+  messageTimingStore = new Map<string, MessageTimingEntry[]>();
+  rawFrameLog: string[] = [];
+  liveStartTime: number | null = null;
+  mavlinkBuffers = new Map<number, { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }>();
+  mavlinkTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  chartUpdatePending = false;
+  rawLogVersion = 0;
+  dumpWriter: FileSystemWritableFileStream | null = null;
+
+  // --- Render callback ---
+  private _renderCallback: ((fullRebuild: boolean) => void) | null = null;
+
+  registerRenderCallback(cb: (fullRebuild: boolean) => void) {
+    this._renderCallback = cb;
+  }
+
+  unregisterRenderCallback() {
+    this._renderCallback = null;
+  }
+
+  // --- Derived getters ---
+  get selected(): Set<string> {
+    return new Set(this.chartPanels.flatMap(p => p.keys));
+  }
+
+  get intervalSelected(): Set<string> {
+    return new Set(this.intervalPanels.flatMap(p => p.keys));
+  }
+
+  // --- Render scheduling ---
+  requestRender(fullRebuild = false) {
+    this._renderCallback?.(fullRebuild);
+  }
+
+  scheduleChartUpdate() {
+    if (this.chartUpdatePending) return;
+    this.chartUpdatePending = true;
+    setTimeout(() => {
+      try {
+        if (!this.paused) {
+          this._renderCallback?.(false);
+        }
+      } finally {
+        this.chartUpdatePending = false;
+      }
+    }, CHART_UPDATE_INTERVAL);
+  }
+
+  // --- Data reset ---
+  resetData() {
+    this.allSeries = [];
+    this.chartPanels = [];
+    this.intervalPanels = [];
+    this.nextPanelId = 0;
+    this.status = '';
+    this.liveStartTime = null;
+    this.liveSampleStore.clear();
+    this.liveSampleCounts = {};
+    this.messageTimingStore.clear();
+    this.messageTimingLabels = [];
+    this.rawFrameLog = [];
+    this.rawFrameCount = 0;
+    this.matchedFrameCount = 0;
+  }
+
+  // --- Mode switching ---
+  switchMode(newMode: InputMode) {
+    if (this.mode === 'live' && newMode !== 'live') {
+      this.stopDumpToFile();
+      this.wsClient.disconnect();
+      this.clearMavlinkBuffers();
+    }
+    if (newMode !== this.mode) {
+      this.resetData();
+      this.requestRender(true);
+    }
+    this.mode = newMode;
+  }
+
+  // --- Connection management ---
+  connectLive() {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cancodec_ws_url', this.wsUrl);
+    }
+    this.resetData();
+    this.requestRender(true);
+    this.mavlinkBuffers.clear();
+    this.wsClient.setFrameCallback((frame) => this.handleLiveFrame(frame));
+    this.wsClient.connect(this.wsUrl);
+  }
+
+  disconnectLive() {
+    this.paused = false;
+    this.stopDumpToFile();
+    this.wsClient.disconnect();
+    this.clearMavlinkBuffers();
+  }
+
+  clearMavlinkBuffers() {
+    for (const timer of this.mavlinkTimers.values()) clearTimeout(timer);
+    this.mavlinkTimers.clear();
+    this.mavlinkBuffers.clear();
+  }
+
+  // --- Pause ---
+  togglePause() {
+    this.paused = !this.paused;
+    if (!this.paused) {
+      this._renderCallback?.(false);
+    }
+  }
+
+  // --- Dump to file ---
+  async startDumpToFile() {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName: `candump_${ts}.log`,
+      types: [{ description: 'Log files', accept: { 'text/plain': ['.log'] } }],
+    });
+    this.dumpWriter = await handle.createWritable();
+    this.dumpFrameCount = 0;
+    this.dumpActive = true;
+  }
+
+  async stopDumpToFile() {
+    if (!this.dumpWriter) return;
+    const w = this.dumpWriter;
+    this.dumpWriter = null;
+    this.dumpActive = false;
+    await w.close();
+  }
+
+  // --- Format helpers ---
+  formatRawFrame(frame: RawFrame): string {
+    const ts = frame.timestamp.toFixed(6);
+    const iface = this.wsClient.busInfo?.bus ?? 'can0';
+    const id = frame.arbitration_id > 0x7FF
+      ? frame.arbitration_id.toString(16).toUpperCase().padStart(8, '0')
+      : frame.arbitration_id.toString(16).toUpperCase().padStart(3, '0');
+    const dlc = frame.data.length.toString().padStart(2, '0');
+    const hex = Array.from(frame.data).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
+  }
+
+  formatFrameShort(f: FrameRef): string {
+    const id = f.id.toString(16).toUpperCase().padStart(f.id > 0x7FF ? 8 : 3, '0');
+    const hex = f.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    const nFrames = 1 + (f.extraFrames?.length ?? 0);
+    const suffix = nFrames > 1 ? ` (+${nFrames - 1} frames)` : '';
+    return `0x${id}  ${hex}${suffix}`;
+  }
+
+  formatOneFrame(id: string, iface: string, data: number[], timestamp: number): string {
+    const ts = timestamp.toFixed(6);
+    const dlc = data.length.toString().padStart(2, '0');
+    const hex = data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
+  }
+
+  formatFrameCandump(f: FrameRef): string {
+    const iface = this.wsClient.busInfo?.bus ?? 'can0';
+    const id = f.id > 0x7FF
+      ? f.id.toString(16).toUpperCase().padStart(8, '0')
+      : f.id.toString(16).toUpperCase().padStart(3, '0');
+    const lines = [this.formatOneFrame(id, iface, f.data, f.timestamp)];
+    if (f.extraFrames) {
+      for (const ef of f.extraFrames) {
+        lines.push(this.formatOneFrame(id, iface, ef.data, ef.timestamp));
+      }
+    }
+    return lines.join('\n');
+  }
+
+  getMuxSuffix(msg: Message | null, signals: { name: string; enum_name?: string | null }[]): string {
+    if (!msg?.mux_signal) return '';
+    const muxSig = signals.find(s => s.name === msg.mux_signal);
+    if (muxSig?.enum_name) return ` / ${muxSig.enum_name}`;
+    return '';
+  }
+
+  isMavlinkCanId(canId: number): boolean {
+    return (canId & 0x10000) !== 0;
+  }
+
+  // --- Raw frame log ---
+  appendRawFrame(frame: RawFrame, matched?: boolean) {
+    const line = this.formatRawFrame(frame);
+    this.rawFrameLog.push(line);
+    if (this.rawFrameLog.length > this.rawLogMax) {
+      this.rawFrameLog.splice(0, this.rawFrameLog.length - this.rawLogMax);
+    }
+    this.rawFrameCount = this.rawFrameLog.length;
+    this.rawLogVersion++;
+    if (this.dumpWriter && (!this.dumpMatchedOnly || matched === true)) {
+      this.dumpWriter.write(line + '\n');
+      this.dumpFrameCount++;
+    }
+  }
+
+  // --- Live data ingestion ---
+  handleLiveFrame(frame: RawFrame) {
+    const canId = frame.arbitration_id;
+
+    if (this.isMavlinkCanId(canId)) {
+      this.appendRawFrame(frame);
+
+      const isStartFrame = frame.data.length > 0 && frame.data[0] === 0xFD;
+      const buf = this.mavlinkBuffers.get(canId);
+
+      if (isStartFrame && buf && buf.frames.length > 0) {
+        this.flushMavlinkBuffer(canId, buf);
+      }
+
+      if (isStartFrame) {
+        this.mavlinkBuffers.set(canId, { frames: [frame.data], timestamps: [frame.timestamp], is_fd: frame.is_fd });
+      } else if (buf) {
+        buf.frames.push(frame.data);
+        buf.timestamps.push(frame.timestamp);
+      }
+
+      const existing = this.mavlinkTimers.get(canId);
+      if (existing) clearTimeout(existing);
+      this.mavlinkTimers.set(canId, setTimeout(() => {
+        const b = this.mavlinkBuffers.get(canId);
+        if (b && b.frames.length > 0) {
+          this.flushMavlinkBuffer(canId, b);
+          this.scheduleChartUpdate();
+        }
+        this.mavlinkTimers.delete(canId);
+      }, 100));
+    } else {
+      let matched = false;
+      try {
+        const res = codecStore.codec.smartDecode(canId, frame.data);
+        if (res) {
+          matched = true;
+          this.matchedFrameCount++;
+          this.appendDecoded(res.decoded, res.mavlink, frame.timestamp, frame.is_fd);
+        }
+      } catch { /* skip */ }
+      this.appendRawFrame(frame, matched);
+    }
+
+    this.scheduleChartUpdate();
+  }
+
+  flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }) {
+    let decoded = false;
+    try {
+      const res = buf.frames.length === 1
+        ? codecStore.codec.smartDecode(canId, buf.frames[0])
+        : codecStore.codec.smartDecodeMultiFrame(canId, buf.frames);
+      if (res) {
+        decoded = true;
+        this.matchedFrameCount += buf.frames.length;
+        const ts = buf.timestamps[0] ?? 0;
+        this.appendDecoded(res.decoded, res.mavlink, ts, buf.is_fd, buf.frames, buf.timestamps);
+      }
+    } catch { /* skip */ }
+    if (decoded && this.dumpMatchedOnly && this.dumpWriter) {
+      const iface = this.wsClient.busInfo?.bus ?? 'can0';
+      const id = canId > 0x7FF
+        ? canId.toString(16).toUpperCase().padStart(8, '0')
+        : canId.toString(16).toUpperCase().padStart(3, '0');
+      for (let i = 0; i < buf.frames.length; i++) {
+        const ts = (buf.timestamps[i] ?? 0).toFixed(6);
+        const data = buf.frames[i];
+        const dlc = data.length.toString().padStart(2, '0');
+        const hex = Array.from(data).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+        this.dumpWriter.write(` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}\n`);
+        this.dumpFrameCount++;
+      }
+    }
+    this.mavlinkBuffers.delete(canId);
+  }
+
+  appendSignalSamples(
+    signals: { name: string; physical_value: number; unit: string; bitfield_flags: Record<string, boolean> | null }[],
+    groupLabel: string,
+    time: number,
+    frame: FrameRef
+  ): boolean {
+    let newSeriesAdded = false;
+    for (const sig of signals) {
+      if (sig.bitfield_flags) continue;
+      const val = typeof sig.physical_value === 'number' ? sig.physical_value : NaN;
+      if (isNaN(val)) continue;
+
+      const key = `${groupLabel} / ${sig.name}`;
+
+      let samples = this.liveSampleStore.get(key);
+      if (!samples) {
+        samples = [];
+        this.liveSampleStore.set(key, samples);
+        const meta: SignalSeries = { key, group: groupLabel, signal: sig.name, unit: sig.unit, samples: [] };
+        this.allSeries = [...this.allSeries, meta].sort((a, b) => a.key.localeCompare(b.key));
+        newSeriesAdded = true;
+      }
+      samples.push({ time, value: val, frame });
+
+      if (this.bufferMode === 'samples' && samples.length > this.bufferSamples) {
+        samples.splice(0, samples.length - this.bufferSamples);
+      } else if (this.bufferMode === 'time') {
+        const cutoff = time - this.bufferSeconds;
+        let trimTo = 0;
+        while (trimTo < samples.length && samples[trimTo].time < cutoff) trimTo++;
+        if (trimTo > 0) samples.splice(0, trimTo);
+      }
+    }
+    return newSeriesAdded;
+  }
+
+  appendDecoded(
+    decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number, is_fd: boolean,
+    rawFrames?: Uint8Array[], rawTimestamps?: number[]
+  ) {
+    if (this.liveStartTime === null) this.liveStartTime = timestamp;
+    const time = timestamp - this.liveStartTime;
+    const primaryData = rawFrames ? Array.from(rawFrames[0]) : decoded.raw_data;
+    const frame: FrameRef = { id: decoded.msg_id, data: primaryData, timestamp, is_fd };
+    if (rawFrames && rawFrames.length > 1) {
+      frame.extraFrames = rawFrames.slice(1).map((f, i) => ({
+        data: Array.from(f),
+        timestamp: rawTimestamps?.[i + 1] ?? timestamp,
+      }));
+    }
+
+    const baseLabel = mavlink
+      ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
+      : decoded.name;
+
+    let newSeriesAdded = false;
+    let newTimingAdded = false;
+
+    const msg = codecStore.codec.getMessageByName(decoded.name);
+    if (decoded.is_broadcast && decoded.sub_messages) {
+      for (const sub of decoded.sub_messages) {
+        const mux = this.getMuxSuffix(msg, sub.signals);
+        const groupLabel = `${baseLabel} / N${sub.node_id}${mux}`;
+        if (this.appendMessageTiming(groupLabel, time, frame)) newTimingAdded = true;
+        if (this.appendSignalSamples(sub.signals, groupLabel, time, frame)) newSeriesAdded = true;
+      }
+    } else {
+      const mux = this.getMuxSuffix(msg, decoded.signals);
+      const groupLabel = (msg && msg.node_count > 1)
+        ? `${baseLabel} / N${decoded.node_id}${mux}`
+        : `${baseLabel}${mux}`;
+      if (this.appendMessageTiming(groupLabel, time, frame)) newTimingAdded = true;
+      if (this.appendSignalSamples(decoded.signals, groupLabel, time, frame)) newSeriesAdded = true;
+    }
+
+    if (newSeriesAdded || newTimingAdded) {
+      if (this.pendingLayoutConfig) {
+        this.autoApplyPendingLayout();
+      } else {
+        if (newSeriesAdded && this.allSeries.length <= 12) {
+          const inPanels = new Set(this.chartPanels.flatMap(p => p.keys));
+          const newPanels = this.allSeries
+            .filter(s => !inPanels.has(s.key))
+            .map(s => ({ id: `p${this.nextPanelId++}`, keys: [s.key] }));
+          if (newPanels.length > 0) {
+            this.chartPanels = [...this.chartPanels, ...newPanels];
+          }
+        }
+
+        if (newTimingAdded && this.messageTimingLabels.length <= 12) {
+          const inPanels = new Set(this.intervalPanels.flatMap(p => p.keys));
+          const newPanels = this.messageTimingLabels
+            .filter(k => !inPanels.has(k))
+            .map(k => ({ id: `ip${this.nextPanelId++}`, keys: [k] }));
+          if (newPanels.length > 0) {
+            this.intervalPanels = [...this.intervalPanels, ...newPanels];
+          }
+        }
+      }
+    }
+  }
+
+  appendMessageTiming(groupLabel: string, time: number, frame: FrameRef): boolean {
+    let arr = this.messageTimingStore.get(groupLabel);
+    let isNew = false;
+    if (!arr) {
+      arr = [];
+      this.messageTimingStore.set(groupLabel, arr);
+      this.messageTimingLabels = Array.from(this.messageTimingStore.keys()).sort();
+      isNew = true;
+    }
+    arr.push({ time, frame });
+    if (this.bufferMode === 'samples' && arr.length > this.bufferSamples) {
+      arr.splice(0, arr.length - this.bufferSamples);
+    } else if (this.bufferMode === 'time') {
+      const cutoff = time - this.bufferSeconds;
+      let trimTo = 0;
+      while (trimTo < arr.length && arr[trimTo].time < cutoff) trimTo++;
+      if (trimTo > 0) arr.splice(0, trimTo);
+    }
+    return isNew;
+  }
+
+  // --- Signal panel management ---
+  toggleSignal(key: string) {
+    const panelIdx = this.chartPanels.findIndex(p => p.keys.includes(key));
+    if (panelIdx >= 0) {
+      const panel = this.chartPanels[panelIdx];
+      if (panel.keys.length === 1) {
+        this.chartPanels = this.chartPanels.filter((_, i) => i !== panelIdx);
+      } else {
+        this.chartPanels = this.chartPanels.map((p, i) =>
+          i === panelIdx ? { ...p, keys: p.keys.filter(k => k !== key) } : p
+        );
+      }
+    } else {
+      this.chartPanels = [...this.chartPanels, { id: `p${this.nextPanelId++}`, keys: [key] }];
+    }
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  selectAll() {
+    const already = new Set(this.chartPanels.flatMap(p => p.keys));
+    const newPanels = this.allSeries
+      .filter(s => !already.has(s.key))
+      .map(s => ({ id: `p${this.nextPanelId++}`, keys: [s.key] }));
+    this.chartPanels = [...this.chartPanels, ...newPanels];
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  selectNone() {
+    this.chartPanels = [];
+    this.requestRender(true);
+  }
+
+  addToPanel(panelId: string, signalKey: string) {
+    this.chartPanels = this.chartPanels
+      .map(p => {
+        if (p.id === panelId) return { ...p, keys: [...p.keys, signalKey] };
+        if (p.keys.includes(signalKey)) return { ...p, keys: p.keys.filter(k => k !== signalKey) };
+        return p;
+      })
+      .filter(p => p.keys.length > 0);
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  splitFromPanel(panelId: string, signalKey: string) {
+    this.chartPanels = [
+      ...this.chartPanels.map(p =>
+        p.id === panelId ? { ...p, keys: p.keys.filter(k => k !== signalKey) } : p
+      ).filter(p => p.keys.length > 0),
+      { id: `p${this.nextPanelId++}`, keys: [signalKey] },
+    ];
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  // --- Interval panel management ---
+  toggleIntervalSignal(key: string) {
+    const panelIdx = this.intervalPanels.findIndex(p => p.keys.includes(key));
+    if (panelIdx >= 0) {
+      const panel = this.intervalPanels[panelIdx];
+      if (panel.keys.length === 1) {
+        this.intervalPanels = this.intervalPanels.filter((_, i) => i !== panelIdx);
+      } else {
+        this.intervalPanels = this.intervalPanels.map((p, i) =>
+          i === panelIdx ? { ...p, keys: p.keys.filter(k => k !== key) } : p
+        );
+      }
+    } else {
+      this.intervalPanels = [...this.intervalPanels, { id: `ip${this.nextPanelId++}`, keys: [key] }];
+    }
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  selectAllInterval() {
+    const already = new Set(this.intervalPanels.flatMap(p => p.keys));
+    const newPanels = this.messageTimingLabels
+      .filter(k => !already.has(k))
+      .map(k => ({ id: `ip${this.nextPanelId++}`, keys: [k] }));
+    this.intervalPanels = [...this.intervalPanels, ...newPanels];
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  selectNoneInterval() {
+    this.intervalPanels = [];
+    this.requestRender(true);
+  }
+
+  addToIntervalPanel(panelId: string, key: string) {
+    this.intervalPanels = this.intervalPanels
+      .map(p => {
+        if (p.id === panelId) return { ...p, keys: [...p.keys, key] };
+        if (p.keys.includes(key)) return { ...p, keys: p.keys.filter(k => k !== key) };
+        return p;
+      })
+      .filter(p => p.keys.length > 0);
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  splitFromIntervalPanel(panelId: string, key: string) {
+    this.intervalPanels = [
+      ...this.intervalPanels.map(p =>
+        p.id === panelId ? { ...p, keys: p.keys.filter(k => k !== key) } : p
+      ).filter(p => p.keys.length > 0),
+      { id: `ip${this.nextPanelId++}`, keys: [key] },
+    ];
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  // --- View management ---
+  toggleView(view: ChartView) {
+    const next = new Set(this.activeViews);
+    if (next.has(view)) {
+      if (next.size > 1) next.delete(view);
+    } else {
+      next.add(view);
+    }
+    this.activeViews = next;
+    this.requestRender(true);
+  }
+
+  reorderViews(fromIdx: number, toIdx: number) {
+    const next = [...this.viewOrder];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    this.viewOrder = next;
+    this.requestRender(true);
+  }
+
+  reorderPanels(type: 'signals' | 'interval', fromIdx: number, toIdx: number) {
+    const panels = type === 'signals' ? this.chartPanels : this.intervalPanels;
+    const next = [...panels];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    if (type === 'signals') this.chartPanels = next;
+    else this.intervalPanels = next;
+    if (this.mode === 'live') this.scheduleChartUpdate();
+    else this.requestRender(true);
+  }
+
+  // --- Query helpers ---
+  getSamples(key: string): SignalSample[] {
+    return this.mode === 'live' ? (this.liveSampleStore.get(key) ?? []) : (this.allSeries.find(s => s.key === key)?.samples ?? []);
+  }
+
+  getGroups(): { group: string; signals: SignalSeries[] }[] {
+    const map = new Map<string, SignalSeries[]>();
+    for (const s of this.allSeries) {
+      let list = map.get(s.group);
+      if (!list) { list = []; map.set(s.group, list); }
+      list.push(s);
+    }
+    return Array.from(map.entries()).map(([group, signals]) => ({ group, signals }));
+  }
+
+  getAvailableForPanel(panelId: string): SignalSeries[] {
+    const panel = this.chartPanels.find(p => p.id === panelId);
+    if (!panel) return [];
+    const panelKeys = new Set(panel.keys);
+    return this.allSeries.filter(s => this.selected.has(s.key) && !panelKeys.has(s.key));
+  }
+
+  getPanelSampleCount(panel: ChartPanel): number {
+    if (this.mode === 'live') {
+      return panel.keys.reduce((sum, k) => sum + (this.liveSampleCounts[k] ?? 0), 0);
+    }
+    return panel.keys.reduce((sum, k) => {
+      const s = this.allSeries.find(se => se.key === k);
+      return sum + (s?.samples.length ?? 0);
+    }, 0);
+  }
+
+  getAvailableForIntervalPanel(panelId: string): string[] {
+    const panel = this.intervalPanels.find(p => p.id === panelId);
+    if (!panel) return [];
+    const panelKeys = new Set(panel.keys);
+    return this.messageTimingLabels.filter(k => this.intervalSelected.has(k) && !panelKeys.has(k));
+  }
+
+  getIntervalPanelSampleCount(panel: ChartPanel): number {
+    return panel.keys.reduce((sum, k) => sum + Math.max(0, (this.messageTimingStore.get(k)?.length ?? 0) - 1), 0);
+  }
+
+  getIntervalData(label: string): { time: number; dt: number; frame: FrameRef }[] {
+    const entries = this.messageTimingStore.get(label) ?? [];
+    const result: { time: number; dt: number; frame: FrameRef }[] = [];
+    for (let i = 1; i < entries.length; i++) {
+      const dt = (entries[i].time - entries[i - 1].time) * 1000;
+      result.push({ time: entries[i].time, dt, frame: entries[i].frame });
+    }
+    return result;
+  }
+
+  updateLiveCounts() {
+    const counts: Record<string, number> = {};
+    for (const [key, samples] of this.liveSampleStore) counts[key] = samples.length;
+    this.liveSampleCounts = counts;
+    this.status = `${this.allSeries.length} signals`;
+  }
+
+  // --- Paste mode analysis ---
+  analyze() {
+    this.resetData();
+    const lines = this.input.trim().split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) { this.requestRender(true); return; }
+
+    const codec = codecStore.codec;
+    const seriesMap = new Map<string, SignalSeries>();
+    let firstTs: number | null = null;
+    let lineIndex = 0;
+
+    type FrameGroup = { canId: number; timestamps: (number | undefined)[]; datas: Uint8Array[] };
+    const groups: (FrameGroup | { line: string; timestamp?: number })[] = [];
+
+    for (const line of lines) {
+      const frame = parseCandump(line);
+      if (!frame) continue;
+
+      if (this.isMavlinkCanId(frame.canId)) {
+        const last = groups[groups.length - 1];
+        if (last && 'canId' in last && last.canId === frame.canId) {
+          last.timestamps.push(frame.timestamp);
+          last.datas.push(frame.data);
+        } else {
+          groups.push({ canId: frame.canId, timestamps: [frame.timestamp], datas: [frame.data] });
+        }
+      } else {
+        groups.push({ line, timestamp: frame.timestamp });
+      }
+    }
+
+    for (const group of groups) {
+      let decoded: DecodedMessage | null = null;
+      let mavlink: MavlinkInfo | undefined;
+      let timestamp: number | undefined;
+
+      if ('canId' in group) {
+        timestamp = group.timestamps[0] ?? undefined;
+        try {
+          const res = group.datas.length === 1
+            ? codec.smartDecode(group.canId, group.datas[0])
+            : codec.smartDecodeMultiFrame(group.canId, group.datas);
+          if (res) { decoded = res.decoded; mavlink = res.mavlink; }
+        } catch { /* skip */ }
+      } else {
+        timestamp = group.timestamp;
+        const frame = parseCandump(group.line);
+        if (frame) {
+          try {
+            const res = codec.smartDecode(frame.canId, frame.data);
+            if (res) { decoded = res.decoded; mavlink = res.mavlink; }
+          } catch { /* skip */ }
+        }
+      }
+
+      if (!decoded) { lineIndex++; continue; }
+
+      const absTs = timestamp ?? 0;
+      const isFd = 'canId' in group ? true : (() => { const f = parseCandump(group.line); return f?.isFD ?? false; })();
+      let frameRef: FrameRef;
+      if ('canId' in group) {
+        frameRef = { id: decoded.msg_id, data: Array.from(group.datas[0]), timestamp: absTs, is_fd: isFd };
+        if (group.datas.length > 1) {
+          frameRef.extraFrames = group.datas.slice(1).map((d, i) => ({
+            data: Array.from(d),
+            timestamp: group.timestamps[i + 1] ?? absTs,
+          }));
+        }
+      } else {
+        const f = parseCandump(group.line);
+        frameRef = { id: decoded.msg_id, data: f ? Array.from(f.data) : decoded.raw_data, timestamp: absTs, is_fd: isFd };
+      }
+
+      if (timestamp !== undefined) {
+        if (firstTs === null) firstTs = timestamp;
+        timestamp = timestamp - firstTs;
+      } else {
+        timestamp = lineIndex;
+      }
+
+      const baseLabel = mavlink
+        ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
+        : decoded.name;
+
+      const msg = codecStore.codec.getMessageByName(decoded.name);
+      const signalEntries: { signals: typeof decoded.signals; groupLabel: string }[] = [];
+      if (decoded.is_broadcast && decoded.sub_messages) {
+        for (const sub of decoded.sub_messages) {
+          const mux = this.getMuxSuffix(msg, sub.signals);
+          signalEntries.push({ signals: sub.signals, groupLabel: `${baseLabel} / N${sub.node_id}${mux}` });
+        }
+      } else {
+        const mux = this.getMuxSuffix(msg, decoded.signals);
+        const groupLabel = (msg && msg.node_count > 1)
+          ? `${baseLabel} / N${decoded.node_id}${mux}`
+          : `${baseLabel}${mux}`;
+        signalEntries.push({ signals: decoded.signals, groupLabel });
+      }
+
+      for (const entry of signalEntries) {
+        let timingArr = this.messageTimingStore.get(entry.groupLabel);
+        if (!timingArr) { timingArr = []; this.messageTimingStore.set(entry.groupLabel, timingArr); }
+        timingArr.push({ time: timestamp!, frame: frameRef });
+      }
+
+      for (const entry of signalEntries) {
+        for (const sig of entry.signals) {
+          if (sig.bitfield_flags) continue;
+          const val = typeof sig.physical_value === 'number' ? sig.physical_value : NaN;
+          if (isNaN(val)) continue;
+
+          const key = `${entry.groupLabel} / ${sig.name}`;
+          let series = seriesMap.get(key);
+          if (!series) {
+            series = { key, group: entry.groupLabel, signal: sig.name, unit: sig.unit, samples: [] };
+            seriesMap.set(key, series);
+          }
+          series.samples.push({ time: timestamp!, value: val, frame: frameRef });
+        }
+      }
+      lineIndex++;
+    }
+
+    this.messageTimingLabels = Array.from(this.messageTimingStore.keys()).sort();
+
+    this.allSeries = Array.from(seriesMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    if (this.allSeries.length <= 12) {
+      this.chartPanels = this.allSeries.map(s => ({ id: `p${this.nextPanelId++}`, keys: [s.key] }));
+    }
+    if (this.messageTimingLabels.length <= 12) {
+      this.intervalPanels = this.messageTimingLabels.map(k => ({ id: `ip${this.nextPanelId++}`, keys: [k] }));
+    }
+    this.status = `${this.allSeries.length} signals found from ${groups.length} frames`;
+    this.requestRender(true);
+  }
+
+  // --- Layout config ---
+  exportLayoutYaml(): string {
+    const config: PlotLayoutConfig = {
+      plot: {
+        views: {
+          active: [...this.activeViews],
+          order: [...this.viewOrder],
+        },
+        buffer: {
+          mode: this.bufferMode,
+          samples: this.bufferSamples,
+          seconds: this.bufferSeconds,
+        },
+        signals: {
+          panels: this.chartPanels.map(p => [...p.keys]),
+        },
+        intervals: {
+          panels: this.intervalPanels.map(p => [...p.keys]),
+        },
+      },
+    };
+    return yaml.dump(config, { lineWidth: -1 });
+  }
+
+  applyLayoutConfig(config: PlotLayoutConfig) {
+    const p = config.plot;
+
+    if (p.views?.active) {
+      const validViews: ChartView[] = ['signals', 'timeline', 'interval'];
+      const active = p.views.active.filter(v => validViews.includes(v));
+      if (active.length > 0) this.activeViews = new Set(active);
+    }
+    if (p.views?.order) {
+      const validViews: ChartView[] = ['signals', 'timeline', 'interval'];
+      const order = p.views.order.filter(v => validViews.includes(v));
+      if (order.length === 3) this.viewOrder = order;
+    }
+
+    if (p.buffer) {
+      if (p.buffer.mode) this.bufferMode = p.buffer.mode;
+      if (p.buffer.samples != null) this.bufferSamples = p.buffer.samples;
+      if (p.buffer.seconds != null) this.bufferSeconds = p.buffer.seconds;
+    }
+
+    const knownSignalKeys = new Set(this.allSeries.map(s => s.key));
+    const knownTimingKeys = new Set(this.messageTimingLabels);
+
+    if (p.signals?.panels) {
+      const panels: ChartPanel[] = [];
+      for (const keys of p.signals.panels) {
+        const matched = keys.filter(k => knownSignalKeys.has(k));
+        if (matched.length > 0) {
+          panels.push({ id: `p${this.nextPanelId++}`, keys: matched });
+        }
+      }
+      this.chartPanels = panels;
+    }
+
+    if (p.intervals?.panels) {
+      const panels: ChartPanel[] = [];
+      for (const keys of p.intervals.panels) {
+        const matched = keys.filter(k => knownTimingKeys.has(k));
+        if (matched.length > 0) {
+          panels.push({ id: `ip${this.nextPanelId++}`, keys: matched });
+        }
+      }
+      this.intervalPanels = panels;
+    }
+
+    this.pendingLayoutConfig = config;
+    this.requestRender(true);
+  }
+
+  autoApplyPendingLayout() {
+    const config = this.pendingLayoutConfig;
+    if (!config?.plot?.signals?.panels && !config?.plot?.intervals?.panels) return;
+
+    const knownSignalKeys = new Set(this.allSeries.map(s => s.key));
+    const currentPanelKeys = new Set(this.chartPanels.flatMap(p => p.keys));
+    let signalChanged = false;
+
+    if (config.plot.signals?.panels) {
+      for (const keys of config.plot.signals.panels) {
+        const matched = keys.filter(k => knownSignalKeys.has(k) && !currentPanelKeys.has(k));
+        if (matched.length > 0) {
+          const existingPanel = this.chartPanels.find(p =>
+            keys.some(k => p.keys.includes(k))
+          );
+          if (existingPanel) {
+            existingPanel.keys.push(...matched);
+          } else {
+            this.chartPanels = [...this.chartPanels, { id: `p${this.nextPanelId++}`, keys: matched }];
+          }
+          matched.forEach(k => currentPanelKeys.add(k));
+          signalChanged = true;
+        }
+      }
+    }
+
+    const knownTimingKeys = new Set(this.messageTimingLabels);
+    const currentIntervalKeys = new Set(this.intervalPanels.flatMap(p => p.keys));
+    let intervalChanged = false;
+
+    if (config.plot.intervals?.panels) {
+      for (const keys of config.plot.intervals.panels) {
+        const matched = keys.filter(k => knownTimingKeys.has(k) && !currentIntervalKeys.has(k));
+        if (matched.length > 0) {
+          const existingPanel = this.intervalPanels.find(p =>
+            keys.some(k => p.keys.includes(k))
+          );
+          if (existingPanel) {
+            existingPanel.keys.push(...matched);
+          } else {
+            this.intervalPanels = [...this.intervalPanels, { id: `ip${this.nextPanelId++}`, keys: matched }];
+          }
+          matched.forEach(k => currentIntervalKeys.add(k));
+          intervalChanged = true;
+        }
+      }
+    }
+
+    return signalChanged || intervalChanged;
+  }
+
+  // --- Clear raw log (from UI) ---
+  clearRawLog() {
+    this.rawFrameLog = [];
+    this.rawFrameCount = 0;
+    this.rawLogVersion++;
+  }
+}
+
+export const plotStore = new PlotStore();
