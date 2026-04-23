@@ -3,6 +3,7 @@
   import { parseCandump } from '$lib/codec';
   import { WebSocketClient, type RawFrame } from '$lib/websocket-client.svelte';
   import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from '$lib/types';
+  import yaml from 'js-yaml';
   import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, ScatterController } from 'chart.js';
   import zoomPlugin from 'chartjs-plugin-zoom';
 
@@ -439,6 +440,17 @@ if __name__ == "__main__":
   let rawLogEl: HTMLPreElement | undefined;
   let rawLogAutoScroll = true;
 
+  // Pause live chart updates (data still accumulates)
+  let paused = $state(false);
+
+  function togglePause() {
+    paused = !paused;
+    if (!paused) {
+      updateLiveCharts();
+      updateRawLog();
+    }
+  }
+
   // Stream-to-file recording (File System Access API)
   let dumpWriter: FileSystemWritableFileStream | null = null;
   let dumpFrameCount = $state(0);
@@ -650,6 +662,7 @@ if __name__ == "__main__":
   }
 
   function disconnectLive() {
+    paused = false;
     stopDumpToFile();
     wsClient.disconnect();
     clearMavlinkBuffers();
@@ -876,24 +889,30 @@ if __name__ == "__main__":
       if (appendSignalSamples(decoded.signals, groupLabel, time, frame)) newSeriesAdded = true;
     }
 
-    // Auto-select new signals as solo panels if total is small
-    if (newSeriesAdded && allSeries.length <= 12) {
-      const inPanels = new Set(chartPanels.flatMap(p => p.keys));
-      const newPanels = allSeries
-        .filter(s => !inPanels.has(s.key))
-        .map(s => ({ id: `p${nextPanelId++}`, keys: [s.key] }));
-      if (newPanels.length > 0) {
-        chartPanels = [...chartPanels, ...newPanels];
-      }
-    }
+    if (newSeriesAdded || newTimingAdded) {
+      if (pendingLayoutConfig) {
+        autoApplyPendingLayout();
+      } else {
+        // Auto-select new signals as solo panels if total is small
+        if (newSeriesAdded && allSeries.length <= 12) {
+          const inPanels = new Set(chartPanels.flatMap(p => p.keys));
+          const newPanels = allSeries
+            .filter(s => !inPanels.has(s.key))
+            .map(s => ({ id: `p${nextPanelId++}`, keys: [s.key] }));
+          if (newPanels.length > 0) {
+            chartPanels = [...chartPanels, ...newPanels];
+          }
+        }
 
-    if (newTimingAdded && messageTimingLabels.length <= 12) {
-      const inPanels = new Set(intervalPanels.flatMap(p => p.keys));
-      const newPanels = messageTimingLabels
-        .filter(k => !inPanels.has(k))
-        .map(k => ({ id: `ip${nextPanelId++}`, keys: [k] }));
-      if (newPanels.length > 0) {
-        intervalPanels = [...intervalPanels, ...newPanels];
+        if (newTimingAdded && messageTimingLabels.length <= 12) {
+          const inPanels = new Set(intervalPanels.flatMap(p => p.keys));
+          const newPanels = messageTimingLabels
+            .filter(k => !inPanels.has(k))
+            .map(k => ({ id: `ip${nextPanelId++}`, keys: [k] }));
+          if (newPanels.length > 0) {
+            intervalPanels = [...intervalPanels, ...newPanels];
+          }
+        }
       }
     }
   }
@@ -924,8 +943,10 @@ if __name__ == "__main__":
     chartUpdatePending = true;
     setTimeout(() => {
       try {
-        updateLiveCharts();
-        updateRawLog();
+        if (!paused) {
+          updateLiveCharts();
+          updateRawLog();
+        }
       } finally {
         chartUpdatePending = false;
       }
@@ -1637,7 +1658,7 @@ if __name__ == "__main__":
   // ---- Export ----
 
   function savePng() {
-    if (chartView === 'timeline') {
+    if (activeViews.has('timeline')) {
       const canvas = document.getElementById('timeline-chart') as HTMLCanvasElement | null;
       if (canvas) {
         const link = document.createElement('a');
@@ -1645,9 +1666,8 @@ if __name__ == "__main__":
         link.href = canvas.toDataURL('image/png');
         link.click();
       }
-      return;
     }
-    if (chartView === 'interval') {
+    if (activeViews.has('interval')) {
       for (const panel of intervalPanels) {
         const canvas = document.getElementById(`interval-${panel.id}`) as HTMLCanvasElement | null;
         if (!canvas) continue;
@@ -1657,17 +1677,18 @@ if __name__ == "__main__":
         link.href = canvas.toDataURL('image/png');
         link.click();
       }
-      return;
     }
-    for (const panel of chartPanels) {
-      const canvas = document.getElementById(`chart-${panel.id}`) as HTMLCanvasElement | null;
-      if (!canvas) continue;
-      const seriesList = panel.keys.map(k => allSeries.find(s => s.key === k)).filter(Boolean) as SignalSeries[];
-      const name = seriesList.length === 1 ? `${seriesList[0].group}_${seriesList[0].signal}` : `chart-${panel.id}`;
-      const link = document.createElement('a');
-      link.download = `${name}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+    if (activeViews.has('signals')) {
+      for (const panel of chartPanels) {
+        const canvas = document.getElementById(`chart-${panel.id}`) as HTMLCanvasElement | null;
+        if (!canvas) continue;
+        const seriesList = panel.keys.map(k => allSeries.find(s => s.key === k)).filter(Boolean) as SignalSeries[];
+        const name = seriesList.length === 1 ? `${seriesList[0].group}_${seriesList[0].signal}` : `chart-${panel.id}`;
+        const link = document.createElement('a');
+        link.download = `${name}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
     }
   }
 
@@ -1698,6 +1719,177 @@ if __name__ == "__main__":
       const s = allSeries.find(se => se.key === k);
       return sum + (s?.samples.length ?? 0);
     }, 0);
+  }
+
+  // ---- Plot layout config (YAML export/import) ----
+
+  interface PlotLayoutConfig {
+    plot: {
+      views?: {
+        active?: ChartView[];
+        order?: ChartView[];
+      };
+      buffer?: {
+        mode?: BufferMode;
+        samples?: number;
+        seconds?: number;
+      };
+      signals?: {
+        panels: string[][];
+      };
+      intervals?: {
+        panels: string[][];
+      };
+    };
+  }
+
+  let pendingLayoutConfig = $state<PlotLayoutConfig | null>(null);
+
+  function exportLayout() {
+    const config: PlotLayoutConfig = {
+      plot: {
+        views: {
+          active: [...activeViews],
+          order: [...viewOrder],
+        },
+        buffer: {
+          mode: bufferMode,
+          samples: bufferSamples,
+          seconds: bufferSeconds,
+        },
+        signals: {
+          panels: chartPanels.map(p => [...p.keys]),
+        },
+        intervals: {
+          panels: intervalPanels.map(p => [...p.keys]),
+        },
+      },
+    };
+    const text = yaml.dump(config, { lineWidth: -1 });
+    const blob = new Blob([text], { type: 'text/yaml' });
+    const link = document.createElement('a');
+    link.download = 'plot_layout.yaml';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function importLayout() {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = '.yaml,.yml';
+    picker.onchange = async () => {
+      const file = picker.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      const config = yaml.load(text) as PlotLayoutConfig;
+      if (!config?.plot) return;
+      applyLayoutConfig(config);
+    };
+    picker.click();
+  }
+
+  function applyLayoutConfig(config: PlotLayoutConfig) {
+    const p = config.plot;
+
+    if (p.views?.active) {
+      const validViews: ChartView[] = ['signals', 'timeline', 'interval'];
+      const active = p.views.active.filter(v => validViews.includes(v));
+      if (active.length > 0) activeViews = new Set(active);
+    }
+    if (p.views?.order) {
+      const validViews: ChartView[] = ['signals', 'timeline', 'interval'];
+      const order = p.views.order.filter(v => validViews.includes(v));
+      if (order.length === 3) viewOrder = order;
+    }
+
+    if (p.buffer) {
+      if (p.buffer.mode) bufferMode = p.buffer.mode;
+      if (p.buffer.samples != null) bufferSamples = p.buffer.samples;
+      if (p.buffer.seconds != null) bufferSeconds = p.buffer.seconds;
+    }
+
+    const knownSignalKeys = new Set(allSeries.map(s => s.key));
+    const knownTimingKeys = new Set(messageTimingLabels);
+
+    if (p.signals?.panels) {
+      const panels: ChartPanel[] = [];
+      for (const keys of p.signals.panels) {
+        const matched = keys.filter(k => knownSignalKeys.has(k));
+        if (matched.length > 0) {
+          panels.push({ id: `p${nextPanelId++}`, keys: matched });
+        }
+      }
+      chartPanels = panels;
+    }
+
+    if (p.intervals?.panels) {
+      const panels: ChartPanel[] = [];
+      for (const keys of p.intervals.panels) {
+        const matched = keys.filter(k => knownTimingKeys.has(k));
+        if (matched.length > 0) {
+          panels.push({ id: `ip${nextPanelId++}`, keys: matched });
+        }
+      }
+      intervalPanels = panels;
+    }
+
+    // Store config for auto-apply when new signals arrive
+    pendingLayoutConfig = config;
+
+    renderCurrentView();
+  }
+
+  function autoApplyPendingLayout() {
+    const config = pendingLayoutConfig;
+    if (!config?.plot?.signals?.panels && !config?.plot?.intervals?.panels) return;
+
+    const knownSignalKeys = new Set(allSeries.map(s => s.key));
+    const currentPanelKeys = new Set(chartPanels.flatMap(p => p.keys));
+    let signalChanged = false;
+
+    if (config.plot.signals?.panels) {
+      for (const keys of config.plot.signals.panels) {
+        const matched = keys.filter(k => knownSignalKeys.has(k) && !currentPanelKeys.has(k));
+        if (matched.length > 0) {
+          // Check if a panel for this group already exists (partial match)
+          const existingPanel = chartPanels.find(p =>
+            keys.some(k => p.keys.includes(k))
+          );
+          if (existingPanel) {
+            existingPanel.keys.push(...matched);
+          } else {
+            chartPanels = [...chartPanels, { id: `p${nextPanelId++}`, keys: matched }];
+          }
+          matched.forEach(k => currentPanelKeys.add(k));
+          signalChanged = true;
+        }
+      }
+    }
+
+    const knownTimingKeys = new Set(messageTimingLabels);
+    const currentIntervalKeys = new Set(intervalPanels.flatMap(p => p.keys));
+    let intervalChanged = false;
+
+    if (config.plot.intervals?.panels) {
+      for (const keys of config.plot.intervals.panels) {
+        const matched = keys.filter(k => knownTimingKeys.has(k) && !currentIntervalKeys.has(k));
+        if (matched.length > 0) {
+          const existingPanel = intervalPanels.find(p =>
+            keys.some(k => p.keys.includes(k))
+          );
+          if (existingPanel) {
+            existingPanel.keys.push(...matched);
+          } else {
+            intervalPanels = [...intervalPanels, { id: `ip${nextPanelId++}`, keys: matched }];
+          }
+          matched.forEach(k => currentIntervalKeys.add(k));
+          intervalChanged = true;
+        }
+      }
+    }
+
+    return signalChanged || intervalChanged;
   }
 </script>
 
@@ -1753,6 +1945,13 @@ if __name__ == "__main__":
           </button>
         {:else}
           <button style="background: var(--red);" onclick={disconnectLive}>Disconnect</button>
+          <button
+            class="btn-sm"
+            style="background: {paused ? 'var(--green, #3fb950)' : 'var(--yellow, #d29922)'}; color: #000; font-weight: 600;"
+            onclick={togglePause}
+          >
+            {paused ? 'Resume' : 'Pause'}
+          </button>
         {/if}
 
         <span class="connection-status {wsClient.status}">
@@ -1769,7 +1968,7 @@ if __name__ == "__main__":
 
         {#if wsClient.status === 'connected'}
           <span style="font-size: 13px; color: var(--text-dim);">
-            {wsClient.frameCount} frames
+            {wsClient.frameCount} frames{paused ? ' (paused)' : ''}
           </span>
           {#if dumpActive}
             <button style="background: var(--red); font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" onclick={stopDumpToFile}>
@@ -1811,6 +2010,14 @@ if __name__ == "__main__":
             style="width: 60px; font-size: 12px; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
           <span style="font-size: 12px; color: var(--text-dim);">seconds</span>
         {/if}
+        <span style="margin-left: 12px; border-left: 1px solid var(--border); padding-left: 12px; display: inline-flex; gap: 8px; align-items: center;">
+          <span style="font-size: 12px; color: var(--text-dim);">Layout:</span>
+          <button class="btn-sm" onclick={importLayout}>Import</button>
+          {#if pendingLayoutConfig}
+            <span style="font-size: 12px; color: var(--yellow, #d29922);">Config loaded</span>
+            <button class="btn-sm" onclick={() => { pendingLayoutConfig = null; }}>Clear</button>
+          {/if}
+        </span>
       </div>
 
       <!-- Raw frame log -->
@@ -1892,7 +2099,7 @@ if __name__ == "__main__":
   </div>
 
   {#if allSeries.length > 0 || messageTimingLabels.length > 0}
-    <!-- View tabs (multi-select) -->
+    <!-- View tabs (multi-select) + layout controls -->
     <div class="view-tabs">
       <button class="mode-tab" class:mode-tab-active={activeViews.has('signals')} onclick={() => toggleView('signals')}>
         Signals
@@ -1903,6 +2110,13 @@ if __name__ == "__main__":
       <button class="mode-tab" class:mode-tab-active={activeViews.has('interval')} onclick={() => toggleView('interval')}>
         Interval
       </button>
+      <div style="margin-left: auto; display: flex; gap: 8px;">
+        <button class="btn-sm" onclick={exportLayout}>Export Layout</button>
+        <button class="btn-sm" onclick={importLayout}>Import Layout</button>
+        {#if pendingLayoutConfig}
+          <button class="btn-sm" style="color: var(--yellow, #d29922);" onclick={() => { pendingLayoutConfig = null; }}>Clear Layout</button>
+        {/if}
+      </div>
     </div>
 
     {#each viewOrder as view (view)}
