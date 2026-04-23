@@ -6,7 +6,30 @@
 import yaml from 'js-yaml';
 import type { Signal, Message, DeviceConfig } from './types';
 
-function parseSignal(raw: Record<string, unknown>): Signal {
+function resolveParams(raw: Record<string, unknown>, params: Record<string, number>): Record<string, unknown> {
+  const resolved = { ...raw };
+  for (const key of ['min', 'max', 'scale', 'offset']) {
+    const val = resolved[key];
+    if (typeof val === 'string') {
+      let negate = false;
+      let ref = val;
+      if (ref.startsWith('-$')) {
+        negate = true;
+        ref = ref.slice(1);
+      }
+      if (ref.startsWith('$')) {
+        const paramName = ref.slice(1);
+        if (paramName in params) {
+          resolved[key] = negate ? -params[paramName] : params[paramName];
+        }
+      }
+    }
+  }
+  return resolved;
+}
+
+function parseSignal(raw: Record<string, unknown>, params?: Record<string, number>): Signal {
+  if (params) raw = resolveParams(raw, params);
   const bitLength = raw['bit_length'] as number;
   const valueType = (raw['value_type'] as string) ?? 'unsigned';
 
@@ -67,7 +90,7 @@ function parseSignal(raw: Record<string, unknown>): Signal {
   };
 }
 
-function parseMessage(raw: Record<string, unknown>): Message {
+function parseMessage(raw: Record<string, unknown>, params?: Record<string, number>): Message {
   let msgId = raw['id'];
   if (typeof msgId === 'string') {
     msgId = parseInt(msgId, 0);
@@ -76,7 +99,7 @@ function parseMessage(raw: Record<string, unknown>): Message {
   const signals: Signal[] = [];
   if (Array.isArray(raw['signals'])) {
     for (const sigRaw of raw['signals'] as Record<string, unknown>[]) {
-      signals.push(parseSignal(sigRaw));
+      signals.push(parseSignal(sigRaw, params));
     }
   }
 
@@ -261,11 +284,12 @@ export function parseYamlConfig(yamlText: string, filename: string = 'unknown'):
   const raw = yaml.load(yamlText) as Record<string, unknown>;
 
   const devRaw = (raw['device'] as Record<string, unknown>) ?? {};
+  const params = raw['parameters'] as Record<string, number> | undefined;
 
   const messages: Message[] = [];
   if (Array.isArray(raw['messages'])) {
     for (const msgRaw of raw['messages'] as Record<string, unknown>[]) {
-      messages.push(parseMessage(msgRaw));
+      messages.push(parseMessage(msgRaw, params));
     }
   }
 

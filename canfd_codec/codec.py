@@ -142,12 +142,19 @@ def _resolve_params(raw: dict, params: dict) -> dict:
     resolved = dict(raw)
     for key in ('min', 'max', 'scale', 'offset'):
         val = resolved.get(key)
-        if isinstance(val, str) and val.startswith('$'):
-            param_name = val[1:]
+        if not isinstance(val, str):
+            continue
+        negate = False
+        ref = val
+        if ref.startswith('-$'):
+            negate = True
+            ref = ref[1:]
+        if ref.startswith('$'):
+            param_name = ref[1:]
             if param_name in params:
-                resolved[key] = params[param_name]
+                resolved[key] = -params[param_name] if negate else params[param_name]
             else:
-                raise ValueError(f"Unknown parameter '${param_name}' in signal '{raw.get('name', '?')}'")
+                raise ValueError(f"Unknown parameter '{val}' in signal '{raw.get('name', '?')}'")
     return resolved
 
 
