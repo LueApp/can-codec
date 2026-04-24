@@ -908,6 +908,11 @@ class PlotStore {
     return signalChanged || intervalChanged;
   }
 
+  clearData() {
+    this.resetData();
+    this.requestRender(true);
+  }
+
   // --- Clear raw log (from UI) ---
   clearRawLog() {
     this.rawFrameLog = [];

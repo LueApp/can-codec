@@ -1211,6 +1211,7 @@ if __name__ == "__main__":
         Interval
       </button>
       <div style="margin-left: auto; display: flex; gap: 8px;">
+        <button class="btn-sm" onclick={() => plotStore.clearData()} style="color: var(--red, #f85149);">Clear</button>
         <button class="btn-sm" onclick={exportLayout}>Export Layout</button>
         <button class="btn-sm" onclick={importLayout}>Import Layout</button>
         {#if plotStore.pendingLayoutConfig}
