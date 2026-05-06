@@ -1,7 +1,24 @@
 venv
 build
-.claude
 openspec
 docs
 *.egg-info*/
 */__pycache__/
+
+# Claude/OpenWolf project integration: track the shared hook config, ignore
+# any other local Claude state.
+.claude/*
+!.claude/settings.json
+!.claude/rules/
+!.claude/rules/openwolf.md
+
+# OpenWolf runtime/generated state.
+.wolf/anatomy.md
+.wolf/memory.md
+.wolf/token-ledger.json
+.wolf/cron-state.json
+.wolf/designqc-report.json
+.wolf/designqc-captures/
+.wolf/suggestions.json
+.wolf/hooks/_session.json
+.wolf/*.tmp
