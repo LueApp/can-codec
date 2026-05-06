@@ -799,7 +799,10 @@ class Codec:
         _, msg_def, node_id = result
         # Broadcast frame detection
         if msg_def.broadcast_node_id is not None and node_id == msg_def.broadcast_node_id:
-            return decode_broadcast(msg_def, data, actual_id=msg_id)
+            expected_bcast_bytes = dlc_to_bytes(msg_def.dlc) * msg_def.node_count
+            if len(data) == expected_bcast_bytes:
+                return decode_broadcast(msg_def, data, actual_id=msg_id)
+            # Single-frame broadcast: one payload applies to all nodes
         # Pad data to expected DLC if shorter (e.g. MAVLink v2 zero-trimmed payloads)
         if len(data) < msg_def.dlc:
             data = data + b"\x00" * (msg_def.dlc - len(data))

@@ -1,4 +1,17 @@
 {
   "version": 1,
-  "bugs": []
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-05-06T07:34:00Z",
+      "error_message": "CAN frame '0xFF [03] 28 00 00' decoded as SwitchMode instead of WriteRegUint8",
+      "file": "example_damiao.yaml, canfd_codec/codec.py",
+      "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not — making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
+      "fix": "1) Added broadcast_node_id: 0x7F to WriteRegUint8 in example_damiao.yaml so it appears as a candidate for 0xFF. DLC preference (3==3) then correctly selects it over SwitchMode (dlc=4). 2) In Codec.decode(), added size check before calling decode_broadcast: only use concatenated decode when len(data)==dlc*node_count, otherwise fall through to single-frame decode.",
+      "tags": ["decode", "broadcast", "example_damiao", "dlc-mismatch", "id-matching"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T07:34:00Z"
+    }
+  ]
 }
