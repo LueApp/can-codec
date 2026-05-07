@@ -150,22 +150,97 @@
                 <td>
                   <code style="font-family: var(--font-mono); color: var(--orange);">{msg.id_range ?? msg.id}</code>
                 </td>
-                <td><strong>{msg.name}</strong></td>
+                <td>
+                  <strong>{msg.name}</strong>
+                  {#if (() => { const f = codecStore.getMessageFilter(msg.filename, msg.name); return f && (f.disabledNodes.length > 0 || f.disabledSignals.length > 0 || Object.keys(f.disabledEnumValues ?? {}).length > 0); })()}
+                    <span class="tag" style="background: rgba(210,153,34,0.15); color: var(--orange); font-size: 10px; margin-left: 6px;">filtered</span>
+                  {/if}
+                </td>
                 <td><span class="tag {msg.direction}">{msg.direction.toUpperCase()}</span></td>
                 <td>{msg.dlc}{msg.fd ? ' FD' : ''}</td>
                 <td style="color: var(--text-dim); font-size: 13px;">{msg.description}</td>
               </tr>
               {#if expandedMsg === msg.name}
                 {@const msgDef = codecStore.codec.getMessageByName(msg.name)}
+                {@const msgFilter = codecStore.getMessageFilter(msg.filename, msg.name)}
                 <tr>
                   <td colspan="6" style="background: var(--bg); padding: 16px;">
                     {#if msgDef}
-                      <strong style="color: var(--text-dim); font-size: 13px;">Signals ({msgDef.signals.length})</strong>
-                      <table style="margin-top: 8px; font-size: 13px;">
-                        <thead><tr><th>Name</th><th>Bits</th><th>Type</th><th>Scale/Offset</th><th>Unit</th><th>Enum/Bitfield</th></tr></thead>
+                      <!-- Node filter -->
+                      {#if msg.node_count > 1}
+                        {@const nodeIds = Array.from({length: msg.node_count}, (_, i) => msg.node_id_start + i)}
+                        <div style="margin-bottom: 16px;">
+                          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <strong style="font-size: 13px; color: var(--text-dim);">Nodes ({msg.node_count})</strong>
+                            <button style="padding: 2px 8px; font-size: 11px;"
+                              onclick={() => codecStore.enableAllNodes(msg.filename, msg.name)}>All</button>
+                            <button style="padding: 2px 8px; font-size: 11px;"
+                              onclick={() => codecStore.disableAllNodes(msg.filename, msg.name, nodeIds)}>None</button>
+                          </div>
+                          <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                            {#each nodeIds as nodeId}
+                              {@const nodeDisabled = msgFilter?.disabledNodes.includes(nodeId) ?? false}
+                              <button
+                                class="filter-chip"
+                                class:filter-chip-off={nodeDisabled}
+                                onclick={() => codecStore.toggleNode(msg.filename, msg.name, nodeId)}>
+                                N{nodeId}
+                              </button>
+                            {/each}
+                          </div>
+                        </div>
+                      {/if}
+
+                      <!-- Enum value filters (for any signal with enum values) -->
+                      {#each msgDef.signals.filter(s => Object.keys(s.enum_map).length > 0) as enumSig}
+                        {@const enumEntries = Object.entries(enumSig.enum_map).sort((a, b) => Number(a[0]) - Number(b[0]))}
+                        {@const allEnumValues = enumEntries.map(([, v]) => v)}
+                        {@const disabledForSig = msgFilter?.disabledEnumValues?.[enumSig.name] ?? []}
+                        <div style="margin-bottom: 16px;">
+                          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <strong style="font-size: 13px; color: var(--text-dim);">
+                              {enumSig.name} filter ({enumEntries.length})
+                            </strong>
+                            <button style="padding: 2px 8px; font-size: 11px;"
+                              onclick={() => codecStore.enableAllEnumValues(msg.filename, msg.name, enumSig.name)}>All</button>
+                            <button style="padding: 2px 8px; font-size: 11px;"
+                              onclick={() => codecStore.disableAllEnumValues(msg.filename, msg.name, enumSig.name, allEnumValues)}>None</button>
+                          </div>
+                          <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                            {#each enumEntries as [key, name]}
+                              {@const enumDisabled = disabledForSig.includes(name)}
+                              <button
+                                class="filter-chip"
+                                class:filter-chip-off={enumDisabled}
+                                onclick={() => codecStore.toggleEnumValue(msg.filename, msg.name, enumSig.name, name)}>
+                                {name}
+                              </button>
+                            {/each}
+                          </div>
+                        </div>
+                      {/each}
+
+                      <!-- Signals table -->
+                      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <strong style="color: var(--text-dim); font-size: 13px;">Signals ({msgDef.signals.length})</strong>
+                        <button style="padding: 2px 8px; font-size: 11px;"
+                          onclick={() => codecStore.enableAllSignals(msg.filename, msg.name)}>All</button>
+                        <button style="padding: 2px 8px; font-size: 11px;"
+                          onclick={() => codecStore.disableAllSignals(msg.filename, msg.name, msgDef.signals.map(s => s.name))}>None</button>
+                      </div>
+                      <table style="font-size: 13px;">
+                        <thead><tr><th style="width: 36px;"></th><th>Name</th><th>Bits</th><th>Type</th><th>Scale/Offset</th><th>Unit</th><th>Enum/Bitfield</th></tr></thead>
                         <tbody>
                           {#each msgDef.signals as sig}
-                            <tr>
+                            {@const sigDisabled = msgFilter?.disabledSignals.includes(sig.name) ?? false}
+                            <tr style:opacity={sigDisabled ? 0.4 : 1}>
+                              <td onclick={(e) => e.stopPropagation()}>
+                                <label class="toggle" style="transform: scale(0.75);">
+                                  <input type="checkbox" checked={!sigDisabled}
+                                    onchange={() => codecStore.toggleSignal(msg.filename, msg.name, sig.name)} />
+                                  <span class="toggle-slider"></span>
+                                </label>
+                              </td>
                               <td style="color: var(--accent); font-family: var(--font-mono);">{sig.name}</td>
                               <td style="font-family: var(--font-mono);">[{sig.start_bit}:{sig.start_bit + sig.bit_length - 1}]</td>
                               <td>{sig.value_type}</td>

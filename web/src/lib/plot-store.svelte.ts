@@ -277,7 +277,7 @@ class PlotStore {
     } else {
       let matched = false;
       try {
-        const res = codecStore.codec.smartDecode(canId, frame.data);
+        const res = codecStore.codec.smartDecode(canId, frame.data, frame.dlc);
         if (res) {
           matched = true;
           this.matchedFrameCount++;
@@ -356,6 +356,26 @@ class PlotStore {
     return newSeriesAdded;
   }
 
+  private _isNodeDisabled(filter: { disabledNodes: number[] } | undefined, nodeId: number): boolean {
+    return !!filter && filter.disabledNodes.length > 0 && filter.disabledNodes.includes(nodeId);
+  }
+
+  private _isEnumDisabled(filter: { disabledEnumValues?: Record<string, string[]> } | undefined, signals: { name: string; enum_name?: string | null }[]): boolean {
+    if (!filter?.disabledEnumValues) return false;
+    for (const sig of signals) {
+      const disabled = filter.disabledEnumValues[sig.name];
+      if (!disabled?.length) continue;
+      if (!sig.enum_name) return true;
+      if (disabled.includes(sig.enum_name)) return true;
+    }
+    return false;
+  }
+
+  private _filterSignals<T extends { name: string }>(signals: T[], filter: { disabledSignals: string[] } | undefined): T[] {
+    if (!filter || !filter.disabledSignals.length) return signals;
+    return signals.filter(s => !filter.disabledSignals.includes(s.name));
+  }
+
   appendDecoded(
     decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number, is_fd: boolean,
     rawFrames?: Uint8Array[], rawTimestamps?: number[]
@@ -379,20 +399,28 @@ class PlotStore {
     let newTimingAdded = false;
 
     const msg = codecStore.codec.getMessageByName(decoded.name);
+    const filter = codecStore.filtersByMessage.get(decoded.name);
+
     if (decoded.is_broadcast && decoded.sub_messages) {
       for (const sub of decoded.sub_messages) {
+        if (this._isNodeDisabled(filter, sub.node_id)) continue;
+        if (this._isEnumDisabled(filter, sub.signals)) continue;
+        const filteredSignals = this._filterSignals(sub.signals, filter);
         const mux = this.getMuxSuffix(msg, sub.signals);
         const groupLabel = `${baseLabel} / N${sub.node_id}${mux}`;
         if (this.appendMessageTiming(groupLabel, time, frame)) newTimingAdded = true;
-        if (this.appendSignalSamples(sub.signals, groupLabel, time, frame)) newSeriesAdded = true;
+        if (this.appendSignalSamples(filteredSignals, groupLabel, time, frame)) newSeriesAdded = true;
       }
     } else {
+      if (this._isNodeDisabled(filter, decoded.node_id)) return;
+      if (this._isEnumDisabled(filter, decoded.signals)) return;
+      const filteredSignals = this._filterSignals(decoded.signals, filter);
       const mux = this.getMuxSuffix(msg, decoded.signals);
       const groupLabel = (msg && msg.node_count > 1)
         ? `${baseLabel} / N${decoded.node_id}${mux}`
         : `${baseLabel}${mux}`;
       if (this.appendMessageTiming(groupLabel, time, frame)) newTimingAdded = true;
-      if (this.appendSignalSamples(decoded.signals, groupLabel, time, frame)) newSeriesAdded = true;
+      if (this.appendSignalSamples(filteredSignals, groupLabel, time, frame)) newSeriesAdded = true;
     }
 
     if (newSeriesAdded || newTimingAdded) {
@@ -733,18 +761,24 @@ class PlotStore {
         : decoded.name;
 
       const msg = codecStore.codec.getMessageByName(decoded.name);
+      const filter = codecStore.filtersByMessage.get(decoded.name);
+
       const signalEntries: { signals: typeof decoded.signals; groupLabel: string }[] = [];
       if (decoded.is_broadcast && decoded.sub_messages) {
         for (const sub of decoded.sub_messages) {
+          if (this._isNodeDisabled(filter, sub.node_id)) continue;
+          if (this._isEnumDisabled(filter, sub.signals)) continue;
           const mux = this.getMuxSuffix(msg, sub.signals);
-          signalEntries.push({ signals: sub.signals, groupLabel: `${baseLabel} / N${sub.node_id}${mux}` });
+          signalEntries.push({ signals: this._filterSignals(sub.signals, filter), groupLabel: `${baseLabel} / N${sub.node_id}${mux}` });
         }
       } else {
+        if (this._isNodeDisabled(filter, decoded.node_id)) { lineIndex++; continue; }
+        if (this._isEnumDisabled(filter, decoded.signals)) { lineIndex++; continue; }
         const mux = this.getMuxSuffix(msg, decoded.signals);
         const groupLabel = (msg && msg.node_count > 1)
           ? `${baseLabel} / N${decoded.node_id}${mux}`
           : `${baseLabel}${mux}`;
-        signalEntries.push({ signals: decoded.signals, groupLabel });
+        signalEntries.push({ signals: this._filterSignals(decoded.signals, filter), groupLabel });
       }
 
       for (const entry of signalEntries) {

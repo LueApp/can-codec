@@ -547,21 +547,30 @@ export class Codec {
     for (const dev of this.devices) {
       const idMap = dev.mavlink ? this.byMavlinkId : this.byId;
       for (const msg of dev.messages) {
-        if (msg.node_count > 1) this.multiNodeMessages.push({ device: dev, message: msg });
-        if (!idMap.has(msg.id)) idMap.set(msg.id, { device: dev, message: msg });
+        if (msg.node_count > 1) {
+          this.multiNodeMessages.push({ device: dev, message: msg });
+        } else {
+          if (!idMap.has(msg.id)) idMap.set(msg.id, { device: dev, message: msg });
+        }
         if (!this.byName.has(msg.name)) this.byName.set(msg.name, { device: dev, message: msg });
       }
     }
   }
 
-  private findMessageById(msgId: number): { device: DeviceConfig; message: Message; nodeId: number } | null {
+  private findMessageById(msgId: number, dlc?: number): { device: DeviceConfig; message: Message; nodeId: number } | null {
     const entry = this.byId.get(msgId);
     if (entry) return { ...entry, nodeId: 0 };
+    const candidates: { device: DeviceConfig; message: Message; nodeId: number }[] = [];
     for (const { device, message } of this.multiNodeMessages) {
       const nodeId = getNodeForId(message, msgId);
-      if (nodeId !== null) return { device, message, nodeId };
+      if (nodeId !== null) candidates.push({ device, message, nodeId });
     }
-    return null;
+    if (candidates.length === 0) return null;
+    if (dlc !== undefined) {
+      const dlcMatch = candidates.find(c => c.message.dlc === dlc);
+      if (dlcMatch) return dlcMatch;
+    }
+    return candidates[0];
   }
 
   /** Check if a message name belongs to a MAVLink device config. */
@@ -581,8 +590,8 @@ export class Codec {
     return entry?.message.crc_extra ?? null;
   }
 
-  decode(msgId: number, data: Uint8Array): DecodedMessage | null {
-    const result = this.findMessageById(msgId);
+  decode(msgId: number, data: Uint8Array, dlc?: number): DecodedMessage | null {
+    const result = this.findMessageById(msgId, dlc ?? data.length);
     if (!result) return null;
     // Broadcast frame detection
     if (result.message.broadcast_node_id !== null && result.nodeId === result.message.broadcast_node_id) {
@@ -601,7 +610,7 @@ export class Codec {
    * If CAN ID has bit 16 set and data starts with 0xFD, treats as MAVLink.
    * Supports multi-frame reassembly: pass all frame payloads for large messages.
    */
-  smartDecode(canId: number, data: Uint8Array): {
+  smartDecode(canId: number, data: Uint8Array, dlc?: number): {
     decoded: DecodedMessage; mavlink?: MavlinkInfo;
   } | null {
     const isMavlinkTransport = (canId & 0x10000) !== 0 && data.length > 0 && data[0] === 0xFD;
@@ -628,7 +637,7 @@ export class Codec {
       return { decoded, mavlink };
     }
 
-    const decoded = this.decode(canId, data);
+    const decoded = this.decode(canId, data, dlc);
     if (!decoded) return null;
     return { decoded };
   }

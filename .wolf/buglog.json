@@ -8,10 +8,301 @@
       "file": "example_damiao.yaml, canfd_codec/codec.py",
       "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not — making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
       "fix": "1) Added broadcast_node_id: 0x7F to WriteRegUint8 in example_damiao.yaml so it appears as a candidate for 0xFF. DLC preference (3==3) then correctly selects it over SwitchMode (dlc=4). 2) In Codec.decode(), added size check before calling decode_broadcast: only use concatenated decode when len(data)==dlc*node_count, otherwise fall through to single-frame decode.",
-      "tags": ["decode", "broadcast", "example_damiao", "dlc-mismatch", "id-matching"],
+      "tags": [
+        "decode",
+        "broadcast",
+        "example_damiao",
+        "dlc-mismatch",
+        "id-matching"
+      ],
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-06T07:34:00Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-05-06T07:50:40.974Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/config-loader.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T07:50:40.974Z"
+    },
+    {
+      "id": "bug-003",
+      "timestamp": "2026-05-06T07:51:36.365Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codec-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T07:51:36.365Z"
+    },
+    {
+      "id": "bug-004",
+      "timestamp": "2026-05-06T07:52:26.027Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "No early return/throw for edge case: !filter || !filter.disabledMuxValues.length || !msg?.mux_sig",
+      "fix": "Added guard clause: if (!filter || !filter.disabledMuxValues.len)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T07:52:26.027Z"
+    },
+    {
+      "id": "bug-005",
+      "timestamp": "2026-05-06T07:53:34.085Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T07:53:34.085Z"
+    },
+    {
+      "id": "bug-006",
+      "timestamp": "2026-05-06T07:53:59.368Z",
+      "error_message": "CSS fix: background, color",
+      "file": "web/src/app.css",
+      "root_cause": "background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
+      "fix": "Changed background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "css"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T07:53:59.368Z"
+    },
+    {
+      "id": "bug-007",
+      "timestamp": "2026-05-06T11:18:26.623Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/codec-store.svelte.ts",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 19→22 lines (8 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T11:18:26.623Z"
+    },
+    {
+      "id": "bug-008",
+      "timestamp": "2026-05-06T11:18:34.288Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codec-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T11:18:34.288Z"
+    },
+    {
+      "id": "bug-009",
+      "timestamp": "2026-05-06T11:18:44.840Z",
+      "error_message": "Wrong condition in logic",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Condition was: if (!filter || !filter.disabledMuxValues.length || !ms)",
+      "fix": "Changed to: if (!filter?.disabledEnumValues)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T11:18:44.840Z"
+    },
+    {
+      "id": "bug-010",
+      "timestamp": "2026-05-06T11:19:39.457Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T11:19:39.457Z"
+    },
+    {
+      "id": "bug-011",
+      "timestamp": "2026-05-06T11:27:31.669Z",
+      "error_message": "Wrong operator: ?? should be !==",
+      "file": "web/src/lib/codec-store.svelte.ts",
+      "root_cause": "Used \"??\" instead of \"!==\"",
+      "fix": "Changed operator ?? → !==",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T11:27:31.669Z"
+    },
+    {
+      "id": "bug-012",
+      "timestamp": "2026-05-06T11:27:49.577Z",
+      "error_message": "Wrong condition in logic",
+      "file": "web/src/lib/codec-store.svelte.ts",
+      "root_cause": "Condition was: if (filter.disabledNodes.length > 0 || filter.disabled)",
+      "fix": "Changed to: if (filter.disabledNodes.length > 0 || filter.disabled)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T11:27:49.577Z"
+    },
+    {
+      "id": "bug-013",
+      "timestamp": "2026-05-06T19:25:00Z",
+      "error_message": "WriteRegUint8 register_id filter chips not working (TypeError on disabledEnumValues)",
+      "file": "web/src/lib/codec-store.svelte.ts",
+      "root_cause": "After renaming disabledMuxValues→disabledEnumValues, old localStorage data for WriteRegUint8 still had the old field name. _ensureFilter found the existing entry (skipping initialization) but the entry lacked disabledEnumValues, causing undefined property access.",
+      "fix": "Added _normalizeFilter() that ensures disabledNodes, disabledSignals, disabledEnumValues all exist on any filter object loaded from storage. Applied in _ensureFilter, getMessageFilter, and _rebuildFilterMap.",
+      "tags": [
+        "filter",
+        "localStorage",
+        "migration",
+        "backwards-compat"
+      ],
+      "related_bugs": [
+        "bug-008"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T19:25:00Z"
+    },
+    {
+      "id": "bug-014",
+      "timestamp": "2026-05-06T11:34:45.850Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codec-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: const filter: MessageFilter = {; disabledNodes: raw.disabledNodes ?? [],",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-06T11:35:37.528Z"
+    },
+    {
+      "id": "bug-015",
+      "timestamp": "2026-05-06T11:50:39.426Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 9→15 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T11:50:39.426Z"
+    },
+    {
+      "id": "bug-016",
+      "timestamp": "2026-05-06T19:50:00Z",
+      "error_message": "RegResponseByte register_id filter not working — all RegResponse* frames decoded as RegResponseFloat32",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "findMessageById returned the first multi-node message matching the CAN ID, without considering DLC. RegResponseFloat32, RegResponseByte, RegResponseWord etc. all share base ID 0x100 — the first registered one always won, so register_id enum filter on RegResponseByte had no effect.",
+      "fix": "Updated findMessageById to accept optional dlc parameter. Collects all candidates and prefers the one with matching DLC, matching the Python codec's _find_message_by_id behavior. decode() now passes data.length as dlc.",
+      "tags": [
+        "decode",
+        "dlc",
+        "disambiguation",
+        "filter",
+        "multi-node"
+      ],
+      "related_bugs": [
+        "bug-001"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T19:50:00Z"
+    },
+    {
+      "id": "bug-017",
+      "timestamp": "2026-05-06T20:10:00Z",
+      "error_message": "RegResponseByte filter still not working after DLC fix — node 0 frames always decoded as first registered RegResponse variant",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "rebuildLookups() added multi-node messages to byId with their base ID. findMessageById hit the byId fast-path for node-0 frames (base ID = 0x100) and returned immediately WITHOUT checking DLC. The DLC disambiguation in the multiNodeMessages loop was never reached for base-ID frames.",
+      "fix": "Changed rebuildLookups to only add single-node messages (node_count <= 1) to byId. Multi-node messages are only tracked in multiNodeMessages, ensuring ALL lookups go through the DLC-aware candidate selection.",
+      "tags": [
+        "decode",
+        "dlc",
+        "disambiguation",
+        "multi-node",
+        "byId",
+        "base-id"
+      ],
+      "related_bugs": [
+        "bug-016",
+        "bug-001"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T20:10:00Z"
+    },
+    {
+      "id": "bug-018",
+      "timestamp": "2026-05-06T12:21:56.282Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T12:21:56.282Z"
     }
   ]
 }

@@ -306,11 +306,18 @@ export function parseYamlConfig(yamlText: string, filename: string = 'unknown'):
 
 const CONFIG_STORAGE_KEY = 'cancodec_configs';
 
+export interface MessageFilter {
+  disabledNodes: number[];
+  disabledSignals: string[];
+  disabledEnumValues: Record<string, string[]>;
+}
+
 export interface StoredConfig {
   filename: string;
   content: string;
   enabled: boolean;
   disabledMessages: string[];
+  messageFilters: Record<string, MessageFilter>;
 }
 
 export function saveConfigsToStorage(configs: StoredConfig[]): void {
@@ -331,6 +338,7 @@ export function loadConfigsFromStorage(): StoredConfig[] {
         content: c.content as string,
         enabled: c.enabled !== false,
         disabledMessages: Array.isArray(c.disabledMessages) ? c.disabledMessages as string[] : [],
+        messageFilters: (c.messageFilters as Record<string, MessageFilter>) ?? {},
       }));
     }
   } catch {

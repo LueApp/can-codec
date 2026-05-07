@@ -7,6 +7,7 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'er
 export interface RawFrame {
   arbitration_id: number;
   data: Uint8Array;
+  dlc?: number;
   timestamp: number;
   is_fd: boolean;
 }
@@ -80,6 +81,7 @@ export class WebSocketClient {
           this.onFrame({
             arbitration_id: msg.arbitration_id,
             data: hexToBytes(msg.data),
+            dlc: msg.dlc,
             timestamp: msg.timestamp,
             is_fd: msg.is_fd,
           });

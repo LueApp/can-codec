@@ -313,6 +313,7 @@ class CANWebSocketServer:
                             "type": "frame",
                             "arbitration_id": arb_id,
                             "data": data_hex,
+                            "dlc": dlc,
                             "timestamp": timestamp,
                             "is_fd": is_fd,
                         }
@@ -394,6 +395,7 @@ class CANWebSocketServer:
                             "type": "frame",
                             "arbitration_id": arb_id,
                             "data": data_hex,
+                            "dlc": msg.dlc,
                             "timestamp": msg.timestamp or time.time(),
                             "is_fd": msg.is_fd,
                         }
