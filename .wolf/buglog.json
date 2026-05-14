@@ -303,6 +303,102 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-06T12:21:56.282Z"
+    },
+    {
+      "id": "bug-019",
+      "timestamp": "2026-05-12T06:19:38.054Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "No early return/throw for edge case: this.timelineMode === mode",
+      "fix": "Added guard clause: if (this.timelineMode === mode)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T06:19:38.054Z"
+    },
+    {
+      "id": "bug-020",
+      "timestamp": "2026-05-12T06:20:46.557Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: <div style=\"display: flex; justify-content: space-between; a; <div style=\"display: flex; gap: 8px; align-items: center; fl",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-12T06:24:24.351Z"
+    },
+    {
+      "id": "bug-021",
+      "timestamp": "2026-05-12T06:21:03.155Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 36→49 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T06:21:03.155Z"
+    },
+    {
+      "id": "bug-022",
+      "timestamp": "2026-05-12T06:21:14.240Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "No early return/throw for edge case: !f",
+      "fix": "Added guard clause: if (!f)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T06:21:14.240Z"
+    },
+    {
+      "id": "bug-023",
+      "timestamp": "2026-05-12T06:35:41.839Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "No early return/throw for edge case: !items[0]",
+      "fix": "Added guard clause: if (!items[0])",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-12T06:37:01.577Z"
+    },
+    {
+      "id": "bug-024",
+      "timestamp": "2026-05-12T06:39:50.585Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 10→4 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-12T06:39:50.585Z"
     }
   ]
 }

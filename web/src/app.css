@@ -490,6 +490,9 @@ tr:hover td {
   position: relative;
   height: 200px;
 }
+.chart-container.timeline-pick-mode canvas {
+  cursor: crosshair;
+}
 
 /* Chart signal tags (multi-signal overlay) */
 .chart-signal-tags {

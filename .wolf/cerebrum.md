@@ -13,6 +13,8 @@
 - **Project:** canfd-codec
 - **Description:** A configurable CAN/CAN-FD message encoder/decoder. Define your device's message
 - The web codec (codec.ts) `findMessageById` must match the Python codec's DLC-based disambiguation for same-ID multi-node messages. Without it, RegResponse* variants all decode as the first one registered.
+- Chart.js plugin options on custom plugins need a `declare module 'chart.js'` augmentation of `PluginOptionsByType<TType>` to be type-safe. Place the augmentation in a `.d.ts` file (not inside `<script lang="ts">`, where ambient module declarations aren't allowed).
+- The plot page renders three chart kinds (signals, timeline, interval) via `renderXxx()` (full rebuild) and `updateLiveXxx()` (incremental). `requestRender(false)` triggers the incremental path; `requestRender(true)` triggers full rebuild. Incremental path works in BOTH paste and live modes (reads from the same stores).
 
 ## Do-Not-Repeat
 

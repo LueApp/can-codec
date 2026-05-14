@@ -399,6 +399,104 @@ if __name__ == "__main__":
     },
   };
 
+  const MARKER_COLORS = ['#d29922', '#39d2c0'];
+
+  function originForView(isTimelineView: boolean): number {
+    return isTimelineView || plotStore.applyTimingToAllViews ? plotStore.timelineOrigin : 0;
+  }
+
+  function markerPluginOpts(isTimelineView: boolean) {
+    return { isTimelineView };
+  }
+
+  function formatDelta(seconds: number): string {
+    const abs = Math.abs(seconds);
+    if (abs >= 1) return `${seconds.toFixed(3)} s`;
+    if (abs >= 0.001) return `${(seconds * 1000).toFixed(2)} ms`;
+    return `${(seconds * 1_000_000).toFixed(1)} µs`;
+  }
+
+  const markerPlugin = {
+    id: 'timelineMarkers',
+    afterDatasetsDraw(chart: Chart, _args: unknown, opts: { isTimelineView?: boolean } | undefined) {
+      const isTimelineView = opts?.isTimelineView ?? false;
+      if (!isTimelineView && !plotStore.applyTimingToAllViews) return;
+
+      const markers = plotStore.timelineMarkers;
+      if (markers.length === 0) return;
+
+      const xScale = chart.scales.x;
+      if (!xScale) return;
+      const ctx = chart.ctx;
+      const { top, bottom, left, right } = chart.chartArea;
+      const origin = plotStore.timelineOrigin;
+      const xs: number[] = [];
+
+      ctx.save();
+      for (let i = 0; i < markers.length; i++) {
+        const x = xScale.getPixelForValue(markers[i].time - origin);
+        xs.push(x);
+        if (x < left || x > right) continue;
+        ctx.strokeStyle = MARKER_COLORS[i];
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = MARKER_COLORS[i];
+        ctx.font = "bold 12px 'JetBrains Mono', monospace";
+        ctx.fillText(i === 0 ? 'A' : 'B', x + 4, top + 14);
+      }
+
+      if (markers.length === 2 && xs[0] >= left && xs[0] <= right && xs[1] >= left && xs[1] <= right) {
+        const x1 = xs[0], x2 = xs[1];
+        const xMid = (x1 + x2) / 2;
+        const delta = markers[1].time - markers[0].time;
+        const deltaText = `Δt = ${formatDelta(delta)}`;
+        ctx.font = "bold 13px -apple-system, system-ui, sans-serif";
+        const w = ctx.measureText(deltaText).width;
+        const boxX = Math.min(Math.max(xMid - w / 2 - 8, left + 4), right - w - 20);
+        ctx.fillStyle = 'rgba(15, 20, 25, 0.92)';
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.rect(boxX, top + 24, w + 16, 22);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#e6edf3';
+        ctx.fillText(deltaText, boxX + 8, top + 39);
+
+        const yArrow = top + 56;
+        const lx = Math.min(x1, x2);
+        const rx = Math.max(x1, x2);
+        ctx.strokeStyle = '#8b949e';
+        ctx.fillStyle = '#8b949e';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(lx + 6, yArrow);
+        ctx.lineTo(rx - 6, yArrow);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(lx, yArrow);
+        ctx.lineTo(lx + 6, yArrow - 4);
+        ctx.lineTo(lx + 6, yArrow + 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(rx, yArrow);
+        ctx.lineTo(rx - 6, yArrow - 4);
+        ctx.lineTo(rx - 6, yArrow + 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    },
+  };
+
+  Chart.register(markerPlugin);
+
   // ---- Chart rendering (full rebuild) ----
 
   function renderCurrentView() {
@@ -421,12 +519,13 @@ if __name__ == "__main__":
         const units = new Set(seriesList.map(s => s.unit).filter(Boolean));
         const yLabel = units.size === 1 ? [...units][0] : 'value';
 
+        const signalsOrigin = originForView(false);
         const datasets = seriesList.map((series, j) => {
           const color = CHART_COLORS[j % CHART_COLORS.length];
           const samples = plotStore.getSamples(series.key);
           return {
             label: `${series.group} / ${series.signal}${series.unit ? ` (${series.unit})` : ''}`,
-            data: samples.map(s => ({ x: s.time, y: s.value, frame: s.frame })),
+            data: samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.time })),
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 1.5,
@@ -458,13 +557,22 @@ if __name__ == "__main__":
             },
             plugins: {
               zoom: zoomOptions,
+              timelineMarkers: markerPluginOpts(false),
               legend: {
                 display: multi,
                 labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12 },
               },
               tooltip: {
                 callbacks: {
-                  title: (items) => `t = ${items[0].parsed.x.toFixed(3)}s`,
+                  title: (items) => {
+                    const x = items[0]?.parsed.x;
+                    if (x == null) return '';
+                    const raw = items[0].raw as any;
+                    const abs = typeof raw?.absTime === 'number' ? raw.absTime : x;
+                    return plotStore.applyTimingToAllViews && plotStore.timelineOrigin !== 0
+                      ? `t = ${x.toFixed(3)}s (abs ${abs.toFixed(3)}s)`
+                      : `t = ${x.toFixed(3)}s`;
+                  },
                   label: (item) => {
                     const s = seriesList[item.datasetIndex];
                     return s ? `${s.group} / ${s.signal}: ${item.parsed.y}${s.unit ? ' ' + s.unit : ''}` : '';
@@ -506,12 +614,13 @@ if __name__ == "__main__":
       const labels = plotStore.messageTimingLabels;
       if (labels.length === 0) return;
 
+      const origin = plotStore.timelineOrigin;
       const datasets = labels.map((label, laneIdx) => {
         const color = CHART_COLORS[laneIdx % CHART_COLORS.length];
         const entries = plotStore.messageTimingStore.get(label) ?? [];
         return {
           label,
-          data: entries.map(e => ({ x: e.time, y: laneIdx, frame: e.frame })),
+          data: entries.map(e => ({ x: e.time - origin, y: laneIdx, frame: e.frame, absTime: e.time })),
           backgroundColor: color,
           borderColor: color,
           pointRadius: entries.length <= 500 ? 4 : 2,
@@ -531,7 +640,18 @@ if __name__ == "__main__":
             if (elements.length === 0) return;
             const el = elements[0];
             const pt = chart.data.datasets[el.datasetIndex]?.data[el.index] as any;
-            if (pt?.frame) {
+            if (!pt?.frame) return;
+            const absTime = typeof pt.absTime === 'number' ? pt.absTime : pt.x + plotStore.timelineOrigin;
+            const lbl = labels[el.datasetIndex] ?? '';
+            const result = plotStore.handleTimelineClick(absTime, lbl);
+            if (result === 'origin-set') {
+              showCopyToast(`t=0 set at ${absTime.toFixed(3)}s (${lbl})`);
+            } else if (result === 'marker-added') {
+              showCopyToast(`Marker A set — pick second frame`);
+            } else if (result === 'measure-complete') {
+              const d = plotStore.timelineMarkerDelta ?? 0;
+              showCopyToast(`Δt = ${formatDelta(d)}`);
+            } else {
               const text = plotStore.formatFrameCandump(pt.frame);
               navigator.clipboard.writeText(text).then(
                 () => showCopyToast('Copied: ' + text),
@@ -542,16 +662,29 @@ if __name__ == "__main__":
           plugins: {
             zoom: zoomOptions,
             legend: { display: false },
+            timelineMarkers: markerPluginOpts(true),
             tooltip: {
               callbacks: {
-                title: (items) => `t = ${items[0].parsed.x.toFixed(3)}s`,
+                title: (items) => {
+                  const x = items[0]?.parsed.x;
+                  if (x == null) return '';
+                  const raw = items[0].raw as any;
+                  const abs = typeof raw?.absTime === 'number' ? raw.absTime : x + plotStore.timelineOrigin;
+                  return plotStore.timelineOrigin !== 0
+                    ? `t = ${x.toFixed(3)}s (abs ${abs.toFixed(3)}s)`
+                    : `t = ${x.toFixed(3)}s`;
+                },
                 label: (item) => {
-                  const msgLabel = labels[item.parsed.y] ?? '';
-                  return msgLabel;
+                  const y = item.parsed.y;
+                  if (y == null) return '';
+                  return labels[y] ?? '';
                 },
                 afterBody: (items) => {
                   const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
-                  return f ? [`Frame: ${plotStore.formatFrameShort(f)}`, '(click to copy)'] : '';
+                  if (!f) return '';
+                  const mode = plotStore.timelineMode;
+                  const hint = mode === 'set-origin' ? '(click to set t=0)' : mode === 'measure' ? '(click to add marker)' : '(click to copy)';
+                  return [`Frame: ${plotStore.formatFrameShort(f)}`, hint];
                 },
               },
             },
@@ -592,12 +725,13 @@ if __name__ == "__main__":
         if (!canvas) continue;
 
         const multi = panel.keys.length > 1;
+        const intervalOrigin = originForView(false);
         const datasets = panel.keys.map((key, j) => {
           const color = CHART_COLORS[j % CHART_COLORS.length];
           const data = plotStore.getIntervalData(key);
           return {
             label: key,
-            data: data.map(d => ({ x: d.time, y: d.dt, frame: d.frame })),
+            data: data.map(d => ({ x: d.time - intervalOrigin, y: d.dt, frame: d.frame, absTime: d.time })),
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 1.5,
@@ -629,16 +763,26 @@ if __name__ == "__main__":
             },
             plugins: {
               zoom: zoomOptions,
+              timelineMarkers: markerPluginOpts(false),
               legend: {
                 display: multi,
                 labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12 },
               },
               tooltip: {
                 callbacks: {
-                  title: (items) => `t = ${items[0].parsed.x.toFixed(3)}s`,
+                  title: (items) => {
+                    const x = items[0]?.parsed.x;
+                    if (x == null) return '';
+                    const raw = items[0].raw as any;
+                    const abs = typeof raw?.absTime === 'number' ? raw.absTime : x;
+                    return plotStore.applyTimingToAllViews && plotStore.timelineOrigin !== 0
+                      ? `t = ${x.toFixed(3)}s (abs ${abs.toFixed(3)}s)`
+                      : `t = ${x.toFixed(3)}s`;
+                  },
                   label: (item) => {
                     const key = panel.keys[item.datasetIndex] ?? '';
-                    return `${key}: ${item.parsed.y.toFixed(2)} ms`;
+                    const y = item.parsed.y;
+                    return y == null ? key : `${key}: ${y.toFixed(2)} ms`;
                   },
                   afterBody: (items) => {
                     const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
@@ -694,6 +838,7 @@ if __name__ == "__main__":
       return;
     }
 
+    const signalsOrigin = originForView(false);
     for (const panel of plotStore.chartPanels) {
       const chart = chartInstances.get(panel.id);
       if (!chart) continue;
@@ -703,7 +848,7 @@ if __name__ == "__main__":
         const samples = plotStore.liveSampleStore.get(panel.keys[j]) ?? [];
         const ds = chart.data.datasets[j];
         if (!ds) continue;
-        const points = samples.map(s => ({ x: s.time, y: s.value, frame: s.frame }));
+        const points = samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.time }));
         ds.data = points;
         (ds as any).pointRadius = points.length <= 100 ? 3 : 0;
         if (points.length > 0) {
@@ -733,12 +878,13 @@ if __name__ == "__main__":
       return;
     }
 
+    const origin = plotStore.timelineOrigin;
     let xMin = Infinity, xMax = -Infinity;
     for (let i = 0; i < labels.length; i++) {
       const entries = plotStore.messageTimingStore.get(labels[i]) ?? [];
       const ds = timelineChart.data.datasets[i];
       if (!ds) continue;
-      const points = entries.map(e => ({ x: e.time, y: i, frame: e.frame }));
+      const points = entries.map(e => ({ x: e.time - origin, y: i, frame: e.frame, absTime: e.time }));
       ds.data = points;
       (ds as any).pointRadius = points.length <= 500 ? 4 : 2;
       if (points.length > 0) {
@@ -775,6 +921,7 @@ if __name__ == "__main__":
       return;
     }
 
+    const intervalOrigin = originForView(false);
     for (const panel of plotStore.intervalPanels) {
       const chart = intervalInstances.get(panel.id);
       if (!chart) continue;
@@ -784,7 +931,7 @@ if __name__ == "__main__":
         const data = plotStore.getIntervalData(panel.keys[j]);
         const ds = chart.data.datasets[j];
         if (!ds) continue;
-        const points = data.map(d => ({ x: d.time, y: d.dt, frame: d.frame }));
+        const points = data.map(d => ({ x: d.time - intervalOrigin, y: d.dt, frame: d.frame, absTime: d.time }));
         ds.data = points;
         (ds as any).pointRadius = points.length <= 100 ? 3 : 0;
         if (points.length > 0) {
@@ -1330,15 +1477,53 @@ if __name__ == "__main__":
 
           {:else if view === 'timeline'}
             <div class="card">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
                 <strong style="font-size: 14px;">Message Timeline</strong>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   {#if plotStore.messageTimingLabels.length > 0}
+                    <button class="btn-sm" class:chip-active={plotStore.timelineMode === 'set-origin'}
+                      onclick={() => plotStore.enterTimelineMode('set-origin')}
+                      title="Click then pick a frame to set its time as t=0">
+                      {plotStore.timelineMode === 'set-origin' ? 'Pick a frame…' : 'Set t=0'}
+                    </button>
+                    <button class="btn-sm" class:chip-active={plotStore.timelineMode === 'measure'}
+                      onclick={() => plotStore.enterTimelineMode('measure')}
+                      title="Click then pick two frames to measure Δt">
+                      {plotStore.timelineMode === 'measure' ? `Pick frame ${plotStore.timelineMarkers.length + 1}/2…` : 'Measure Δt'}
+                    </button>
+                    <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;" title="Also apply t=0 and markers to Signals/Interval views">
+                      <input type="checkbox"
+                        checked={plotStore.applyTimingToAllViews}
+                        onchange={() => plotStore.toggleApplyTimingToAllViews()}
+                        style="accent-color: var(--accent);" />
+                      Apply to all views
+                    </label>
                     <button class="btn-sm" onclick={resetAllZoom}>Reset Zoom</button>
                     <button class="btn-sm" onclick={savePng}>Save PNG</button>
                   {/if}
                 </div>
               </div>
+              {#if plotStore.timelineOrigin !== 0 || plotStore.timelineMarkers.length > 0}
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
+                  {#if plotStore.timelineOrigin !== 0}
+                    <span class="chart-signal-tag" style="--tag-color: #d29922;">
+                      t=0 origin @ {plotStore.timelineOrigin.toFixed(3)}s
+                      <button class="chart-signal-tag-remove" onclick={() => plotStore.resetTimelineOrigin()} title="Reset origin">x</button>
+                    </span>
+                  {/if}
+                  {#if plotStore.timelineMarkers.length > 0}
+                    <span class="chart-signal-tag" style="--tag-color: #39d2c0;">
+                      {#if plotStore.timelineMarkerDelta !== null}
+                        Δt = {formatDelta(plotStore.timelineMarkerDelta)}
+                        <span style="opacity: 0.7;">({plotStore.timelineMarkers[0].time.toFixed(3)}s → {plotStore.timelineMarkers[1].time.toFixed(3)}s)</span>
+                      {:else}
+                        Marker A @ {plotStore.timelineMarkers[0].time.toFixed(3)}s — pick second frame
+                      {/if}
+                      <button class="chart-signal-tag-remove" onclick={() => plotStore.clearTimelineMarkers()} title="Clear markers">x</button>
+                    </span>
+                  {/if}
+                </div>
+              {/if}
               {#if plotStore.messageTimingLabels.length > 0}
                 <div class="signal-selector" style="margin-bottom: 12px;">
                   {#each plotStore.messageTimingLabels as label, i}
@@ -1352,7 +1537,11 @@ if __name__ == "__main__":
             </div>
             {#if plotStore.messageTimingLabels.length > 0}
               <div class="chart-card">
-                <div class="chart-container" style="height: {Math.max(200, plotStore.messageTimingLabels.length * 40 + 60)}px;">
+                <div
+                  class="chart-container"
+                  class:timeline-pick-mode={plotStore.timelineMode !== 'normal'}
+                  style="height: {Math.max(200, plotStore.messageTimingLabels.length * 40 + 60)}px;"
+                >
                   <canvas id="timeline-chart"></canvas>
                 </div>
               </div>

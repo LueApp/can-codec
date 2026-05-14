@@ -39,6 +39,10 @@ class PlotStore {
   bufferSamples = $state(5000);
   bufferSeconds = $state(60);
   pendingLayoutConfig = $state<PlotLayoutConfig | null>(null);
+  timelineMode = $state<'normal' | 'set-origin' | 'measure'>('normal');
+  timelineOrigin = $state(0);
+  timelineMarkers = $state<{ time: number; label: string }[]>([]);
+  applyTimingToAllViews = $state(false);
 
   // --- Non-reactive state (performance) ---
   nextPanelId = 0;
@@ -107,6 +111,61 @@ class PlotStore {
     this.rawFrameLog = [];
     this.rawFrameCount = 0;
     this.matchedFrameCount = 0;
+    this.timelineMode = 'normal';
+    this.timelineOrigin = 0;
+    this.timelineMarkers = [];
+  }
+
+  // --- Timeline timing measurement ---
+  enterTimelineMode(mode: 'set-origin' | 'measure') {
+    if (this.timelineMode === mode) {
+      this.timelineMode = 'normal';
+    } else {
+      this.timelineMode = mode;
+      if (mode === 'measure') this.timelineMarkers = [];
+    }
+  }
+
+  handleTimelineClick(time: number, label: string): 'origin-set' | 'marker-added' | 'measure-complete' | null {
+    if (this.timelineMode === 'set-origin') {
+      this.timelineOrigin = time;
+      this.timelineMode = 'normal';
+      this.requestRender(false);
+      return 'origin-set';
+    }
+    if (this.timelineMode === 'measure') {
+      const next = this.timelineMarkers.length >= 2
+        ? [{ time, label }]
+        : [...this.timelineMarkers, { time, label }];
+      this.timelineMarkers = next;
+      const done = next.length === 2;
+      if (done) this.timelineMode = 'normal';
+      this.requestRender(false);
+      return done ? 'measure-complete' : 'marker-added';
+    }
+    return null;
+  }
+
+  resetTimelineOrigin() {
+    this.timelineOrigin = 0;
+    this.timelineMode = 'normal';
+    this.requestRender(false);
+  }
+
+  clearTimelineMarkers() {
+    this.timelineMarkers = [];
+    this.timelineMode = 'normal';
+    this.requestRender(false);
+  }
+
+  toggleApplyTimingToAllViews() {
+    this.applyTimingToAllViews = !this.applyTimingToAllViews;
+    this.requestRender(false);
+  }
+
+  get timelineMarkerDelta(): number | null {
+    if (this.timelineMarkers.length !== 2) return null;
+    return this.timelineMarkers[1].time - this.timelineMarkers[0].time;
   }
 
   // --- Mode switching ---
