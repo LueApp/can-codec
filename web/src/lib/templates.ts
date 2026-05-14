@@ -1,4 +1,4 @@
-import damiao from '../../../configs/example_damiao.yaml?raw';
+import damiao from './example_damiao.yaml?raw';
 
 export interface ConfigTemplate {
 	id: string;

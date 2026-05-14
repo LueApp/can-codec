@@ -1,0 +1,523 @@
+##############################################################################
+# CAN Device Configuration: Damiao Motor (V1.4 Protocol)
+#
+# Based on:
+#   - Damiao V1.4 protocol specification (调试助手使用说明书 V1.4)
+#   - dm_parser.py production implementation
+#
+# Protocol: MIT-style CAN control with linear-mapped signal values.
+# Baud rate: 1 Mbps (standard CAN, not CAN-FD)
+#
+# Default parameter ranges (matching dm_parser.py fallback defaults):
+#   PMAX = 12.5 rad    (configurable per motor via driver params)
+#   VMAX = 30.0 rad/s  (configurable per motor via driver params)
+#   TMAX = 10.0 N*m    (configurable per motor via driver params)
+#   Kp range: [0, 500]
+#   Kd range: [0, 5]
+#
+# CAN ID scheme:
+#   MIT control/commands: CAN_ID (slave ID, e.g. 0x01-0x07)
+#   Position-velocity:    0x100 + CAN_ID
+#   Velocity:             0x200 + CAN_ID
+#   Position-force:       0x300 + CAN_ID
+#   Feedback:             0x700 + CAN_ID (Master ID, convention from dm_parser.py)
+#
+# To adapt for a specific motor model, change PMAX/VMAX/TMAX by editing
+# the min/max values on the linear_map signals below.
+##############################################################################
+
+device:
+  name: "Damiao Motor"
+  description: "Damiao brushless servo joint motor (V1.4 protocol)"
+  bus: "can0"
+  fd: false
+  bitrate: 1000000
+
+messages:
+  #--------------------------------------------------------------------------
+  # MIT Mode Control (TX)
+  #
+  # CAN ID = CAN_ID (slave ID)
+  # 8 bytes, big-endian continuous bit numbering:
+  #   D[0-1]: p_des   (16 bit)
+  #   D[2]hi+D[3]hi:  v_des  (12 bit)
+  #   D[3]lo+D[4]:    Kp     (12 bit)
+  #   D[5]hi+D[6]hi:  Kd     (12 bit)
+  #   D[6]lo+D[7]:    t_ff   (12 bit)
+  #--------------------------------------------------------------------------
+  - id: 0x00
+    name: "MITControl"
+    direction: "tx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "MIT mode control command"
+    signals:
+      - name: "position"
+        start_bit: 0
+        bit_length: 16
+        min: -12.5
+        max: 12.5
+        linear_map: true
+        byte_order: "big_endian"
+        unit: "rad"
+        description: "Target position (P_des)"
+
+      - name: "velocity"
+        start_bit: 16
+        bit_length: 12
+        min: -30.0
+        max: 30.0
+        linear_map: true
+        byte_order: "big_endian"
+        unit: "rad/s"
+        description: "Target velocity (V_des)"
+
+      - name: "kp"
+        start_bit: 28
+        bit_length: 12
+        min: 0.0
+        max: 500.0
+        linear_map: true
+        byte_order: "big_endian"
+        description: "Position proportional gain"
+
+      - name: "kd"
+        start_bit: 40
+        bit_length: 12
+        min: 0.0
+        max: 5.0
+        linear_map: true
+        byte_order: "big_endian"
+        description: "Velocity derivative gain"
+
+      - name: "torque"
+        start_bit: 52
+        bit_length: 12
+        min: -10.0
+        max: 10.0
+        linear_map: true
+        byte_order: "big_endian"
+        unit: "N*m"
+        description: "Feedforward torque (T_ff)"
+
+  #--------------------------------------------------------------------------
+  # Feedback (RX)
+  #
+  # CAN ID = Master ID = 0x700 + CAN_ID (dm_parser.py convention)
+  # 8 bytes, big-endian continuous bit numbering:
+  #   D[0] high nibble: ERR status (4 bit)
+  #   D[0] low nibble:  motor ID   (4 bit)
+  #   D[1-2]:           position   (16 bit)
+  #   D[3]hi+D[4]hi:    velocity   (12 bit)
+  #   D[4]lo+D[5]:      torque     (12 bit)
+  #   D[6]:             T_MOS      (8 bit)
+  #   D[7]:             T_Rotor    (8 bit)
+  #--------------------------------------------------------------------------
+  - id: 0x700
+    name: "Feedback"
+    direction: "rx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Motor feedback frame"
+    signals:
+      - name: "error_status"
+        start_bit: 0
+        bit_length: 4
+        byte_order: "big_endian"
+        value_type: "unsigned"
+        description: "Motor error/status code"
+        enum:
+          0: "disabled"
+          1: "enabled"
+          8: "overvoltage"
+          9: "undervoltage"
+          10: "overcurrent"
+          11: "mos_overtemp"
+          12: "coil_overtemp"
+          13: "comm_lost"
+          14: "overload"
+
+      - name: "motor_id"
+        start_bit: 4
+        bit_length: 4
+        byte_order: "big_endian"
+        value_type: "unsigned"
+        description: "Motor slave ID (low nibble of D[0])"
+
+      - name: "position"
+        start_bit: 8
+        bit_length: 16
+        min: -12.5
+        max: 12.5
+        linear_map: true
+        byte_order: "big_endian"
+        unit: "rad"
+        description: "Actual motor position"
+
+      - name: "velocity"
+        start_bit: 24
+        bit_length: 12
+        min: -30.0
+        max: 30.0
+        linear_map: true
+        byte_order: "big_endian"
+        unit: "rad/s"
+        description: "Actual motor velocity"
+
+      - name: "torque"
+        start_bit: 36
+        bit_length: 12
+        min: -10.0
+        max: 10.0
+        linear_map: true
+        byte_order: "big_endian"
+        unit: "N*m"
+        description: "Actual motor torque"
+
+      - name: "temp_mos"
+        start_bit: 48
+        bit_length: 8
+        byte_order: "big_endian"
+        value_type: "unsigned"
+        unit: "°C"
+        description: "MOSFET temperature"
+
+      - name: "temp_rotor"
+        start_bit: 56
+        bit_length: 8
+        byte_order: "big_endian"
+        value_type: "unsigned"
+        unit: "°C"
+        description: "Rotor temperature"
+
+  #--------------------------------------------------------------------------
+  # Position-Velocity Mode (TX)
+  #
+  # CAN ID = 0x100 + CAN_ID
+  # 8 bytes: p_des (float32 LE) | v_des (float32 LE)
+  #--------------------------------------------------------------------------
+  - id: 0x100
+    name: "PosVelControl"
+    direction: "tx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Position-velocity mode control (position cascade)"
+    signals:
+      - name: "position"
+        start_bit: 0
+        bit_length: 32
+        byte_order: "little_endian"
+        value_type: "float32"
+        unit: "rad"
+        description: "Target position"
+
+      - name: "velocity"
+        start_bit: 32
+        bit_length: 32
+        byte_order: "little_endian"
+        value_type: "float32"
+        unit: "rad/s"
+        description: "Max velocity limit"
+
+  #--------------------------------------------------------------------------
+  # Velocity Mode (TX)
+  #
+  # CAN ID = 0x200 + CAN_ID
+  # 4 bytes: v_des (float32 LE)
+  # Note: dm_parser.py vel_ctrl() sends float64 (8 bytes) which is a bug;
+  #       the protocol spec and cmd_decode() both use float32 with DLC=4.
+  #--------------------------------------------------------------------------
+  - id: 0x200
+    name: "VelControl"
+    direction: "tx"
+    dlc: 4
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Velocity mode control"
+    signals:
+      - name: "velocity"
+        start_bit: 0
+        bit_length: 32
+        byte_order: "little_endian"
+        value_type: "float32"
+        unit: "rad/s"
+        description: "Target velocity"
+
+  #--------------------------------------------------------------------------
+  # Position-Force Mode (TX)
+  #
+  # CAN ID = 0x300 + CAN_ID
+  # 8 bytes: p_des (float32 LE) | vel (uint16 LE, *100) | current (uint16 LE, *10000)
+  # Not in V1.4 PDF but implemented in dm_parser.py pos_ctrl_with_current()
+  #--------------------------------------------------------------------------
+  - id: 0x300
+    name: "PosForceControl"
+    direction: "tx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Position-force mode control (position with current limit)"
+    signals:
+      - name: "position"
+        start_bit: 0
+        bit_length: 32
+        byte_order: "little_endian"
+        value_type: "float32"
+        unit: "rad"
+        description: "Target position"
+
+      - name: "velocity"
+        start_bit: 32
+        bit_length: 16
+        byte_order: "little_endian"
+        value_type: "unsigned"
+        scale: 0.01
+        offset: 0
+        unit: "rad/s"
+        description: "Max velocity (raw = velocity * 100)"
+
+      - name: "current"
+        start_bit: 48
+        bit_length: 16
+        byte_order: "little_endian"
+        value_type: "unsigned"
+        scale: 0.0001
+        offset: 0
+        unit: "A"
+        description: "Current limit (raw = current * 10000)"
+
+  #--------------------------------------------------------------------------
+  # Enable Motor (TX)
+  #
+  # CAN ID = CAN_ID
+  # Fixed payload: FF FF FF FF FF FF FF FC
+  #--------------------------------------------------------------------------
+  - id: 0x00
+    name: "EnableMotor"
+    direction: "tx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Enable motor command (power_on)"
+    signals:
+      - name: "byte0"
+        start_bit: 0
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte1"
+        start_bit: 8
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte2"
+        start_bit: 16
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte3"
+        start_bit: 24
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte4"
+        start_bit: 32
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte5"
+        start_bit: 40
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte6"
+        start_bit: 48
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "command"
+        start_bit: 56
+        bit_length: 8
+        default: 0xFC
+        constant: true
+        description: "Enable command byte"
+
+  #--------------------------------------------------------------------------
+  # Disable Motor (TX)
+  #
+  # CAN ID = CAN_ID
+  # Fixed payload: FF FF FF FF FF FF FF FD
+  #--------------------------------------------------------------------------
+  - id: 0x00
+    name: "DisableMotor"
+    direction: "tx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Disable motor command (power_off)"
+    signals:
+      - name: "byte0"
+        start_bit: 0
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte1"
+        start_bit: 8
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte2"
+        start_bit: 16
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte3"
+        start_bit: 24
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte4"
+        start_bit: 32
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte5"
+        start_bit: 40
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte6"
+        start_bit: 48
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "command"
+        start_bit: 56
+        bit_length: 8
+        default: 0xFD
+        constant: true
+        description: "Disable command byte"
+
+  #--------------------------------------------------------------------------
+  # Set Zero Position (TX)
+  #
+  # CAN ID = CAN_ID
+  # Fixed payload: FF FF FF FF FF FF FF FE
+  #--------------------------------------------------------------------------
+  - id: 0x00
+    name: "SetZero"
+    direction: "tx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Save current position as zero point"
+    signals:
+      - name: "byte0"
+        start_bit: 0
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte1"
+        start_bit: 8
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte2"
+        start_bit: 16
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte3"
+        start_bit: 24
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte4"
+        start_bit: 32
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte5"
+        start_bit: 40
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte6"
+        start_bit: 48
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "command"
+        start_bit: 56
+        bit_length: 8
+        default: 0xFE
+        constant: true
+        description: "Set zero command byte"
+
+  #--------------------------------------------------------------------------
+  # Clear Error (TX)
+  #
+  # CAN ID = CAN_ID
+  # Fixed payload: FF FF FF FF FF FF FF FB
+  #--------------------------------------------------------------------------
+  - id: 0x00
+    name: "ClearError"
+    direction: "tx"
+    dlc: 8
+    node_count: 7
+    node_id_offset: 1
+    node_id_start: 1
+    description: "Clear motor error state (reset_error)"
+    signals:
+      - name: "byte0"
+        start_bit: 0
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte1"
+        start_bit: 8
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte2"
+        start_bit: 16
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte3"
+        start_bit: 24
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte4"
+        start_bit: 32
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte5"
+        start_bit: 40
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "byte6"
+        start_bit: 48
+        bit_length: 8
+        default: 0xFF
+        constant: true
+      - name: "command"
+        start_bit: 56
+        bit_length: 8
+        default: 0xFB
+        constant: true
+        description: "Clear error command byte"
