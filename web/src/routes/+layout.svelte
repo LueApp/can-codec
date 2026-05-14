@@ -23,6 +23,8 @@
       <a href="/encode" class:active={$page.url.pathname === '/encode'}>Encode</a>
       <a href="/plot" class:active={$page.url.pathname === '/plot'}>Plot</a>
       <a href="/convert" class:active={$page.url.pathname === '/convert'}>Convert</a>
+      <a href="/docs" class:active={$page.url.pathname === '/docs'}>Docs</a>
+      <a href="/changelog" class:active={$page.url.pathname === '/changelog'}>Changelog</a>
     </div>
     <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
       <span style="font-size: 13px; color: var(--text-dim);">

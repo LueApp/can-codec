@@ -1305,10 +1305,10 @@ if __name__ == "__main__":
             <div style="margin: 8px 0;">
               <button class="btn-sm" onclick={downloadServer}>Download can_ws_server.py</button>
             </div>
-            <p style="font-size: 12px; color: var(--text-dim);">Zero dependencies — uses only Python 3.10+ stdlib + candump (can-utils).</p>
+            <p style="font-size: 12px; color: var(--text-dim);">Requires Python 3.10+. No pip packages needed for SocketCAN; USB adapters need extras (see below).</p>
 
-            <p><strong>2.</strong> Install <code>can-utils</code> on the machine with the CAN interface:</p>
-            <pre><code>sudo apt install can-utils</code></pre>
+            <p><strong>2.</strong> Install requirements on the machine with the CAN interface:</p>
+            <pre><code># SocketCAN (built-in Linux kernel driver — most common){'\n'}sudo apt install can-utils          # provides candump{'\n'}{'\n'}# USB adapters via python-can (SLCAN FD, PCAN, etc.){'\n'}pip install "canfd-codec[serve]"    # python-can>=4.0 + pyserial>=3.5{'\n'}# or individually:{'\n'}pip install python-can>=4.0 pyserial>=3.5</code></pre>
 
             <p style="margin-top: 12px;"><strong>3.</strong> Choose your setup:</p>
 

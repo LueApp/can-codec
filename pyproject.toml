@@ -16,7 +16,10 @@ monitor = [
     "python-can>=4.0",
     "pyserial>=3.5",
 ]
-serve = []
+serve = [
+    "python-can>=4.0",
+    "pyserial>=3.5",
+]
 
 [project.scripts]
 canfd-codec = "canfd_codec.cli:main"
