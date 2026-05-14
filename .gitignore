@@ -22,3 +22,4 @@ openspec
 .wolf/suggestions.json
 .wolf/hooks/_session.json
 .wolf/*.tmp
+.venv/
