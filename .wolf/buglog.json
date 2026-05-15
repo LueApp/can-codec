@@ -399,6 +399,86 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-12T06:39:50.585Z"
+    },
+    {
+      "id": "bug-025",
+      "timestamp": "2026-05-14T11:59:37.949Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 8→8 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T11:59:37.949Z"
+    },
+    {
+      "id": "bug-026",
+      "timestamp": "2026-05-14T14:58:32.574Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/templates.ts",
+      "root_cause": "Had '../../../configs/example_damiao.yaml?raw'",
+      "fix": "Changed to './example_damiao.yaml?raw'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T14:58:32.574Z"
+    },
+    {
+      "id": "bug-027",
+      "timestamp": "2026-05-14T15:07:06.938Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/templates.ts",
+      "root_cause": "Had './example_damiao.yaml?raw'",
+      "fix": "Changed to '../../../configs/example_damiao.yaml?raw'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-14T15:07:06.938Z"
+    },
+    {
+      "id": "bug-028",
+      "timestamp": "2026-05-15T14:09:29.340Z",
+      "error_message": "Significant refactor of ",
+      "file": "canfd_codec/mavlink_loader.py",
+      "root_cause": "14 lines replaced/restructured",
+      "fix": "Rewrote 43→57 lines (14 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T14:09:29.340Z"
+    },
+    {
+      "id": "bug-029",
+      "timestamp": "2026-05-15T14:09:57.693Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/config-loader.ts",
+      "root_cause": "12 lines replaced/restructured",
+      "fix": "Rewrote 32→46 lines (12 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-15T14:09:57.693Z"
     }
   ]
 }

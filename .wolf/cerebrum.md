@@ -15,6 +15,7 @@
 - The web codec (codec.ts) `findMessageById` must match the Python codec's DLC-based disambiguation for same-ID multi-node messages. Without it, RegResponse* variants all decode as the first one registered.
 - Chart.js plugin options on custom plugins need a `declare module 'chart.js'` augmentation of `PluginOptionsByType<TType>` to be type-safe. Place the augmentation in a `.d.ts` file (not inside `<script lang="ts">`, where ambient module declarations aren't allowed).
 - The plot page renders three chart kinds (signals, timeline, interval) via `renderXxx()` (full rebuild) and `updateLiveXxx()` (incremental). `requestRender(false)` triggers the incremental path; `requestRender(true)` triggers full rebuild. Incremental path works in BOTH paste and live modes (reads from the same stores).
+- **MAVLink XML `<extensions/>` marker:** Per the MAVLink2 spec, fields after `<extensions/>` are appended to the wire payload in *declaration order* (NOT sorted by size) and are *excluded from CRC_EXTRA*. Only core fields (before the marker) are size-sorted and contribute to CRC_EXTRA. This must be done by walking the message's child elements in order — `querySelectorAll('field')` / `findall('field')` won't tell you which side of the marker each field is on. Implemented in `canfd_codec/mavlink_loader.py` `_parse_messages` and `web/src/lib/config-loader.ts` `parseMavlinkXml`.
 
 ## Do-Not-Repeat
 

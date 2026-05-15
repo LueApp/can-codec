@@ -158,13 +158,25 @@ def _parse_messages(root: ET.Element, enums: dict[str, dict[int, str]]) -> list[
         if desc_elem is not None and desc_elem.text:
             description = desc_elem.text.strip()
 
-        # First pass: collect raw field info in XML order
-        raw_fields = []
-        for field_elem in msg_elem.findall("field"):
-            field_type = field_elem.get("type")
-            field_name = field_elem.get("name")
-            field_enum = field_elem.get("enum")
-            field_desc = field_elem.text.strip() if field_elem.text else ""
+        # First pass: collect raw fields in XML order, tracking the
+        # <extensions/> boundary. Fields before it are "core" (sorted by
+        # type size for wire alignment, included in CRC_EXTRA). Fields
+        # after it are "extensions" (kept in declaration order, excluded
+        # from CRC_EXTRA — see MAVLink2 spec).
+        core_fields = []
+        ext_fields = []
+        in_extensions = False
+        for child in msg_elem:
+            if child.tag == "extensions":
+                in_extensions = True
+                continue
+            if child.tag != "field":
+                continue
+
+            field_type = child.get("type")
+            field_name = child.get("name")
+            field_enum = child.get("enum")
+            field_desc = child.text.strip() if child.text else ""
 
             if not field_type or not field_name:
                 continue
@@ -178,7 +190,7 @@ def _parse_messages(root: ET.Element, enums: dict[str, dict[int, str]]) -> list[
             if field_enum and field_enum in enums:
                 enum_map = enums[field_enum]
 
-            raw_fields.append({
+            field_info = {
                 "name": field_name,
                 "type_str": field_type,
                 "base_type": base_type,
@@ -188,14 +200,16 @@ def _parse_messages(root: ET.Element, enums: dict[str, dict[int, str]]) -> list[
                 "wire_size": wire_size,
                 "enum_map": enum_map,
                 "description": field_desc,
-            })
+            }
+            (ext_fields if in_extensions else core_fields).append(field_info)
 
-        # MAVLink wire ordering: sort fields by type size (largest first),
-        # stable sort preserves XML order for same-size fields
-        wire_fields = sorted(raw_fields, key=lambda f: f["wire_size"], reverse=True)
+        # Core fields: stable sort by wire size, largest first.
+        # Extension fields: declaration order, appended after core.
+        sorted_core = sorted(core_fields, key=lambda f: f["wire_size"], reverse=True)
+        wire_fields = sorted_core + ext_fields
 
-        # Compute CRC_EXTRA from wire-ordered fields
-        crc_extra = _compute_crc_extra(msg_name, wire_fields)
+        # CRC_EXTRA is computed over core fields only (extensions excluded).
+        crc_extra = _compute_crc_extra(msg_name, sorted_core)
 
         # Second pass: create Signal objects with wire-ordered bit offsets
         signals = []
