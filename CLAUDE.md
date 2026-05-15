@@ -21,8 +21,8 @@ Two main use cases:
 
 ```
 ├── configs/              # YAML/XML device definitions (one file per device)
-│   ├── example_damiao.yaml      # Damiao Motor (multi-node)
-│   └── your_mavlink.xml   # MAVLink XML definitions
+│   ├── example_damiao.yaml  # Example device config (Damiao motor)
+│   └── your_mavlink.xml     # MAVLink XML definitions
 ├── canfd_codec/          # Python package
 │   ├── codec.py          # Core engine: config loading, bit pack/unpack, encode/decode
 │   ├── cli.py            # CLI entry point (argparse, 5 subcommands)
@@ -273,7 +273,7 @@ The codec can load MAVLink XML message definition files directly. Place `.xml` f
 canfd-codec -c ./message_definitions/your_mavlink.xml list
 
 # Encode a MAVLink message
-canfd-codec -c ./your_mavlink.xml encode SET_DAC target_system=1 target_component=1 dac=12345678
+canfd-codec -c ./your_mavlink.xml encode <MSG_NAME> target_system=1 target_component=1 field=value
 
 # Output in MAVLink CAN transport format (29-bit extended ID)
 canfd-codec -c ./configs encode ARM_MODE_SWITCH mode=idle --mavlink --sys-id 1 --comp-id 1
