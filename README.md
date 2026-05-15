@@ -4,6 +4,8 @@ A configurable CAN/CAN-FD message encoder/decoder. Define your device's message
 layout in YAML or MAVLink XML config files, then use the CLI or Python API to convert between
 raw CAN frames and human-readable signals.
 
+**Web UI:** [can-codec.lue-app.com](https://can-codec.lue-app.com/)
+
 ## Installation
 
 ```bash
