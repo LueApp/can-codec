@@ -829,3 +829,85 @@ tr:hover td {
   white-space: pre;
   user-select: text;
 }
+
+/* Inline keyboard key indicators */
+kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+/* Follow-live window input */
+.follow-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.follow-window input {
+  width: 52px;
+  padding: 2px 4px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.follow-window input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Plot gesture hint strip */
+.gesture-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 12px 0;
+  padding: 6px 10px;
+  background: rgba(88, 166, 255, 0.05);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.gesture-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+.gesture-hint .gesture-item {
+  white-space: nowrap;
+}
+.gesture-hint .gesture-dismiss {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 3px;
+}
+.gesture-hint .gesture-dismiss:hover {
+  background: var(--bg-input);
+  color: var(--text);
+}

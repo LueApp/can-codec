@@ -6,7 +6,7 @@
       "timestamp": "2026-05-06T07:34:00Z",
       "error_message": "CAN frame '0xFF [03] 28 00 00' decoded as SwitchMode instead of WriteRegUint8",
       "file": "example_damiao.yaml, canfd_codec/codec.py",
-      "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not \u2014 making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
+      "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not — making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
       "fix": "1) Added broadcast_node_id: 0x7F to WriteRegUint8 in example_damiao.yaml so it appears as a candidate for 0xFF. DLC preference (3==3) then correctly selects it over SwitchMode (dlc=4). 2) In Codec.decode(), added size check before calling decode_broadcast: only use concatenated decode when len(data)==dlc*node_count, otherwise fall through to single-frame decode.",
       "tags": [
         "decode",
@@ -88,8 +88,8 @@
       "timestamp": "2026-05-06T07:53:59.368Z",
       "error_message": "CSS fix: background, color",
       "file": "web/src/app.css",
-      "root_cause": "background: rgba(210, 153, 34, 0.15) \u2192 transparent; color: var(--orange) \u2192 var(--text-dim)",
-      "fix": "Changed background: rgba(210, 153, 34, 0.15) \u2192 transparent; color: var(--orange) \u2192 var(--text-dim)",
+      "root_cause": "background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
+      "fix": "Changed background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
       "tags": [
         "auto-detected",
         "style-fix",
@@ -105,7 +105,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codec-store.svelte.ts",
       "root_cause": "8 lines replaced/restructured",
-      "fix": "Rewrote 19\u219222 lines (8 removed)",
+      "fix": "Rewrote 19→22 lines (8 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -169,7 +169,7 @@
       "error_message": "Wrong operator: ?? should be !==",
       "file": "web/src/lib/codec-store.svelte.ts",
       "root_cause": "Used \"??\" instead of \"!==\"",
-      "fix": "Changed operator ?? \u2192 !==",
+      "fix": "Changed operator ?? → !==",
       "tags": [
         "auto-detected",
         "operator-fix",
@@ -200,7 +200,7 @@
       "timestamp": "2026-05-06T19:25:00Z",
       "error_message": "WriteRegUint8 register_id filter chips not working (TypeError on disabledEnumValues)",
       "file": "web/src/lib/codec-store.svelte.ts",
-      "root_cause": "After renaming disabledMuxValues\u2192disabledEnumValues, old localStorage data for WriteRegUint8 still had the old field name. _ensureFilter found the existing entry (skipping initialization) but the entry lacked disabledEnumValues, causing undefined property access.",
+      "root_cause": "After renaming disabledMuxValues→disabledEnumValues, old localStorage data for WriteRegUint8 still had the old field name. _ensureFilter found the existing entry (skipping initialization) but the entry lacked disabledEnumValues, causing undefined property access.",
       "fix": "Added _normalizeFilter() that ensures disabledNodes, disabledSignals, disabledEnumValues all exist on any filter object loaded from storage. Applied in _ensureFilter, getMessageFilter, and _rebuildFilterMap.",
       "tags": [
         "filter",
@@ -236,7 +236,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codec.ts",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 9\u219215 lines (3 removed)",
+      "fix": "Rewrote 9→15 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -249,9 +249,9 @@
     {
       "id": "bug-016",
       "timestamp": "2026-05-06T19:50:00Z",
-      "error_message": "RegResponseByte register_id filter not working \u2014 all RegResponse* frames decoded as RegResponseFloat32",
+      "error_message": "RegResponseByte register_id filter not working — all RegResponse* frames decoded as RegResponseFloat32",
       "file": "web/src/lib/codec.ts",
-      "root_cause": "findMessageById returned the first multi-node message matching the CAN ID, without considering DLC. RegResponseFloat32, RegResponseByte, RegResponseWord etc. all share base ID 0x100 \u2014 the first registered one always won, so register_id enum filter on RegResponseByte had no effect.",
+      "root_cause": "findMessageById returned the first multi-node message matching the CAN ID, without considering DLC. RegResponseFloat32, RegResponseByte, RegResponseWord etc. all share base ID 0x100 — the first registered one always won, so register_id enum filter on RegResponseByte had no effect.",
       "fix": "Updated findMessageById to accept optional dlc parameter. Collects all candidates and prefers the one with matching DLC, matching the Python codec's _find_message_by_id behavior. decode() now passes data.length as dlc.",
       "tags": [
         "decode",
@@ -269,7 +269,7 @@
     {
       "id": "bug-017",
       "timestamp": "2026-05-06T20:10:00Z",
-      "error_message": "RegResponseByte filter still not working after DLC fix \u2014 node 0 frames always decoded as first registered RegResponse variant",
+      "error_message": "RegResponseByte filter still not working after DLC fix — node 0 frames always decoded as first registered RegResponse variant",
       "file": "web/src/lib/codec.ts",
       "root_cause": "rebuildLookups() added multi-node messages to byId with their base ID. findMessageById hit the byId fast-path for node-0 frames (base ID = 0x100) and returned immediately WITHOUT checking DLC. The DLC disambiguation in the multiNodeMessages loop was never reached for base-ID frames.",
       "fix": "Changed rebuildLookups to only add single-node messages (node_count <= 1) to byId. Multi-node messages are only tracked in multiNodeMessages, ensuring ALL lookups go through the DLC-aware candidate selection.",
@@ -342,7 +342,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "2 lines replaced/restructured",
-      "fix": "Rewrote 36\u219249 lines (2 removed)",
+      "fix": "Rewrote 36→49 lines (2 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -390,7 +390,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "6 lines replaced/restructured",
-      "fix": "Rewrote 10\u21924 lines (6 removed)",
+      "fix": "Rewrote 10→4 lines (6 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -406,7 +406,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 8\u21928 lines (3 removed)",
+      "fix": "Rewrote 8→8 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -454,7 +454,7 @@
       "error_message": "Significant refactor of ",
       "file": "canfd_codec/mavlink_loader.py",
       "root_cause": "14 lines replaced/restructured",
-      "fix": "Rewrote 43\u219257 lines (14 removed)",
+      "fix": "Rewrote 43→57 lines (14 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -470,7 +470,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/config-loader.ts",
       "root_cause": "12 lines replaced/restructured",
-      "fix": "Rewrote 32\u219246 lines (12 removed)",
+      "fix": "Rewrote 32→46 lines (12 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -486,7 +486,7 @@
       "error_message": "Significant refactor of ",
       "file": "canfd_codec/monitor.py",
       "root_cause": "6 lines replaced/restructured",
-      "fix": "Rewrote 29\u219246 lines (6 removed) | Also: decoded = self.codec.decode(msg.arbitration_id, by; self._latest[msg.arbitration_id] = decoded",
+      "fix": "Rewrote 29→46 lines (6 removed) | Also: decoded = self.codec.decode(msg.arbitration_id, by; self._latest[msg.arbitration_id] = decoded",
       "tags": [
         "auto-detected",
         "refactor",
@@ -567,7 +567,7 @@
       "timestamp": "2026-05-16T03:50:00Z",
       "error_message": "/decode page still garbled multi-frame MAVLink after reassembler fix",
       "file": "web/src/routes/decode/+page.svelte",
-      "root_cause": "The /decode page had its OWN grouping logic separate from plot-store: it grouped ALL consecutive same-canId MAVLink frames into one buffer, then called smartDecodeMultiFrame on the concatenated bytes \u2014 lumping multiple back-to-back messages on the same canId into one giant pseudo-frame.",
+      "root_cause": "The /decode page had its OWN grouping logic separate from plot-store: it grouped ALL consecutive same-canId MAVLink frames into one buffer, then called smartDecodeMultiFrame on the concatenated bytes — lumping multiple back-to-back messages on the same canId into one giant pseudo-frame.",
       "fix": "Rewrote decode() to feed frames through MavlinkReassembler with length-based completion, same as the plot-store paste analyzer. Tracks per-canId raw line lists to preserve the source-line label for each reassembled group.",
       "tags": [
         "mavlink",
@@ -580,6 +580,171 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-16T03:50:00Z"
+    },
+    {
+      "id": "bug-036",
+      "timestamp": "2026-05-16T05:18:55.981Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T05:18:55.981Z"
+    },
+    {
+      "id": "bug-037",
+      "timestamp": "2026-05-16T05:19:17.573Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 18→7 lines (11 removed) | Also: for (const [, chart] of chartInstances) chart.dest; if (timelineChart) { timelineChart.destroy(); time | Also: function resetAllZoom() {; for (const [, chart] of chartInstances) chart.rese | Also: <div style=\"display: flex; justify-content: space-; <div style=\"display: flex; gap: 8px;\"> | Also: <li><strong>Zoom</strong> — scroll wheel, pinch, o; <li><strong>Timeline markers A/B</strong> — click  | Also: <li><strong>缩放</strong>——滚轮缩放、双指缩放或框选缩放；双击复位</li>; <li><strong>时间线标记 A/B</strong>——在时序图上点击设置标记并测量 Δt<",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 7,
+      "last_seen": "2026-05-16T05:26:02.909Z"
+    },
+    {
+      "id": "bug-038",
+      "timestamp": "2026-05-16T05:24:35.296Z",
+      "error_message": "CSS fix: white-space",
+      "file": "web/src/app.css",
+      "root_cause": "white-space: pre → nowrap",
+      "fix": "Changed white-space: pre → nowrap",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "css"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T05:24:35.296Z"
+    },
+    {
+      "id": "bug-039",
+      "timestamp": "2026-05-16T13:45:00.000Z",
+      "error_message": "Plot page zoom 'gets stuck in a wrong place or tries many times for a suitable view'",
+      "file": "web/src/routes/plot/+page.svelte, web/src/lib/plot-store.svelte.ts",
+      "root_cause": "updateLiveSignalCharts / updateLiveTimeline / updateLiveIntervalCharts unconditionally overwrite xScale.min/max with the current data range on every live tick (~50ms), blowing away any manual zoom before the user can examine the result. Compounded by mode:'xy' wheel zoom (both axes at once), no pan gesture configured in the plugin, and no rolling-window concept for live capture.",
+      "fix": "Added followLive + userZoomed + followWindowSeconds + showGestureHint state to plot-store (localStorage-persisted). updateLive* now only set xScale.min/max in follow mode (sliding [xMax-window, xMax]); when userZoomed they leave the plugin's zoom transform alone. Redesigned zoomOptions: plugin wheel disabled, custom canvas wheel handler maps Scroll=x, Shift+Scroll=y, Ctrl/Meta+Scroll=xy with focalPoint at cursor; left-drag=pan x; Shift+drag=box zoom; double-click=resetZoom+clearUserZoom. Added Fit X / Fit Y / Fit toolbar buttons via plugin-zoom 2.x resetZoom(transition, mode). Follow-live toggle + window-seconds input visible in live mode; toggling on calls resetZoom('none') so rolling-window math takes over cleanly. Added gesture cheat-sheet strip (dismissible via ×, restorable via ? button). Existing click-to-copy-frame onClick handler unchanged — pan threshold:4 lets quick clicks pass through.",
+      "tags": [
+        "ux",
+        "plot",
+        "chart.js",
+        "chartjs-plugin-zoom",
+        "live-mode",
+        "zoom",
+        "pan"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T13:45:00.000Z"
+    },
+    {
+      "id": "bug-040",
+      "timestamp": "2026-05-16T06:19:22.120Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: data: entries.map(e => ({ x: e.time - origin, y: laneIdx, fr | Also: data: data.map(d => ({ x: d.time - intervalOrigin, y: d.dt,  | Also: const points = samples.map(s => ({ x: s.time - signalsOrigin | Also: const points = entries.map(e => ({ x: e.time - origin, y: i, | Also: const points = data.map(d => ({ x: d.time - intervalOrigin, ",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 6,
+      "last_seen": "2026-05-16T06:20:26.269Z"
+    },
+    {
+      "id": "bug-041",
+      "timestamp": "2026-05-16T14:00:00.000Z",
+      "error_message": "User: 'when pasting candump message with timestamps, the signal strangely show timestamp zero' — chart tooltips and timeline UI lose the wall-clock timestamp from pasted candump lines and show 0/normalized time only.",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Each chart dataset built `absTime: s.time` (or e.time / d.time), but s.time/e.time/d.time are the NORMALIZED chart time (raw_ts - firstTs / liveStartTime) — already zeroed at the first frame. The real wall-clock timestamp lives on s.frame.timestamp. So the 'abs ...' shown in tooltips was just the same number as the chart x; never the actual pasted timestamp. Compounded by tooltip title only conditionally rendering '(abs ...)' (when timelineOrigin shifted or applyTimingToAllViews set), so most users never saw it. The timeline click handler also read pt.absTime expecting normalized time — that worked accidentally by the bug.",
+      "fix": "Repointed absTime in all six dataset constructions (3x render + 3x updateLive) to `frame?.timestamp ?? s.time` so it carries the true wall clock from FrameRef.timestamp. Tooltip titles now ALWAYS show `t = X.XXXs  (abs Y.YYYs)` when abs differs from x by ≥0.5ms (covers paste with absolute timestamps and live mode); single-line `t = X.XXXs` when they coincide. Timeline onClick now derives normalized time from `pt.x + plotStore.timelineOrigin` (the correct relationship), so changing absTime semantics doesn't break t=0/Δt marker placement; the toast shows wall-clock when setting t=0 so the user sees the real timestamp they clicked.",
+      "tags": [
+        "ux",
+        "plot",
+        "paste-mode",
+        "timestamps",
+        "tooltips",
+        "timeline"
+      ],
+      "related_bugs": [
+        "bug-039"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T14:00:00.000Z"
+    },
+    {
+      "id": "bug-042",
+      "timestamp": "2026-05-16T14:25:00.000Z",
+      "error_message": "User: 'all signals fall on the timestamps zero in the plot' — after the absTime fix, signals visually cluster at x=0 in paste mode.",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Two latent bugs in the updateLive* path. (1) updateLiveSignalCharts read samples from plotStore.liveSampleStore, which is empty in paste mode (paste samples live in allSeries[].samples accessed via getSamples()). When paste-mode actions like handleTimelineClick / resetTimelineOrigin / toggleApplyTimingToAllViews / (new) toggleFollowLive triggered requestRender(false), this function would set ds.data = [] and blank the chart. (2) The new `follow = followLive && !userZoomed` gate let paste-mode renders apply a live sliding window because followLive defaults to true — clamping xScale to [xMax-window, xMax] regardless of mode, which can make finite paste data appear shoved against one edge of the chart.",
+      "fix": "Changed updateLiveSignalCharts to use plotStore.getSamples(key) (which already handles both paste and live modes). Gated the follow window with `plotStore.mode === 'live'` in all three updateLive functions so the sliding-window behavior only applies during live capture; paste mode now lets Chart.js auto-fit the X axis to its data.",
+      "tags": [
+        "ux",
+        "plot",
+        "paste-mode",
+        "live-mode",
+        "regression",
+        "follow-live"
+      ],
+      "related_bugs": [
+        "bug-039",
+        "bug-041"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T14:25:00.000Z"
+    },
+    {
+      "id": "bug-043",
+      "timestamp": "2026-05-16T07:05:57.323Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "18 lines replaced/restructured",
+      "fix": "Rewrote 43→54 lines (18 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T07:05:57.323Z"
+    },
+    {
+      "id": "bug-044",
+      "timestamp": "2026-05-16T14:45:00.000Z",
+      "error_message": "User: 'all signals fall on the timestamps zero in the plot' — when pasting candump with `TX B -` / `RX B -` direction/flag tokens between iface and CAN ID, parseCandump silently drops the timestamp and analyze() falls into ts=0 for every frame.",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "Both parseCandump regexes anchored the optional `(timestamp) ` capture group as a single atomic prefix immediately preceded by interface + canId + dlc. The user's format inserts `TX B -` between the interface and the CAN ID (`(1774374538.692191) can0 TX B - 00010101 [35] ...`), which prevents the regex from succeeding in one go. JS regex unanchored match() then backtracks and starts matching from the canId position — the timestamp is gone, but the parser returns success with `timestamp: undefined`. Compounded for MAVLink-over-CAN: ts gets coerced to 0 when feeding the reassembler (`frame.timestamp ?? 0`), then every reassembled buffer has timestamps:[0, 0, ...], firstTs becomes 0, every normalized chart-x is 0 — all signals stack at the origin.",
+      "fix": "Restructured parseCandump in two phases: (1) pre-extract a leading `(\\d+(?:\\.\\d+)?)` timestamp via a small dedicated regex, then strip it; (2) run the body matchers on what's left. Added a `(?:\\S+\\s+){0,4}` slot in the candump body regex to absorb up to four direction/flag tokens like `TX B -` between iface and CAN ID. The cansend regex stays strict (no extra tokens between iface and ID#data). All existing formats (cansend, standard candump, candump-l) still parse identically; the user's TX/RX direction format now correctly extracts timestamp.",
+      "tags": [
+        "plot",
+        "paste-mode",
+        "candump",
+        "parseCandump",
+        "regex",
+        "mavlink"
+      ],
+      "related_bugs": [
+        "bug-041",
+        "bug-042"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T14:45:00.000Z"
     }
   ]
 }

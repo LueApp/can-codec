@@ -44,6 +44,24 @@ class PlotStore {
   timelineMarkers = $state<{ time: number; label: string }[]>([]);
   applyTimingToAllViews = $state(false);
 
+  // --- Zoom / follow-live state ---
+  followLive = $state(
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('cancodec_follow_live') !== '0'
+      : true
+  );
+  followWindowSeconds = $state(
+    typeof localStorage !== 'undefined'
+      ? Number(localStorage.getItem('cancodec_follow_window')) || 10
+      : 10
+  );
+  userZoomed = $state(false);
+  showGestureHint = $state(
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('cancodec_hide_gesture_hint') !== '1'
+      : true
+  );
+
   // --- Non-reactive state (performance) ---
   nextPanelId = 0;
   wsClient = new WebSocketClient();
@@ -161,6 +179,46 @@ class PlotStore {
   toggleApplyTimingToAllViews() {
     this.applyTimingToAllViews = !this.applyTimingToAllViews;
     this.requestRender(false);
+  }
+
+  // --- Zoom / follow-live ---
+  noteUserInteraction() {
+    if (!this.userZoomed) this.userZoomed = true;
+    if (this.followLive) {
+      this.followLive = false;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('cancodec_follow_live', '0');
+      }
+    }
+  }
+
+  toggleFollowLive() {
+    this.followLive = !this.followLive;
+    if (this.followLive) this.userZoomed = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cancodec_follow_live', this.followLive ? '1' : '0');
+    }
+    this.requestRender(false);
+  }
+
+  setFollowWindowSeconds(seconds: number) {
+    const s = Math.max(1, Math.min(3600, Math.round(seconds)));
+    this.followWindowSeconds = s;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cancodec_follow_window', String(s));
+    }
+    this.requestRender(false);
+  }
+
+  clearUserZoom() {
+    this.userZoomed = false;
+  }
+
+  dismissGestureHint() {
+    this.showGestureHint = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cancodec_hide_gesture_hint', '1');
+    }
   }
 
   get timelineMarkerDelta(): number | null {

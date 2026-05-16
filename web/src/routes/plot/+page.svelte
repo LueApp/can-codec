@@ -385,19 +385,78 @@ if __name__ == "__main__":
     '#39d2c0', '#f78166', '#7ee787', '#a5d6ff', '#ffa657',
   ];
 
+  // Plugin-driven zoom config:
+  //  - Plugin wheel is OFF; we run a custom wheel handler (see attachChartInteractions)
+  //    so modifier keys can switch between x / y / xy zoom dynamically.
+  //  - Pinch stays xy (single config for two-finger gestures).
+  //  - Left-drag pans x; Shift+drag draws a box-zoom rectangle.
+  //  - onPan / onZoom call noteUserInteraction so live mode stops auto-fitting.
+  const onZoomOrPanStart = (): undefined => {
+    plotStore.noteUserInteraction();
+    return undefined;
+  };
+
   const zoomOptions = {
+    pan: {
+      enabled: true,
+      mode: 'x' as const,
+      threshold: 4,
+      onPanStart: onZoomOrPanStart,
+    },
     zoom: {
-      wheel: { enabled: true },
+      wheel: { enabled: false },
       pinch: { enabled: true },
       drag: {
         enabled: true,
+        modifierKey: 'shift' as const,
         backgroundColor: 'rgba(88, 166, 255, 0.15)',
         borderColor: 'rgba(88, 166, 255, 0.5)',
         borderWidth: 1,
       },
       mode: 'xy' as const,
+      onZoomStart: onZoomOrPanStart,
     },
   };
+
+  function attachChartInteractions(chart: Chart, canvas: HTMLCanvasElement) {
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const focalPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const speed = 0.12;
+      const factor = e.deltaY < 0 ? 1 + speed : 1 / (1 + speed);
+      let x = 1, y = 1;
+      if (e.shiftKey) y = factor;
+      else if (e.ctrlKey || e.metaKey) { x = factor; y = factor; }
+      else x = factor;
+      (chart as any).zoom({ x, y, focalPoint });
+      plotStore.noteUserInteraction();
+    };
+    const onDblClick = (e: MouseEvent) => {
+      e.preventDefault();
+      chart.resetZoom();
+      plotStore.clearUserZoom();
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('dblclick', onDblClick);
+    (chart as any).__detachInteractions = () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('dblclick', onDblClick);
+    };
+  }
+
+  function detachChartInteractions(chart: Chart) {
+    const fn = (chart as any).__detachInteractions as (() => void) | undefined;
+    fn?.();
+  }
+
+  function fitAllCharts(mode: 'x' | 'y' | 'xy') {
+    const fit = (chart: Chart) => (chart as any).resetZoom('none', mode);
+    for (const [, c] of chartInstances) fit(c);
+    if (timelineChart) fit(timelineChart);
+    for (const [, c] of intervalInstances) fit(c);
+    if (mode === 'xy') plotStore.clearUserZoom();
+  }
 
   const MARKER_COLORS = ['#d29922', '#39d2c0'];
 
@@ -506,7 +565,7 @@ if __name__ == "__main__":
   }
 
   function renderCharts() {
-    for (const [, chart] of chartInstances) chart.destroy();
+    for (const [, chart] of chartInstances) { detachChartInteractions(chart); chart.destroy(); }
     chartInstances.clear();
 
     requestAnimationFrame(() => {
@@ -525,7 +584,7 @@ if __name__ == "__main__":
           const samples = plotStore.getSamples(series.key);
           return {
             label: `${series.group} / ${series.signal}${series.unit ? ` (${series.unit})` : ''}`,
-            data: samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.time })),
+            data: samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.frame?.timestamp ?? s.time })),
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 1.5,
@@ -569,8 +628,8 @@ if __name__ == "__main__":
                     if (x == null) return '';
                     const raw = items[0].raw as any;
                     const abs = typeof raw?.absTime === 'number' ? raw.absTime : x;
-                    return plotStore.applyTimingToAllViews && plotStore.timelineOrigin !== 0
-                      ? `t = ${x.toFixed(3)}s (abs ${abs.toFixed(3)}s)`
+                    return Math.abs(abs - x) > 0.0005
+                      ? `t = ${x.toFixed(3)}s  (abs ${abs.toFixed(3)}s)`
                       : `t = ${x.toFixed(3)}s`;
                   },
                   label: (item) => {
@@ -599,13 +658,14 @@ if __name__ == "__main__":
             },
           },
         });
+        attachChartInteractions(chart, canvas);
         chartInstances.set(panel.id, chart);
       }
     });
   }
 
   function renderTimeline() {
-    if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
+    if (timelineChart) { detachChartInteractions(timelineChart); timelineChart.destroy(); timelineChart = null; }
 
     requestAnimationFrame(() => {
       const canvas = document.getElementById('timeline-chart') as HTMLCanvasElement | null;
@@ -620,7 +680,7 @@ if __name__ == "__main__":
         const entries = plotStore.messageTimingStore.get(label) ?? [];
         return {
           label,
-          data: entries.map(e => ({ x: e.time - origin, y: laneIdx, frame: e.frame, absTime: e.time })),
+          data: entries.map(e => ({ x: e.time - origin, y: laneIdx, frame: e.frame, absTime: e.frame?.timestamp ?? e.time })),
           backgroundColor: color,
           borderColor: color,
           pointRadius: entries.length <= 500 ? 4 : 2,
@@ -641,11 +701,12 @@ if __name__ == "__main__":
             const el = elements[0];
             const pt = chart.data.datasets[el.datasetIndex]?.data[el.index] as any;
             if (!pt?.frame) return;
-            const absTime = typeof pt.absTime === 'number' ? pt.absTime : pt.x + plotStore.timelineOrigin;
+            const normalizedTime = pt.x + plotStore.timelineOrigin;
+            const wallTime = typeof pt.absTime === 'number' ? pt.absTime : normalizedTime;
             const lbl = labels[el.datasetIndex] ?? '';
-            const result = plotStore.handleTimelineClick(absTime, lbl);
+            const result = plotStore.handleTimelineClick(normalizedTime, lbl);
             if (result === 'origin-set') {
-              showCopyToast(`t=0 set at ${absTime.toFixed(3)}s (${lbl})`);
+              showCopyToast(`t=0 set at ${wallTime.toFixed(3)}s (${lbl})`);
             } else if (result === 'marker-added') {
               showCopyToast(`Marker A set — pick second frame`);
             } else if (result === 'measure-complete') {
@@ -670,8 +731,8 @@ if __name__ == "__main__":
                   if (x == null) return '';
                   const raw = items[0].raw as any;
                   const abs = typeof raw?.absTime === 'number' ? raw.absTime : x + plotStore.timelineOrigin;
-                  return plotStore.timelineOrigin !== 0
-                    ? `t = ${x.toFixed(3)}s (abs ${abs.toFixed(3)}s)`
+                  return Math.abs(abs - x) > 0.0005
+                    ? `t = ${x.toFixed(3)}s  (abs ${abs.toFixed(3)}s)`
                     : `t = ${x.toFixed(3)}s`;
                 },
                 label: (item) => {
@@ -712,11 +773,12 @@ if __name__ == "__main__":
           },
         },
       });
+      attachChartInteractions(timelineChart, canvas);
     });
   }
 
   function renderIntervalCharts() {
-    for (const [, chart] of intervalInstances) chart.destroy();
+    for (const [, chart] of intervalInstances) { detachChartInteractions(chart); chart.destroy(); }
     intervalInstances.clear();
 
     requestAnimationFrame(() => {
@@ -731,7 +793,7 @@ if __name__ == "__main__":
           const data = plotStore.getIntervalData(key);
           return {
             label: key,
-            data: data.map(d => ({ x: d.time - intervalOrigin, y: d.dt, frame: d.frame, absTime: d.time })),
+            data: data.map(d => ({ x: d.time - intervalOrigin, y: d.dt, frame: d.frame, absTime: d.frame?.timestamp ?? d.time })),
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 1.5,
@@ -775,8 +837,8 @@ if __name__ == "__main__":
                     if (x == null) return '';
                     const raw = items[0].raw as any;
                     const abs = typeof raw?.absTime === 'number' ? raw.absTime : x;
-                    return plotStore.applyTimingToAllViews && plotStore.timelineOrigin !== 0
-                      ? `t = ${x.toFixed(3)}s (abs ${abs.toFixed(3)}s)`
+                    return Math.abs(abs - x) > 0.0005
+                      ? `t = ${x.toFixed(3)}s  (abs ${abs.toFixed(3)}s)`
                       : `t = ${x.toFixed(3)}s`;
                   },
                   label: (item) => {
@@ -806,6 +868,7 @@ if __name__ == "__main__":
             },
           },
         });
+        attachChartInteractions(chart, canvas);
         intervalInstances.set(panel.id, chart);
       }
     });
@@ -839,27 +902,29 @@ if __name__ == "__main__":
     }
 
     const signalsOrigin = originForView(false);
+    const follow = plotStore.mode === 'live' && plotStore.followLive && !plotStore.userZoomed;
+    const windowS = plotStore.followWindowSeconds;
     for (const panel of plotStore.chartPanels) {
       const chart = chartInstances.get(panel.id);
       if (!chart) continue;
 
-      let xMin = Infinity, xMax = -Infinity;
+      let xMax = -Infinity;
       for (let j = 0; j < panel.keys.length; j++) {
-        const samples = plotStore.liveSampleStore.get(panel.keys[j]) ?? [];
+        const samples = plotStore.getSamples(panel.keys[j]);
         const ds = chart.data.datasets[j];
         if (!ds) continue;
-        const points = samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.time }));
+        const points = samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.frame?.timestamp ?? s.time }));
         ds.data = points;
         (ds as any).pointRadius = points.length <= 100 ? 3 : 0;
-        if (points.length > 0) {
-          if (points[0].x < xMin) xMin = points[0].x;
-          if (points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
-        }
+        if (points.length > 0 && points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
       }
-      if (xMin < Infinity) {
-        const xScale = chart.options.scales!.x as any;
-        xScale.min = xMin;
+      const xScale = chart.options.scales!.x as any;
+      if (follow && xMax > -Infinity) {
+        xScale.min = xMax - windowS;
         xScale.max = xMax;
+      } else if (!plotStore.userZoomed) {
+        xScale.min = undefined;
+        xScale.max = undefined;
       }
       chart.update('none');
     }
@@ -879,23 +944,25 @@ if __name__ == "__main__":
     }
 
     const origin = plotStore.timelineOrigin;
-    let xMin = Infinity, xMax = -Infinity;
+    const follow = plotStore.mode === 'live' && plotStore.followLive && !plotStore.userZoomed;
+    const windowS = plotStore.followWindowSeconds;
+    let xMax = -Infinity;
     for (let i = 0; i < labels.length; i++) {
       const entries = plotStore.messageTimingStore.get(labels[i]) ?? [];
       const ds = timelineChart.data.datasets[i];
       if (!ds) continue;
-      const points = entries.map(e => ({ x: e.time - origin, y: i, frame: e.frame, absTime: e.time }));
+      const points = entries.map(e => ({ x: e.time - origin, y: i, frame: e.frame, absTime: e.frame?.timestamp ?? e.time }));
       ds.data = points;
       (ds as any).pointRadius = points.length <= 500 ? 4 : 2;
-      if (points.length > 0) {
-        if (points[0].x < xMin) xMin = points[0].x;
-        if (points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
-      }
+      if (points.length > 0 && points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
     }
-    if (xMin < Infinity) {
-      const xScale = timelineChart.options.scales!.x as any;
-      xScale.min = xMin;
+    const xScale = timelineChart.options.scales!.x as any;
+    if (follow && xMax > -Infinity) {
+      xScale.min = xMax - windowS;
       xScale.max = xMax;
+    } else if (!plotStore.userZoomed) {
+      xScale.min = undefined;
+      xScale.max = undefined;
     }
     const yScale = timelineChart.options.scales!.y as any;
     yScale.max = labels.length - 0.5;
@@ -922,27 +989,29 @@ if __name__ == "__main__":
     }
 
     const intervalOrigin = originForView(false);
+    const follow = plotStore.mode === 'live' && plotStore.followLive && !plotStore.userZoomed;
+    const windowS = plotStore.followWindowSeconds;
     for (const panel of plotStore.intervalPanels) {
       const chart = intervalInstances.get(panel.id);
       if (!chart) continue;
 
-      let xMin = Infinity, xMax = -Infinity;
+      let xMax = -Infinity;
       for (let j = 0; j < panel.keys.length; j++) {
         const data = plotStore.getIntervalData(panel.keys[j]);
         const ds = chart.data.datasets[j];
         if (!ds) continue;
-        const points = data.map(d => ({ x: d.time - intervalOrigin, y: d.dt, frame: d.frame, absTime: d.time }));
+        const points = data.map(d => ({ x: d.time - intervalOrigin, y: d.dt, frame: d.frame, absTime: d.frame?.timestamp ?? d.time }));
         ds.data = points;
         (ds as any).pointRadius = points.length <= 100 ? 3 : 0;
-        if (points.length > 0) {
-          if (points[0].x < xMin) xMin = points[0].x;
-          if (points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
-        }
+        if (points.length > 0 && points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
       }
-      if (xMin < Infinity) {
-        const xScale = chart.options.scales!.x as any;
-        xScale.min = xMin;
+      const xScale = chart.options.scales!.x as any;
+      if (follow && xMax > -Infinity) {
+        xScale.min = xMax - windowS;
         xScale.max = xMax;
+      } else if (!plotStore.userZoomed) {
+        xScale.min = undefined;
+        xScale.max = undefined;
       }
       chart.update('none');
     }
@@ -960,10 +1029,24 @@ if __name__ == "__main__":
 
   // ---- Zoom & export ----
 
-  function resetAllZoom() {
-    for (const [, chart] of chartInstances) chart.resetZoom();
-    if (timelineChart) timelineChart.resetZoom();
-    for (const [, chart] of intervalInstances) chart.resetZoom();
+  function resetAllZoom() { fitAllCharts('xy'); }
+  function fitX() { fitAllCharts('x'); }
+  function fitY() { fitAllCharts('y'); }
+
+  function toggleFollow() {
+    const wasFollowing = plotStore.followLive;
+    plotStore.toggleFollowLive();
+    if (!wasFollowing && plotStore.followLive) {
+      // Snap to live window: discard any plugin zoom state so updateLive* takes over.
+      for (const [, c] of chartInstances) (c as any).resetZoom('none');
+      if (timelineChart) (timelineChart as any).resetZoom('none');
+      for (const [, c] of intervalInstances) (c as any).resetZoom('none');
+    }
+  }
+
+  function onFollowWindowInput(e: Event) {
+    const v = Number((e.currentTarget as HTMLInputElement).value);
+    if (Number.isFinite(v) && v > 0) plotStore.setFollowWindowSeconds(v);
   }
 
   function savePng() {
@@ -1106,10 +1189,10 @@ if __name__ == "__main__":
   // ---- Lifecycle ----
 
   function destroyAllCharts() {
-    for (const [, chart] of chartInstances) chart.destroy();
+    for (const [, chart] of chartInstances) { detachChartInteractions(chart); chart.destroy(); }
     chartInstances.clear();
-    if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
-    for (const [, chart] of intervalInstances) chart.destroy();
+    if (timelineChart) { detachChartInteractions(timelineChart); timelineChart.destroy(); timelineChart = null; }
+    for (const [, chart] of intervalInstances) { detachChartInteractions(chart); chart.destroy(); }
     intervalInstances.clear();
   }
 
@@ -1358,6 +1441,9 @@ if __name__ == "__main__":
         Interval
       </button>
       <div style="margin-left: auto; display: flex; gap: 8px;">
+        {#if !plotStore.showGestureHint}
+          <button class="btn-sm" onclick={() => plotStore.showGestureHint = true} title="Show chart gesture hint">?</button>
+        {/if}
         <button class="btn-sm" onclick={() => plotStore.clearData()} style="color: var(--red, #f85149);">Clear</button>
         <button class="btn-sm" onclick={exportLayout}>Export Layout</button>
         <button class="btn-sm" onclick={importLayout}>Import Layout</button>
@@ -1366,6 +1452,22 @@ if __name__ == "__main__":
         {/if}
       </div>
     </div>
+
+    {#if plotStore.showGestureHint}
+      <div class="gesture-hint">
+        <span class="gesture-item"><kbd>Scroll</kbd> zoom time</span>
+        <span class="gesture-item"><kbd>Shift</kbd>+<kbd>Scroll</kbd> zoom value</span>
+        <span class="gesture-item"><kbd>Ctrl</kbd>+<kbd>Scroll</kbd> zoom both</span>
+        <span class="gesture-item"><kbd>Drag</kbd> pan</span>
+        <span class="gesture-item"><kbd>Shift</kbd>+<kbd>Drag</kbd> box-zoom</span>
+        <span class="gesture-item"><kbd>Double-click</kbd> fit all</span>
+        <span class="gesture-item"><kbd>Click</kbd> a point to copy frame</span>
+        {#if plotStore.mode === 'live'}
+          <span class="gesture-item" style="color: var(--accent);">In live mode use <strong>Follow</strong> to auto-scroll; zooming pauses it.</span>
+        {/if}
+        <button class="gesture-dismiss" onclick={() => plotStore.dismissGestureHint()} title="Hide this hint (re-enable via ? button)">×</button>
+      </div>
+    {/if}
 
     {#each plotStore.viewOrder as view (view)}
       {#if plotStore.activeViews.has(view)}
@@ -1385,13 +1487,29 @@ if __name__ == "__main__":
 
           {#if view === 'signals'}
             <div class="card">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
                 <strong style="font-size: 14px;">Signals</strong>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <button class="btn-sm" onclick={() => plotStore.selectAll()}>All</button>
                   <button class="btn-sm" onclick={() => plotStore.selectNone()}>None</button>
                   {#if plotStore.chartPanels.length > 0}
-                    <button class="btn-sm" onclick={resetAllZoom}>Reset Zoom</button>
+                    <button class="btn-sm" onclick={fitX} title="Fit X axis (time) to data — keep Y zoom">Fit X</button>
+                    <button class="btn-sm" onclick={fitY} title="Fit Y axis (value) to data — keep X zoom">Fit Y</button>
+                    <button class="btn-sm" onclick={resetAllZoom} title="Fit both axes — same as double-clicking the chart">Fit</button>
+                    {#if plotStore.mode === 'live'}
+                      <button class="btn-sm" class:chip-active={plotStore.followLive} onclick={toggleFollow}
+                        title="Auto-scroll the X axis to show the latest data. Turns off when you zoom or pan.">
+                        {plotStore.followLive ? 'Following' : 'Follow live'}
+                      </button>
+                      {#if plotStore.followLive}
+                        <label class="follow-window" title="Visible window when following live">
+                          Window
+                          <input type="number" min="1" max="3600" step="1"
+                            value={plotStore.followWindowSeconds} oninput={onFollowWindowInput} />
+                          s
+                        </label>
+                      {/if}
+                    {/if}
                     <button class="btn-sm" onclick={savePng}>Save PNG</button>
                   {/if}
                 </div>
@@ -1498,7 +1616,23 @@ if __name__ == "__main__":
                         style="accent-color: var(--accent);" />
                       Apply to all views
                     </label>
-                    <button class="btn-sm" onclick={resetAllZoom}>Reset Zoom</button>
+                    <button class="btn-sm" onclick={fitX} title="Fit X axis (time) to data — keep Y zoom">Fit X</button>
+                    <button class="btn-sm" onclick={fitY} title="Fit Y axis to data — keep X zoom">Fit Y</button>
+                    <button class="btn-sm" onclick={resetAllZoom} title="Fit both axes — same as double-clicking the chart">Fit</button>
+                    {#if plotStore.mode === 'live'}
+                      <button class="btn-sm" class:chip-active={plotStore.followLive} onclick={toggleFollow}
+                        title="Auto-scroll the X axis to show the latest data. Turns off when you zoom or pan.">
+                        {plotStore.followLive ? 'Following' : 'Follow live'}
+                      </button>
+                      {#if plotStore.followLive}
+                        <label class="follow-window" title="Visible window when following live">
+                          Window
+                          <input type="number" min="1" max="3600" step="1"
+                            value={plotStore.followWindowSeconds} oninput={onFollowWindowInput} />
+                          s
+                        </label>
+                      {/if}
+                    {/if}
                     <button class="btn-sm" onclick={savePng}>Save PNG</button>
                   {/if}
                 </div>
@@ -1549,13 +1683,29 @@ if __name__ == "__main__":
 
           {:else if view === 'interval'}
             <div class="card">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
                 <strong style="font-size: 14px;">Message Intervals</strong>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <button class="btn-sm" onclick={() => plotStore.selectAllInterval()}>All</button>
                   <button class="btn-sm" onclick={() => plotStore.selectNoneInterval()}>None</button>
                   {#if plotStore.intervalPanels.length > 0}
-                    <button class="btn-sm" onclick={resetAllZoom}>Reset Zoom</button>
+                    <button class="btn-sm" onclick={fitX} title="Fit X axis (time) to data — keep Y zoom">Fit X</button>
+                    <button class="btn-sm" onclick={fitY} title="Fit Y axis to data — keep X zoom">Fit Y</button>
+                    <button class="btn-sm" onclick={resetAllZoom} title="Fit both axes — same as double-clicking the chart">Fit</button>
+                    {#if plotStore.mode === 'live'}
+                      <button class="btn-sm" class:chip-active={plotStore.followLive} onclick={toggleFollow}
+                        title="Auto-scroll the X axis to show the latest data. Turns off when you zoom or pan.">
+                        {plotStore.followLive ? 'Following' : 'Follow live'}
+                      </button>
+                      {#if plotStore.followLive}
+                        <label class="follow-window" title="Visible window when following live">
+                          Window
+                          <input type="number" min="1" max="3600" step="1"
+                            value={plotStore.followWindowSeconds} oninput={onFollowWindowInput} />
+                          s
+                        </label>
+                      {/if}
+                    {/if}
                     <button class="btn-sm" onclick={savePng}>Save PNG</button>
                   {/if}
                 </div>

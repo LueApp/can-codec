@@ -159,14 +159,18 @@
           <ul class="doc-list">
             <li><strong>Signal selector</strong> — check/uncheck series; drag to group into panels</li>
             <li><strong>Views</strong> — Signals (line chart), Timeline (per-message event timing), Interval (per-signal delta-time)</li>
-            <li><strong>Zoom</strong> — scroll wheel, pinch, or drag to zoom; double-click to reset</li>
-            <li><strong>Timeline markers A/B</strong> — click on the timeline chart to set markers and measure Δt</li>
-            <li><strong>t=0 origin</strong> — right-click a data point in the timeline to set it as the time origin</li>
+            <li><strong>Zoom &amp; pan</strong> — scroll wheel zooms time; <kbd>Shift</kbd>+scroll zooms value; <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+scroll zooms both. Left-drag pans, <kbd>Shift</kbd>+drag box-zooms, double-click fits to data. Pinch on touch zooms both axes.</li>
+            <li><strong>Fit X / Fit Y / Fit</strong> — toolbar buttons. <em>Fit</em> resets both axes, <em>Fit X</em> auto-scales only the time axis (preserves Y zoom), <em>Fit Y</em> only the value axis.</li>
+            <li><strong>Follow live</strong> (live mode only) — auto-scrolls the X axis with a rolling window. Adjust the window seconds inline. <em>Manually zooming or panning pauses follow</em> so you can investigate without the stream snapping you back; click <em>Follow live</em> again to resume.</li>
+            <li><strong>Click a data point</strong> — copies the candump line (id + bytes + timestamp) to the clipboard</li>
+            <li><strong>Timeline markers A/B</strong> — click <em>Measure Δt</em> then pick two frames on the timeline to measure time delta</li>
+            <li><strong>t=0 origin</strong> — click <em>Set t=0</em> then pick a frame on the timeline to make it the time origin</li>
             <li><strong>Export Layout</strong> / <strong>Import Layout</strong> — save/restore panel arrangement as YAML</li>
             <li><strong>Save PNG</strong> — export all charts as a PNG image</li>
             <li><strong>Record to file</strong> — save raw frames to a <code>.log</code> file during live capture</li>
             <li><strong>Clear</strong> — reset all collected data</li>
           </ul>
+          <p style="margin-top: 8px; font-size: 12px; color: var(--text-dim);">Tip: the <kbd>?</kbd> button next to <em>Clear</em> on the Plot page re-shows the gesture cheat-sheet if you've dismissed it.</p>
         </div>
       </div>
 
@@ -443,14 +447,18 @@ canfd-codec -c ./configs serve --bus /dev/ttyACM0 --interface slcan --bitrate 10
           <ul class="doc-list">
             <li><strong>信号选择器</strong>——勾选/取消信号系列；拖拽可分组到不同面板</li>
             <li><strong>视图切换</strong>——Signals（折线图）、Timeline（消息事件时序）、Interval（逐信号时间间隔）</li>
-            <li><strong>缩放</strong>——滚轮缩放、双指缩放或框选缩放；双击复位</li>
-            <li><strong>时间线标记 A/B</strong>——在时序图上点击设置标记并测量 Δt</li>
-            <li><strong>t=0 起点</strong>——在时序图上右键点击数据点，将其设为时间原点</li>
+            <li><strong>缩放与平移</strong>——滚轮缩放时间轴；<kbd>Shift</kbd>+滚轮缩放数值轴；<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+滚轮同时缩放双轴。左键拖拽平移，<kbd>Shift</kbd>+拖拽框选缩放，双击适配数据。触摸双指捏合同时缩放双轴。</li>
+            <li><strong>Fit X / Fit Y / Fit</strong>——工具栏按钮。<em>Fit</em> 复位双轴；<em>Fit X</em> 仅自适应时间轴（保留 Y 缩放）；<em>Fit Y</em> 仅自适应数值轴。</li>
+            <li><strong>Follow live</strong>（仅实时模式）——自动滚动 X 轴跟随最新数据，可在按钮旁修改窗口秒数。<em>手动缩放或平移会暂停跟随</em>，避免实时流不断把视图拉回，方便排查；再次点击 <em>Follow live</em> 即可恢复。</li>
+            <li><strong>点击数据点</strong>——将该帧的 candump 行（id + 字节 + 时间戳）复制到剪贴板</li>
+            <li><strong>时间线标记 A/B</strong>——点击 <em>Measure Δt</em> 后在时序图上选两帧测量时间差</li>
+            <li><strong>t=0 起点</strong>——点击 <em>Set t=0</em> 后在时序图上选一帧将其设为时间原点</li>
             <li><strong>导出/导入布局</strong>——将面板排列保存为 YAML 文件</li>
             <li><strong>保存 PNG</strong>——将所有图表导出为 PNG 图像</li>
             <li><strong>录制到文件</strong>——实时采集时将原始帧保存为 <code>.log</code> 文件</li>
             <li><strong>Clear</strong>——清空所有已采集数据</li>
           </ul>
+          <p style="margin-top: 8px; font-size: 12px; color: var(--text-dim);">提示：Plot 页面 <em>Clear</em> 按钮旁的 <kbd>?</kbd> 可重新显示手势速查条。</p>
         </div>
       </div>
 
