@@ -1,6 +1,6 @@
 <script lang="ts">
   import { codecStore } from '$lib/codec-store.svelte';
-  import { displayValue, parseCandump, groupArraySignals } from '$lib/codec';
+  import { displayValue, parseCandump, groupArraySignals, MavlinkReassembler } from '$lib/codec';
   import type { DecodedMessage, MavlinkInfo } from '$lib/types';
 
   interface DecodeResult {
@@ -71,32 +71,71 @@
     const lines = input.trim().split('\n').map(l => l.trim()).filter(Boolean);
     if (lines.length === 0) { results = []; return; }
 
-    // Group consecutive lines with the same MAVLink CAN ID for multi-frame reassembly
-    const groups: { lines: string[]; canId: number | null }[] = [];
+    type Group =
+      | { kind: 'mavlink'; canId: number; lines: string[]; frames: Uint8Array[] }
+      | { kind: 'single'; line: string };
+    const groups: Group[] = [];
+
+    const reasm = new MavlinkReassembler();
+    // Track which raw lines feed each in-flight buffer so we can label completed
+    // groups with all the source lines that contributed.
+    const inflightLines = new Map<number, string[][]>();
+
     for (const line of lines) {
       const frame = parseCandump(line);
-      const canId = frame ? frame.canId : null;
-      const last = groups[groups.length - 1];
-      if (canId !== null && isMavlinkCanId(canId) && last && last.canId === canId) {
-        last.lines.push(line);
+      if (!frame || !isMavlinkCanId(frame.canId)) {
+        groups.push({ kind: 'single', line });
+        continue;
+      }
+
+      const isStart = frame.data.length > 0 && frame.data[0] === 0xFD;
+      let canLines = inflightLines.get(frame.canId);
+      if (isStart) {
+        if (!canLines) { canLines = []; inflightLines.set(frame.canId, canLines); }
+        canLines.push([line]);
+      } else if (canLines && canLines.length > 0) {
+        canLines[0].push(line);
       } else {
-        groups.push({ lines: [line], canId });
+        // Continuation with no active buffer at this canId — render as single,
+        // which will surface as "Unknown ID" (matching pre-existing UX).
+        groups.push({ kind: 'single', line });
+        continue;
+      }
+
+      const completed = reasm.feed(frame.canId, frame.data);
+      for (const buf of completed) {
+        const groupLines = canLines!.shift() ?? [line];
+        groups.push({ kind: 'mavlink', canId: frame.canId, lines: groupLines, frames: buf.frames });
+      }
+      if (canLines && canLines.length === 0) inflightLines.delete(frame.canId);
+    }
+
+    // Anything still pending at end of input: render as single lines so the user
+    // can see they were incomplete rather than silently lost.
+    for (const { canId, buf } of reasm.flush()) {
+      const groupLines = inflightLines.get(canId)?.shift();
+      if (groupLines) {
+        for (const l of groupLines) groups.push({ kind: 'single', line: l });
+      } else {
+        // Shouldn't happen but be safe
+        for (let i = 0; i < buf.frames.length; i++) groups.push({ kind: 'single', line: '' });
       }
     }
 
     const out: DecodeResult[] = [];
     for (const group of groups) {
-      if (group.lines.length === 1) {
-        out.push(decodeSingleLine(group.lines[0]));
+      if (group.kind === 'single') {
+        if (!group.line) continue;
+        out.push(decodeSingleLine(group.line));
         continue;
       }
-      // Multi-frame MAVLink: reassemble then decode
       try {
-        const frames = group.lines.map(l => parseCandump(l)!.data);
-        const res = codecStore.codec.smartDecodeMultiFrame(group.canId!, frames);
+        const res = group.frames.length === 1
+          ? codecStore.codec.smartDecode(group.canId, group.frames[0])
+          : codecStore.codec.smartDecodeMultiFrame(group.canId, group.frames);
         const label = group.lines.join('\n');
         if (!res) {
-          out.push({ line: label, decoded: null, error: `Unknown MAVLink ID 0x${group.canId!.toString(16).toUpperCase()}` });
+          out.push({ line: label, decoded: null, error: `Unknown MAVLink ID 0x${group.canId.toString(16).toUpperCase()}` });
         } else {
           out.push({ line: label, decoded: res.decoded, mavlink: res.mavlink });
         }

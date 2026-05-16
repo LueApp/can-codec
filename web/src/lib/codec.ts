@@ -325,6 +325,83 @@ export function reassembleMavlinkFrames(frames: Uint8Array[]): Uint8Array {
   return result;
 }
 
+export interface MavlinkBuf {
+  frames: Uint8Array[];
+  timestamps: number[];
+  expectedTotal: number;
+  currentLength: number;
+  is_fd: boolean;
+}
+
+/**
+ * Stateful reassembler for multi-frame MAVLink-over-CAN messages.
+ *
+ * Continuation CAN frames carry no identifier, so when two MAVLink messages
+ * are in flight at the same CAN ID, continuation frames are assigned to the
+ * oldest incomplete buffer (FIFO). Completion is detected from the 0xFD
+ * header's payload_len field (total wire length = 12 + payload_len).
+ */
+export class MavlinkReassembler {
+  private buffers: Map<number, MavlinkBuf[]> = new Map();
+
+  /** Feed one CAN frame's payload. Returns any buffers that just completed. */
+  feed(canId: number, data: Uint8Array, timestamp = 0, is_fd = false): MavlinkBuf[] {
+    if (data.length === 0) return [];
+    const complete: MavlinkBuf[] = [];
+    const isStart = data[0] === 0xFD;
+
+    if (isStart) {
+      const payloadLen = data[1] ?? 0;
+      const expectedTotal = 12 + payloadLen;
+      const buf: MavlinkBuf = {
+        frames: [data],
+        timestamps: [timestamp],
+        expectedTotal,
+        currentLength: data.length,
+        is_fd,
+      };
+      if (buf.currentLength >= expectedTotal) {
+        complete.push(buf);
+      } else {
+        const list = this.buffers.get(canId) ?? [];
+        list.push(buf);
+        this.buffers.set(canId, list);
+      }
+    } else {
+      const list = this.buffers.get(canId);
+      if (list && list.length > 0) {
+        const buf = list[0];
+        buf.frames.push(data);
+        buf.timestamps.push(timestamp);
+        buf.currentLength += data.length;
+        if (buf.currentLength >= buf.expectedTotal) {
+          complete.push(buf);
+          list.shift();
+          if (list.length === 0) this.buffers.delete(canId);
+        }
+      }
+    }
+    return complete;
+  }
+
+  /** Drop in-flight state and return whatever was pending (incomplete buffers). */
+  flush(): { canId: number; buf: MavlinkBuf }[] {
+    const out: { canId: number; buf: MavlinkBuf }[] = [];
+    for (const [canId, list] of this.buffers) {
+      for (const buf of list) out.push({ canId, buf });
+    }
+    this.buffers.clear();
+    return out;
+  }
+
+  /** Number of in-flight buffers across all canIds. */
+  pendingCount(): number {
+    let n = 0;
+    for (const list of this.buffers.values()) n += list.length;
+    return n;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Candump parser
 // ---------------------------------------------------------------------------

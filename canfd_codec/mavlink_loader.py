@@ -347,3 +347,69 @@ def parse_mavlink_v2_header(data: bytes) -> dict[str, Any] | None:
         "msg_id": data[7] | (data[8] << 8) | (data[9] << 16),
         "payload": data[10:10 + payload_len],
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-frame reassembly
+# ---------------------------------------------------------------------------
+class MavlinkReassembler:
+    """Reassembles MAVLink v2 frames from CAN FD frames keyed by CAN ID.
+
+    A MAVLink v2 frame larger than 64 bytes is transmitted as multiple CAN FD
+    frames at the same CAN ID. The first CAN frame starts with 0xFD and its
+    second byte is payload_len; the total wire length is 12 + payload_len
+    (10-byte header + payload + 2-byte CRC).
+
+    Continuation CAN frames have no identifier, so when two MAVLink messages
+    are in flight at the same CAN ID, continuation frames are assigned to the
+    oldest incomplete buffer (FIFO).
+    """
+
+    def __init__(self):
+        # canId -> list of in-flight buffers, each is a dict:
+        #   {"chunks": [bytes...], "expected": int, "current": int}
+        self._buffers: dict[int, list[dict]] = {}
+
+    def feed(self, can_id: int, data: bytes) -> list[bytes]:
+        """Feed a single CAN frame's payload. Returns list of complete MAVLink
+        v2 frames that became available (typically 0 or 1).
+        """
+        complete: list[bytes] = []
+        if len(data) == 0:
+            return complete
+
+        is_start = data[0] == 0xFD
+        if is_start:
+            payload_len = data[1] if len(data) > 1 else 0
+            expected = 12 + payload_len
+            buf = {"chunks": [data], "current": len(data), "expected": expected}
+            if buf["current"] >= expected:
+                complete.append(self._join(buf, expected))
+            else:
+                self._buffers.setdefault(can_id, []).append(buf)
+        else:
+            buffers = self._buffers.get(can_id)
+            if buffers:
+                buf = buffers[0]
+                buf["chunks"].append(data)
+                buf["current"] += len(data)
+                if buf["current"] >= buf["expected"]:
+                    complete.append(self._join(buf, buf["expected"]))
+                    buffers.pop(0)
+                    if not buffers:
+                        del self._buffers[can_id]
+        return complete
+
+    def flush(self) -> list[tuple[int, bytes]]:
+        """Return and clear all incomplete in-flight buffers as raw bytes."""
+        out: list[tuple[int, bytes]] = []
+        for can_id, buffers in self._buffers.items():
+            for buf in buffers:
+                out.append((can_id, b"".join(buf["chunks"])))
+        self._buffers.clear()
+        return out
+
+    @staticmethod
+    def _join(buf: dict, expected: int) -> bytes:
+        joined = b"".join(buf["chunks"])
+        return joined[:expected]

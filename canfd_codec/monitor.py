@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import TextIO
 
 from .codec import Codec, DecodedMessage
+from .mavlink_loader import MavlinkReassembler, parse_mavlink_v2_header
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +165,7 @@ class Monitor:
         self._running = False
         self._frame_count = 0
         self._start_time: float | None = None
+        self._reassembler = MavlinkReassembler()
 
     def run(self):
         """Start monitoring. Blocks until Ctrl-C."""
@@ -242,23 +244,38 @@ class Monitor:
 
         self._frame_count += 1
         ts = msg.timestamp - self._start_time if self._start_time else msg.timestamp
+        arb_id = msg.arbitration_id
+        data = bytes(msg.data)
 
-        decoded = self.codec.decode(msg.arbitration_id, bytes(msg.data))
+        # MAVLink CAN transport: bit 16 set on 29-bit extended ID
+        if arb_id & 0x10000:
+            for full_frame in self._reassembler.feed(arb_id, data):
+                self._emit_mavlink_decoded(arb_id, full_frame, ts)
+            return
 
+        decoded = self.codec.decode(arb_id, data)
+        self._emit(decoded, arb_id, data, ts)
+
+    def _emit_mavlink_decoded(self, can_id: int, frame: bytes, ts: float | None):
+        hdr = parse_mavlink_v2_header(frame)
+        if hdr is None:
+            if self.show_unknown:
+                self._emit(None, can_id, frame, ts)
+            return
+        decoded = self.codec.decode_mavlink(hdr["msg_id"], hdr["payload"], actual_can_id=can_id)
+        self._emit(decoded, can_id, frame, ts)
+
+    def _emit(self, decoded: DecodedMessage | None, can_id: int, raw: bytes, ts: float | None):
         if decoded is not None:
-            if self.detailed:
-                output = format_frame_detail(decoded, ts)
-            else:
-                output = format_frame_line(decoded, ts)
+            output = format_frame_detail(decoded, ts) if self.detailed else format_frame_line(decoded, ts)
         elif self.show_unknown:
-            output = format_unknown_frame(msg.arbitration_id, bytes(msg.data), ts)
+            output = format_unknown_frame(can_id, raw, ts)
         else:
             return
 
         print(output)
 
         if self.log_file:
-            # Strip ANSI codes for log file
             import re
             clean = re.sub(r"\033\[[0-9;]*m", "", output)
             self.log_file.write(clean + "\n")
@@ -285,9 +302,21 @@ class SummaryMonitor(Monitor):
             return
 
         self._frame_count += 1
-        decoded = self.codec.decode(msg.arbitration_id, bytes(msg.data))
-        if decoded is not None:
-            self._latest[msg.arbitration_id] = decoded
+        arb_id = msg.arbitration_id
+        data = bytes(msg.data)
+
+        if arb_id & 0x10000:
+            for full_frame in self._reassembler.feed(arb_id, data):
+                hdr = parse_mavlink_v2_header(full_frame)
+                if hdr is None:
+                    continue
+                decoded = self.codec.decode_mavlink(hdr["msg_id"], hdr["payload"], actual_can_id=arb_id)
+                if decoded is not None:
+                    self._latest[arb_id] = decoded
+        else:
+            decoded = self.codec.decode(arb_id, data)
+            if decoded is not None:
+                self._latest[arb_id] = decoded
 
         now = time.time()
         if now - self._last_refresh >= self.refresh_rate:

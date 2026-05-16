@@ -6,7 +6,7 @@
       "timestamp": "2026-05-06T07:34:00Z",
       "error_message": "CAN frame '0xFF [03] 28 00 00' decoded as SwitchMode instead of WriteRegUint8",
       "file": "example_damiao.yaml, canfd_codec/codec.py",
-      "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not — making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
+      "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not \u2014 making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
       "fix": "1) Added broadcast_node_id: 0x7F to WriteRegUint8 in example_damiao.yaml so it appears as a candidate for 0xFF. DLC preference (3==3) then correctly selects it over SwitchMode (dlc=4). 2) In Codec.decode(), added size check before calling decode_broadcast: only use concatenated decode when len(data)==dlc*node_count, otherwise fall through to single-frame decode.",
       "tags": [
         "decode",
@@ -88,8 +88,8 @@
       "timestamp": "2026-05-06T07:53:59.368Z",
       "error_message": "CSS fix: background, color",
       "file": "web/src/app.css",
-      "root_cause": "background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
-      "fix": "Changed background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
+      "root_cause": "background: rgba(210, 153, 34, 0.15) \u2192 transparent; color: var(--orange) \u2192 var(--text-dim)",
+      "fix": "Changed background: rgba(210, 153, 34, 0.15) \u2192 transparent; color: var(--orange) \u2192 var(--text-dim)",
       "tags": [
         "auto-detected",
         "style-fix",
@@ -105,7 +105,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codec-store.svelte.ts",
       "root_cause": "8 lines replaced/restructured",
-      "fix": "Rewrote 19→22 lines (8 removed)",
+      "fix": "Rewrote 19\u219222 lines (8 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -169,7 +169,7 @@
       "error_message": "Wrong operator: ?? should be !==",
       "file": "web/src/lib/codec-store.svelte.ts",
       "root_cause": "Used \"??\" instead of \"!==\"",
-      "fix": "Changed operator ?? → !==",
+      "fix": "Changed operator ?? \u2192 !==",
       "tags": [
         "auto-detected",
         "operator-fix",
@@ -200,7 +200,7 @@
       "timestamp": "2026-05-06T19:25:00Z",
       "error_message": "WriteRegUint8 register_id filter chips not working (TypeError on disabledEnumValues)",
       "file": "web/src/lib/codec-store.svelte.ts",
-      "root_cause": "After renaming disabledMuxValues→disabledEnumValues, old localStorage data for WriteRegUint8 still had the old field name. _ensureFilter found the existing entry (skipping initialization) but the entry lacked disabledEnumValues, causing undefined property access.",
+      "root_cause": "After renaming disabledMuxValues\u2192disabledEnumValues, old localStorage data for WriteRegUint8 still had the old field name. _ensureFilter found the existing entry (skipping initialization) but the entry lacked disabledEnumValues, causing undefined property access.",
       "fix": "Added _normalizeFilter() that ensures disabledNodes, disabledSignals, disabledEnumValues all exist on any filter object loaded from storage. Applied in _ensureFilter, getMessageFilter, and _rebuildFilterMap.",
       "tags": [
         "filter",
@@ -236,7 +236,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codec.ts",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 9→15 lines (3 removed)",
+      "fix": "Rewrote 9\u219215 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -249,9 +249,9 @@
     {
       "id": "bug-016",
       "timestamp": "2026-05-06T19:50:00Z",
-      "error_message": "RegResponseByte register_id filter not working — all RegResponse* frames decoded as RegResponseFloat32",
+      "error_message": "RegResponseByte register_id filter not working \u2014 all RegResponse* frames decoded as RegResponseFloat32",
       "file": "web/src/lib/codec.ts",
-      "root_cause": "findMessageById returned the first multi-node message matching the CAN ID, without considering DLC. RegResponseFloat32, RegResponseByte, RegResponseWord etc. all share base ID 0x100 — the first registered one always won, so register_id enum filter on RegResponseByte had no effect.",
+      "root_cause": "findMessageById returned the first multi-node message matching the CAN ID, without considering DLC. RegResponseFloat32, RegResponseByte, RegResponseWord etc. all share base ID 0x100 \u2014 the first registered one always won, so register_id enum filter on RegResponseByte had no effect.",
       "fix": "Updated findMessageById to accept optional dlc parameter. Collects all candidates and prefers the one with matching DLC, matching the Python codec's _find_message_by_id behavior. decode() now passes data.length as dlc.",
       "tags": [
         "decode",
@@ -269,7 +269,7 @@
     {
       "id": "bug-017",
       "timestamp": "2026-05-06T20:10:00Z",
-      "error_message": "RegResponseByte filter still not working after DLC fix — node 0 frames always decoded as first registered RegResponse variant",
+      "error_message": "RegResponseByte filter still not working after DLC fix \u2014 node 0 frames always decoded as first registered RegResponse variant",
       "file": "web/src/lib/codec.ts",
       "root_cause": "rebuildLookups() added multi-node messages to byId with their base ID. findMessageById hit the byId fast-path for node-0 frames (base ID = 0x100) and returned immediately WITHOUT checking DLC. The DLC disambiguation in the multiNodeMessages loop was never reached for base-ID frames.",
       "fix": "Changed rebuildLookups to only add single-node messages (node_count <= 1) to byId. Multi-node messages are only tracked in multiNodeMessages, ensuring ALL lookups go through the DLC-aware candidate selection.",
@@ -342,7 +342,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "2 lines replaced/restructured",
-      "fix": "Rewrote 36→49 lines (2 removed)",
+      "fix": "Rewrote 36\u219249 lines (2 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -390,7 +390,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "6 lines replaced/restructured",
-      "fix": "Rewrote 10→4 lines (6 removed)",
+      "fix": "Rewrote 10\u21924 lines (6 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -406,7 +406,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 8→8 lines (3 removed)",
+      "fix": "Rewrote 8\u21928 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -454,7 +454,7 @@
       "error_message": "Significant refactor of ",
       "file": "canfd_codec/mavlink_loader.py",
       "root_cause": "14 lines replaced/restructured",
-      "fix": "Rewrote 43→57 lines (14 removed)",
+      "fix": "Rewrote 43\u219257 lines (14 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -470,7 +470,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/config-loader.ts",
       "root_cause": "12 lines replaced/restructured",
-      "fix": "Rewrote 32→46 lines (12 removed)",
+      "fix": "Rewrote 32\u219246 lines (12 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -479,6 +479,107 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-15T14:09:57.693Z"
+    },
+    {
+      "id": "bug-030",
+      "timestamp": "2026-05-16T03:01:20.293Z",
+      "error_message": "Significant refactor of ",
+      "file": "canfd_codec/monitor.py",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 29\u219246 lines (6 removed) | Also: decoded = self.codec.decode(msg.arbitration_id, by; self._latest[msg.arbitration_id] = decoded",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-16T03:01:30.635Z"
+    },
+    {
+      "id": "bug-031",
+      "timestamp": "2026-05-16T03:03:43.027Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T03:03:43.027Z"
+    },
+    {
+      "id": "bug-032",
+      "timestamp": "2026-05-16T03:04:30.265Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T03:04:30.265Z"
+    },
+    {
+      "id": "bug-030",
+      "timestamp": "2026-05-16T03:20:00Z",
+      "error_message": "Multi-frame MAVLink decode garbled when two messages interleave",
+      "file": "canfd_codec/mavlink_loader.py, monitor.py, cli.py, codec.py; web/src/lib/codec.ts, plot-store.svelte.ts",
+      "root_cause": "Existing reassembly grouped consecutive same-canId frames OR kept one buffer per canId. Interleaved messages either failed to group (paste) or appended continuation frames to the wrong buffer (live). Python monitor/cli had no multi-frame reassembly.",
+      "fix": "Added MavlinkReassembler (Py+TS) with FIFO concurrent buffers per canId and length-based completion (12+payload_len). Wired into Python monitor/cli (multi-data args) and web analyze/handleLiveFrame. Added Codec.decode_mavlink for msg_id-based lookup.",
+      "tags": [
+        "mavlink",
+        "multi-frame",
+        "reassembly",
+        "interleaved",
+        "decode"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T03:20:00Z"
+    },
+    {
+      "id": "bug-034",
+      "timestamp": "2026-05-16T04:32:11.708Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/decode/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T04:32:11.708Z"
+    },
+    {
+      "id": "bug-031",
+      "timestamp": "2026-05-16T03:50:00Z",
+      "error_message": "/decode page still garbled multi-frame MAVLink after reassembler fix",
+      "file": "web/src/routes/decode/+page.svelte",
+      "root_cause": "The /decode page had its OWN grouping logic separate from plot-store: it grouped ALL consecutive same-canId MAVLink frames into one buffer, then called smartDecodeMultiFrame on the concatenated bytes \u2014 lumping multiple back-to-back messages on the same canId into one giant pseudo-frame.",
+      "fix": "Rewrote decode() to feed frames through MavlinkReassembler with length-based completion, same as the plot-store paste analyzer. Tracks per-canId raw line lists to preserve the source-line label for each reassembled group.",
+      "tags": [
+        "mavlink",
+        "multi-frame",
+        "reassembly",
+        "decode-page"
+      ],
+      "related_bugs": [
+        "bug-030"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T03:50:00Z"
     }
   ]
 }

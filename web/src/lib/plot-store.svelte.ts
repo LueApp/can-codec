@@ -1,5 +1,5 @@
 import { codecStore } from './codec-store.svelte';
-import { parseCandump } from './codec';
+import { parseCandump, MavlinkReassembler, type MavlinkBuf } from './codec';
 import { WebSocketClient, type RawFrame } from './websocket-client.svelte';
 import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from './types';
 import type {
@@ -51,8 +51,8 @@ class PlotStore {
   messageTimingStore = new Map<string, MessageTimingEntry[]>();
   rawFrameLog: string[] = [];
   liveStartTime: number | null = null;
-  mavlinkBuffers = new Map<number, { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }>();
-  mavlinkTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  mavlinkReassembler = new MavlinkReassembler();
+  mavlinkFlushTimer: ReturnType<typeof setTimeout> | null = null;
   chartUpdatePending = false;
   rawLogVersion = 0;
   dumpWriter: FileSystemWritableFileStream | null = null;
@@ -189,7 +189,7 @@ class PlotStore {
     }
     this.resetData();
     this.requestRender(true);
-    this.mavlinkBuffers.clear();
+    this.clearMavlinkBuffers();
     this.wsClient.setFrameCallback((frame) => this.handleLiveFrame(frame));
     this.wsClient.connect(this.wsUrl);
   }
@@ -202,9 +202,11 @@ class PlotStore {
   }
 
   clearMavlinkBuffers() {
-    for (const timer of this.mavlinkTimers.values()) clearTimeout(timer);
-    this.mavlinkTimers.clear();
-    this.mavlinkBuffers.clear();
+    if (this.mavlinkFlushTimer) {
+      clearTimeout(this.mavlinkFlushTimer);
+      this.mavlinkFlushTimer = null;
+    }
+    this.mavlinkReassembler.flush();
   }
 
   // --- Pause ---
@@ -309,30 +311,20 @@ class PlotStore {
     if (this.isMavlinkCanId(canId)) {
       this.appendRawFrame(frame);
 
-      const isStartFrame = frame.data.length > 0 && frame.data[0] === 0xFD;
-      const buf = this.mavlinkBuffers.get(canId);
-
-      if (isStartFrame && buf && buf.frames.length > 0) {
-        this.flushMavlinkBuffer(canId, buf);
+      for (const buf of this.mavlinkReassembler.feed(canId, frame.data, frame.timestamp, frame.is_fd)) {
+        this.decodeMavlinkBuf(canId, buf);
       }
 
-      if (isStartFrame) {
-        this.mavlinkBuffers.set(canId, { frames: [frame.data], timestamps: [frame.timestamp], is_fd: frame.is_fd });
-      } else if (buf) {
-        buf.frames.push(frame.data);
-        buf.timestamps.push(frame.timestamp);
-      }
-
-      const existing = this.mavlinkTimers.get(canId);
-      if (existing) clearTimeout(existing);
-      this.mavlinkTimers.set(canId, setTimeout(() => {
-        const b = this.mavlinkBuffers.get(canId);
-        if (b && b.frames.length > 0) {
-          this.flushMavlinkBuffer(canId, b);
+      if (this.mavlinkFlushTimer) clearTimeout(this.mavlinkFlushTimer);
+      if (this.mavlinkReassembler.pendingCount() > 0) {
+        this.mavlinkFlushTimer = setTimeout(() => {
+          this.mavlinkFlushTimer = null;
+          for (const { canId: cid, buf } of this.mavlinkReassembler.flush()) {
+            this.decodeMavlinkBuf(cid, buf);
+          }
           this.scheduleChartUpdate();
-        }
-        this.mavlinkTimers.delete(canId);
-      }, 100));
+        }, 100);
+      }
     } else {
       let matched = false;
       try {
@@ -349,7 +341,7 @@ class PlotStore {
     this.scheduleChartUpdate();
   }
 
-  flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }) {
+  decodeMavlinkBuf(canId: number, buf: MavlinkBuf) {
     let decoded = false;
     try {
       const res = buf.frames.length === 1
@@ -376,7 +368,6 @@ class PlotStore {
         this.dumpFrameCount++;
       }
     }
-    this.mavlinkBuffers.delete(canId);
   }
 
   appendSignalSamples(
@@ -749,22 +740,26 @@ class PlotStore {
     type FrameGroup = { canId: number; timestamps: (number | undefined)[]; datas: Uint8Array[] };
     const groups: (FrameGroup | { line: string; timestamp?: number })[] = [];
 
+    const reasm = new MavlinkReassembler();
+    const pushBuf = (canId: number, buf: MavlinkBuf) => {
+      groups.push({ canId, timestamps: buf.timestamps, datas: buf.frames });
+    };
+
     for (const line of lines) {
       const frame = parseCandump(line);
       if (!frame) continue;
 
       if (this.isMavlinkCanId(frame.canId)) {
-        const last = groups[groups.length - 1];
-        if (last && 'canId' in last && last.canId === frame.canId) {
-          last.timestamps.push(frame.timestamp);
-          last.datas.push(frame.data);
-        } else {
-          groups.push({ canId: frame.canId, timestamps: [frame.timestamp], datas: [frame.data] });
+        const ts = frame.timestamp ?? 0;
+        for (const buf of reasm.feed(frame.canId, frame.data, ts, frame.isFD)) {
+          pushBuf(frame.canId, buf);
         }
       } else {
         groups.push({ line, timestamp: frame.timestamp });
       }
     }
+
+    for (const { canId, buf } of reasm.flush()) pushBuf(canId, buf);
 
     for (const group of groups) {
       let decoded: DecodedMessage | null = null;
