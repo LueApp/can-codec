@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { codecStore } from '$lib/codec-store.svelte';
   import { plotStore } from '$lib/plot-store.svelte';
+  import { t } from '$lib/i18n.svelte';
   import type { SignalSeries, ChartPanel, ChartView, FrameRef } from '$lib/plot-types';
   import yaml from 'js-yaml';
   import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, ScatterController } from 'chart.js';
@@ -576,7 +577,7 @@ if __name__ == "__main__":
         const seriesList = panel.keys.map(k => plotStore.allSeries.find(s => s.key === k)).filter(Boolean) as SignalSeries[];
         const multi = seriesList.length > 1;
         const units = new Set(seriesList.map(s => s.unit).filter(Boolean));
-        const yLabel = units.size === 1 ? [...units][0] : 'value';
+        const yLabel = units.size === 1 ? [...units][0] : t('plot.value_label');
 
         const signalsOrigin = originForView(false);
         const datasets = seriesList.map((series, j) => {
@@ -609,8 +610,8 @@ if __name__ == "__main__":
               if (pt?.frame) {
                 const text = plotStore.formatFrameCandump(pt.frame);
                 navigator.clipboard.writeText(text).then(
-                  () => showCopyToast('Copied: ' + text),
-                  () => showCopyToast('Copy failed'),
+                  () => showCopyToast(t('plot.copied_prefix') + ' ' + text),
+                  () => showCopyToast(t('plot.copy_failed')),
                 );
               }
             },
@@ -638,7 +639,7 @@ if __name__ == "__main__":
                   },
                   afterBody: (items) => {
                     const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
-                    return f ? [`Frame: ${plotStore.formatFrameShort(f)}`, '(click to copy with timestamp)'] : '';
+                    return f ? [`${t('plot.frame_label')} ${plotStore.formatFrameShort(f)}`, t('plot.click_to_copy_ts')] : '';
                   },
                 },
               },
@@ -706,17 +707,17 @@ if __name__ == "__main__":
             const lbl = labels[el.datasetIndex] ?? '';
             const result = plotStore.handleTimelineClick(normalizedTime, lbl);
             if (result === 'origin-set') {
-              showCopyToast(`t=0 set at ${wallTime.toFixed(3)}s (${lbl})`);
+              showCopyToast(`${t('plot.t0_set_at')} ${wallTime.toFixed(3)}s (${lbl})`);
             } else if (result === 'marker-added') {
-              showCopyToast(`Marker A set — pick second frame`);
+              showCopyToast(t('plot.marker_set_hint'));
             } else if (result === 'measure-complete') {
               const d = plotStore.timelineMarkerDelta ?? 0;
-              showCopyToast(`Δt = ${formatDelta(d)}`);
+              showCopyToast(`${t('plot.delta_t_eq')} ${formatDelta(d)}`);
             } else {
               const text = plotStore.formatFrameCandump(pt.frame);
               navigator.clipboard.writeText(text).then(
-                () => showCopyToast('Copied: ' + text),
-                () => showCopyToast('Copy failed'),
+                () => showCopyToast(t('plot.copied_prefix') + ' ' + text),
+                () => showCopyToast(t('plot.copy_failed')),
               );
             }
           },
@@ -744,8 +745,8 @@ if __name__ == "__main__":
                   const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
                   if (!f) return '';
                   const mode = plotStore.timelineMode;
-                  const hint = mode === 'set-origin' ? '(click to set t=0)' : mode === 'measure' ? '(click to add marker)' : '(click to copy)';
-                  return [`Frame: ${plotStore.formatFrameShort(f)}`, hint];
+                  const hint = mode === 'set-origin' ? t('plot.click_set_t0') : mode === 'measure' ? t('plot.click_add_marker') : t('plot.click_to_copy');
+                  return [`${t('plot.frame_label')} ${plotStore.formatFrameShort(f)}`, hint];
                 },
               },
             },
@@ -753,7 +754,7 @@ if __name__ == "__main__":
           scales: {
             x: {
               type: 'linear',
-              title: { display: true, text: 'time (s)', color: '#8b949e', font: { size: 11 } },
+              title: { display: true, text: t('plot.time_label'), color: '#8b949e', font: { size: 11 } },
               grid: { color: '#2d354833' },
               ticks: { color: '#8b949e', font: { size: 11 } },
             },
@@ -818,8 +819,8 @@ if __name__ == "__main__":
               if (pt?.frame) {
                 const text = plotStore.formatFrameCandump(pt.frame);
                 navigator.clipboard.writeText(text).then(
-                  () => showCopyToast('Copied: ' + text),
-                  () => showCopyToast('Copy failed'),
+                  () => showCopyToast(t('plot.copied_prefix') + ' ' + text),
+                  () => showCopyToast(t('plot.copy_failed')),
                 );
               }
             },
@@ -848,7 +849,7 @@ if __name__ == "__main__":
                   },
                   afterBody: (items) => {
                     const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
-                    return f ? [`Frame: ${plotStore.formatFrameShort(f)}`, '(click to copy)'] : '';
+                    return f ? [`${t('plot.frame_label')} ${plotStore.formatFrameShort(f)}`, t('plot.click_to_copy')] : '';
                   },
                 },
               },
@@ -856,12 +857,12 @@ if __name__ == "__main__":
             scales: {
               x: {
                 type: 'linear',
-                title: { display: true, text: 'time (s)', color: '#8b949e', font: { size: 11 } },
+                title: { display: true, text: t('plot.time_label'), color: '#8b949e', font: { size: 11 } },
                 grid: { color: '#2d354833' },
                 ticks: { color: '#8b949e', font: { size: 11 } },
               },
               y: {
-                title: { display: true, text: 'interval (ms)', color: '#8b949e', font: { size: 11 } },
+                title: { display: true, text: t('plot.interval_label'), color: '#8b949e', font: { size: 11 } },
                 grid: { color: '#2d354833' },
                 ticks: { color: '#8b949e', font: { size: 11 } },
               },
@@ -1222,34 +1223,34 @@ if __name__ == "__main__":
 
 <div class="container">
   <div class="page-header">
-    <h1>Plot</h1>
-    <p>Visualize CAN signal values over time</p>
+    <h1>{t('plot.title')}</h1>
+    <p>{t('plot.subtitle')}</p>
   </div>
 
   <div class="card">
     <!-- Mode tabs -->
     <div class="mode-tabs">
       <button class="mode-tab" class:mode-tab-active={plotStore.mode === 'paste'} onclick={() => plotStore.switchMode('paste')}>
-        Paste
+        {t('plot.mode_paste')}
       </button>
       <button class="mode-tab" class:mode-tab-active={plotStore.mode === 'live'} onclick={() => plotStore.switchMode('live')}>
-        Live
+        {t('plot.mode_live')}
       </button>
     </div>
 
     {#if plotStore.mode === 'paste'}
       <div class="form-group">
-        <label for="plot-input">Candump Log</label>
+        <label for="plot-input">{t('plot.label_candump_log')}</label>
         <textarea id="plot-input" bind:value={plotStore.input} rows="6"
-          placeholder={"Paste candump lines (with timestamps for time axis):\n  (1713456789.123456) vcan0 101#E803050000000000\n  (1713456789.234567) vcan0 101#D007050000000000\n  (1713456789.345678) vcan0 00010101##1FD01000000..."}
+          placeholder={t('plot.placeholder_candump')}
           onkeydown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); plotStore.analyze(); } }}
         ></textarea>
-        <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Press Ctrl+Enter to analyze</div>
+        <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">{t('plot.hint_ctrl_enter')}</div>
       </div>
       <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-        <button class="primary" onclick={() => plotStore.analyze()} disabled={codecStore.configs.length === 0}>Analyze</button>
+        <button class="primary" onclick={() => plotStore.analyze()} disabled={codecStore.configs.length === 0}>{t('plot.analyze')}</button>
         {#if codecStore.configs.length === 0}
-          <span style="font-size: 13px; color: var(--text-dim);">Load a config first</span>
+          <span style="font-size: 13px; color: var(--text-dim);">{t('plot.load_config_first')}</span>
         {/if}
         {#if plotStore.status}
           <span style="font-size: 13px; color: var(--text-dim);">{plotStore.status}</span>
@@ -1257,7 +1258,7 @@ if __name__ == "__main__":
       </div>
     {:else}
       <div class="form-group">
-        <label for="ws-url">WebSocket Server</label>
+        <label for="ws-url">{t('plot.label_ws_server')}</label>
         <input id="ws-url" type="text" bind:value={plotStore.wsUrl}
           placeholder="ws://192.168.1.100:8765"
           disabled={plotStore.wsClient.status === 'connected' || plotStore.wsClient.status === 'connecting'}
@@ -1268,50 +1269,50 @@ if __name__ == "__main__":
         {#if plotStore.wsClient.status === 'disconnected' || plotStore.wsClient.status === 'error'}
           <button class="primary" onclick={() => plotStore.connectLive()}
             disabled={codecStore.configs.length === 0 || !plotStore.wsUrl.trim()}>
-            Connect
+            {t('plot.connect')}
           </button>
         {:else}
-          <button style="background: var(--red);" onclick={() => plotStore.disconnectLive()}>Disconnect</button>
+          <button style="background: var(--red);" onclick={() => plotStore.disconnectLive()}>{t('plot.disconnect')}</button>
           <button
             class="btn-sm"
             style="background: {plotStore.paused ? 'var(--green, #3fb950)' : 'var(--yellow, #d29922)'}; color: #000; font-weight: 600;"
             onclick={() => plotStore.togglePause()}
           >
-            {plotStore.paused ? 'Resume' : 'Pause'}
+            {plotStore.paused ? t('plot.resume') : t('plot.pause')}
           </button>
         {/if}
 
         <span class="connection-status {plotStore.wsClient.status}">
           {#if plotStore.wsClient.status === 'connected'}
-            Connected{plotStore.wsClient.busInfo ? ` — ${plotStore.wsClient.busInfo.bus}` : ''}
+            {t('plot.connected')}{plotStore.wsClient.busInfo ? ` — ${plotStore.wsClient.busInfo.bus}` : ''}
           {:else if plotStore.wsClient.status === 'connecting'}
-            Connecting...
+            {t('plot.connecting')}
           {:else if plotStore.wsClient.status === 'error'}
-            {plotStore.wsClient.error ?? 'Error'}
+            {plotStore.wsClient.error ?? t('plot.error')}
           {:else}
-            Disconnected
+            {t('plot.disconnected')}
           {/if}
         </span>
 
         {#if plotStore.wsClient.status === 'connected'}
           <span style="font-size: 13px; color: var(--text-dim);">
-            {#if plotStore.dumpMatchedOnly}{plotStore.matchedFrameCount} / {/if}{plotStore.wsClient.frameCount} frames{plotStore.paused ? ' (paused)' : ''}
+            {#if plotStore.dumpMatchedOnly}{plotStore.matchedFrameCount} / {/if}{plotStore.wsClient.frameCount} {t('plot.frames')}{plotStore.paused ? ' ' + t('plot.paused') : ''}
           </span>
           {#if plotStore.dumpActive}
             <button style="background: var(--red); font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" onclick={() => plotStore.stopDumpToFile()}>
               <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: dump-pulse 1s infinite;"></span>
-              Recording {plotStore.dumpFrameCount} frames — Stop
+              {t('plot.recording_prefix')} {plotStore.dumpFrameCount} {t('plot.recording_suffix')}
             </button>
           {:else}
-            <button class="btn-sm" onclick={() => plotStore.startDumpToFile()}>Record to file</button>
+            <button class="btn-sm" onclick={() => plotStore.startDumpToFile()}>{t('plot.record_to_file')}</button>
           {/if}
           <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;">
-            <input type="checkbox" bind:checked={plotStore.dumpMatchedOnly} style="accent-color: var(--accent);" /> Matched only
+            <input type="checkbox" bind:checked={plotStore.dumpMatchedOnly} style="accent-color: var(--accent);" /> {t('plot.matched_only')}
           </label>
         {/if}
 
         {#if codecStore.configs.length === 0}
-          <span style="font-size: 13px; color: var(--text-dim);">Load a config first</span>
+          <span style="font-size: 13px; color: var(--text-dim);">{t('plot.load_config_first')}</span>
         {/if}
 
         {#if plotStore.status}
@@ -1321,15 +1322,15 @@ if __name__ == "__main__":
 
       <!-- Buffer mode -->
       <div style="display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap;">
-        <span style="font-size: 12px; color: var(--text-dim);">Buffer:</span>
+        <span style="font-size: 12px; color: var(--text-dim);">{t('plot.buffer')}</span>
         <button class="chip" class:chip-active={plotStore.bufferMode === 'unlimited'} onclick={() => plotStore.bufferMode = 'unlimited'}>
-          Unlimited
+          {t('plot.buffer_unlimited')}
         </button>
         <button class="chip" class:chip-active={plotStore.bufferMode === 'samples'} onclick={() => plotStore.bufferMode = 'samples'}>
-          Samples
+          {t('plot.buffer_samples')}
         </button>
         <button class="chip" class:chip-active={plotStore.bufferMode === 'time'} onclick={() => plotStore.bufferMode = 'time'}>
-          Time window
+          {t('plot.buffer_time')}
         </button>
         {#if plotStore.bufferMode === 'samples'}
           <input type="number" bind:value={plotStore.bufferSamples} min="100" step="1000"
@@ -1338,14 +1339,14 @@ if __name__ == "__main__":
         {#if plotStore.bufferMode === 'time'}
           <input type="number" bind:value={plotStore.bufferSeconds} min="5" step="5"
             style="width: 60px; font-size: 12px; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
-          <span style="font-size: 12px; color: var(--text-dim);">seconds</span>
+          <span style="font-size: 12px; color: var(--text-dim);">{t('plot.buffer_seconds')}</span>
         {/if}
         <span style="margin-left: 12px; border-left: 1px solid var(--border); padding-left: 12px; display: inline-flex; gap: 8px; align-items: center;">
-          <span style="font-size: 12px; color: var(--text-dim);">Layout:</span>
-          <button class="btn-sm" onclick={importLayout}>Import</button>
+          <span style="font-size: 12px; color: var(--text-dim);">{t('plot.layout')}</span>
+          <button class="btn-sm" onclick={importLayout}>{t('plot.layout_import')}</button>
           {#if plotStore.pendingLayoutConfig}
-            <span style="font-size: 12px; color: var(--yellow, #d29922);">Config loaded</span>
-            <button class="btn-sm" onclick={() => { plotStore.pendingLayoutConfig = null; }}>Clear</button>
+            <span style="font-size: 12px; color: var(--yellow, #d29922);">{t('plot.config_loaded')}</span>
+            <button class="btn-sm" onclick={() => { plotStore.pendingLayoutConfig = null; }}>{t('plot.clear_btn')}</button>
           {/if}
         </span>
       </div>
@@ -1354,17 +1355,17 @@ if __name__ == "__main__":
       {#if plotStore.wsClient.status === 'connected' || plotStore.rawFrameCount > 0}
         <div style="margin-top: 16px;">
           <button class="setup-toggle" onclick={() => { plotStore.showRawLog = !plotStore.showRawLog; if (plotStore.showRawLog) { rawLogRenderedVersion = 0; setTimeout(() => updateRawLog(), 0); } }}>
-            {plotStore.showRawLog ? '▾' : '▸'} Raw frames
+            {plotStore.showRawLog ? '▾' : '▸'} {t('plot.raw_frames')}
             <span style="color: var(--text-dim); font-size: 12px; margin-left: 6px;">{plotStore.rawFrameCount}</span>
           </button>
           {#if plotStore.showRawLog}
             <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
               <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                <input type="checkbox" bind:checked={rawLogAutoScroll} style="accent-color: var(--accent);" /> Auto-scroll
+                <input type="checkbox" bind:checked={rawLogAutoScroll} style="accent-color: var(--accent);" /> {t('plot.auto_scroll')}
               </label>
-              <button class="btn-sm" onclick={() => { plotStore.clearRawLog(); rawLogRenderedVersion = 0; if (rawLogEl) rawLogEl.textContent = ''; }}>Clear</button>
-              <button class="btn-sm" onclick={() => { const blob = new Blob([plotStore.rawFrameLog.join('\n')], { type: 'text/plain' }); const a = document.createElement('a'); a.download = 'candump.log'; a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href); }}>Save log</button>
-              <span style="font-size: 12px; color: var(--text-dim);">Max lines</span>
+              <button class="btn-sm" onclick={() => { plotStore.clearRawLog(); rawLogRenderedVersion = 0; if (rawLogEl) rawLogEl.textContent = ''; }}>{t('plot.clear_btn')}</button>
+              <button class="btn-sm" onclick={() => { const blob = new Blob([plotStore.rawFrameLog.join('\n')], { type: 'text/plain' }); const a = document.createElement('a'); a.download = 'candump.log'; a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href); }}>{t('plot.save_log')}</button>
+              <span style="font-size: 12px; color: var(--text-dim);">{t('plot.max_lines')}</span>
               <input type="number" bind:value={plotStore.rawLogMax} min="100" step="500"
                 style="width: 70px; font-size: 12px; padding: 4px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
             </div>
@@ -1380,46 +1381,46 @@ if __name__ == "__main__":
       <!-- Setup guide -->
       <div class="setup-guide" style="margin-top: 16px;">
         <button class="setup-toggle" onclick={() => showSetup = !showSetup}>
-          {showSetup ? '▾' : '▸'} Server setup guide
+          {showSetup ? '▾' : '▸'} {t('plot.setup_guide')}
         </button>
         {#if showSetup}
           <div class="setup-content">
-            <p><strong>1.</strong> Download the server script:</p>
+            <p><strong>{t('plot.step_1_download')}</strong></p>
             <div style="margin: 8px 0;">
-              <button class="btn-sm" onclick={downloadServer}>Download can_ws_server.py</button>
+              <button class="btn-sm" onclick={downloadServer}>{t('plot.download_server')}</button>
             </div>
-            <p style="font-size: 12px; color: var(--text-dim);">Requires Python 3.10+. No pip packages needed for SocketCAN; USB adapters need extras (see below).</p>
+            <p style="font-size: 12px; color: var(--text-dim);">{t('plot.python_note')}</p>
 
-            <p><strong>2.</strong> Install requirements on the machine with the CAN interface:</p>
+            <p><strong>{t('plot.step_2_install')}</strong></p>
             <pre><code># SocketCAN (built-in Linux kernel driver — most common){'\n'}sudo apt install can-utils          # provides candump{'\n'}{'\n'}# USB adapters via python-can (SLCAN FD, PCAN, etc.){'\n'}pip install "canfd-codec[serve]"    # python-can>=4.0 + pyserial>=3.5{'\n'}# or individually:{'\n'}pip install python-can>=4.0 pyserial>=3.5</code></pre>
 
-            <p style="margin-top: 12px;"><strong>3.</strong> Choose your setup:</p>
+            <p style="margin-top: 12px;"><strong>{t('plot.step_3_choose')}</strong></p>
 
             <details open style="margin-top: 8px;">
-              <summary style="cursor: pointer; font-size: 13px; font-weight: 600;">CAN device is this PC (or reachable from browser)</summary>
+              <summary style="cursor: pointer; font-size: 13px; font-weight: 600;">{t('plot.setup_local')}</summary>
               <div style="padding: 4px 0 4px 8px;">
-                <p style="font-size: 12px;">Run the server on the machine with the CAN interface:</p>
+                <p style="font-size: 12px;">{t('plot.setup_local_p1')}</p>
                 <pre><code>python3 can_ws_server.py --bus can0</code></pre>
-                <p style="font-size: 12px;">Then enter <code>ws://localhost:8765</code> above and click Connect.</p>
+                <p style="font-size: 12px;">{t('plot.setup_local_p2_prefix')} <code>ws://localhost:8765</code> {t('plot.setup_local_p2_suffix')}</p>
               </div>
             </details>
 
             <details style="margin-top: 8px;">
-              <summary style="cursor: pointer; font-size: 13px; font-weight: 600;">CAN device is on a LAN (not reachable from browser)</summary>
+              <summary style="cursor: pointer; font-size: 13px; font-weight: 600;">{t('plot.setup_lan')}</summary>
               <div style="padding: 4px 0 4px 8px;">
-                <p style="font-size: 12px;">Copy <code>can_ws_server.py</code> to both the CAN device and your PC.</p>
+                <p style="font-size: 12px;">{t('plot.setup_lan_p1_prefix')} <code>can_ws_server.py</code> {t('plot.setup_lan_p1_suffix')}</p>
                 <pre><code># On the CAN device (e.g. 192.168.x.x):{'\n'}python3 can_ws_server.py --bus can0{'\n'}{'\n'}# On your PC:{'\n'}python3 can_ws_server.py --source ws://192.168.x.x:8765</code></pre>
-                <p style="font-size: 12px;">Then enter <code>ws://localhost:8765</code> above and click Connect.</p>
-                <p style="font-size: 12px; color: var(--text-dim);">The <code>--source</code> flag connects to the remote server and re-serves frames locally.</p>
+                <p style="font-size: 12px;">{t('plot.setup_local_p2_prefix')} <code>ws://localhost:8765</code> {t('plot.setup_local_p2_suffix')}</p>
+                <p style="font-size: 12px; color: var(--text-dim);">{t('plot.setup_lan_relay_note_prefix')}<code>--source</code> {t('plot.setup_lan_relay_note_suffix')}</p>
               </div>
             </details>
 
             <details style="margin-top: 8px;">
-              <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">More options</summary>
+              <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">{t('plot.more_options')}</summary>
               <pre><code># Filter specific CAN IDs{'\n'}python3 can_ws_server.py --bus can0 --filter 0x101,0x201{'\n'}{'\n'}# Disable CAN FD{'\n'}python3 can_ws_server.py --bus can0 --no-fd{'\n'}{'\n'}# Custom port and bind address{'\n'}python3 can_ws_server.py --host 0.0.0.0 --port 9000{'\n'}{'\n'}# Test with virtual CAN{'\n'}sudo modprobe vcan{'\n'}sudo ip link add dev vcan0 type vcan{'\n'}sudo ip link set up vcan0{'\n'}python3 can_ws_server.py --bus vcan0</code></pre>
             </details>
             <details style="margin-top: 8px;">
-              <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">USB-to-CAN adapters</summary>
+              <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">{t('plot.usb_adapters')}</summary>
               <pre><code># SLCAN adapters with CAN FD (requires: pip install python-can pyserial){'\n'}python3 can_ws_server.py --bus /dev/ttyACM0 --interface slcan \\{'\n'}    --bitrate 1000000 --data-bitrate 5000000{'\n'}{'\n'}# SLCAN classic CAN only (via slcand, no pip needed){'\n'}sudo slcand -o -c -s6 /dev/ttyACM0 slcan0{'\n'}sudo ip link set up slcan0{'\n'}python3 can_ws_server.py --bus slcan0{'\n'}{'\n'}# gs_usb adapters (e.g. CANable with candleLight firmware){'\n'}sudo ip link set can0 type can bitrate 1000000{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0{'\n'}{'\n'}# gs_usb with CAN FD{'\n'}sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0</code></pre>
             </details>
           </div>
@@ -1432,40 +1433,40 @@ if __name__ == "__main__":
     <!-- View tabs (multi-select) + layout controls -->
     <div class="view-tabs">
       <button class="mode-tab" class:mode-tab-active={plotStore.activeViews.has('signals')} onclick={() => plotStore.toggleView('signals')}>
-        Signals
+        {t('plot.signals')}
       </button>
       <button class="mode-tab" class:mode-tab-active={plotStore.activeViews.has('timeline')} onclick={() => plotStore.toggleView('timeline')}>
-        Timeline
+        {t('plot.timeline')}
       </button>
       <button class="mode-tab" class:mode-tab-active={plotStore.activeViews.has('interval')} onclick={() => plotStore.toggleView('interval')}>
-        Interval
+        {t('plot.interval')}
       </button>
       <div style="margin-left: auto; display: flex; gap: 8px;">
         {#if !plotStore.showGestureHint}
-          <button class="btn-sm" onclick={() => plotStore.showGestureHint = true} title="Show chart gesture hint">?</button>
+          <button class="btn-sm" onclick={() => plotStore.showGestureHint = true} title={t('plot.gesture_show_title')}>?</button>
         {/if}
-        <button class="btn-sm" onclick={() => plotStore.clearData()} style="color: var(--red, #f85149);">Clear</button>
-        <button class="btn-sm" onclick={exportLayout}>Export Layout</button>
-        <button class="btn-sm" onclick={importLayout}>Import Layout</button>
+        <button class="btn-sm" onclick={() => plotStore.clearData()} style="color: var(--red, #f85149);">{t('plot.clear_btn')}</button>
+        <button class="btn-sm" onclick={exportLayout}>{t('plot.layout_export')}</button>
+        <button class="btn-sm" onclick={importLayout}>{t('plot.layout_import_btn')}</button>
         {#if plotStore.pendingLayoutConfig}
-          <button class="btn-sm" style="color: var(--yellow, #d29922);" onclick={() => { plotStore.pendingLayoutConfig = null; }}>Clear Layout</button>
+          <button class="btn-sm" style="color: var(--yellow, #d29922);" onclick={() => { plotStore.pendingLayoutConfig = null; }}>{t('plot.layout_clear')}</button>
         {/if}
       </div>
     </div>
 
     {#if plotStore.showGestureHint}
       <div class="gesture-hint">
-        <span class="gesture-item"><kbd>Scroll</kbd> zoom time</span>
-        <span class="gesture-item"><kbd>Shift</kbd>+<kbd>Scroll</kbd> zoom value</span>
-        <span class="gesture-item"><kbd>Ctrl</kbd>+<kbd>Scroll</kbd> zoom both</span>
-        <span class="gesture-item"><kbd>Drag</kbd> pan</span>
-        <span class="gesture-item"><kbd>Shift</kbd>+<kbd>Drag</kbd> box-zoom</span>
-        <span class="gesture-item"><kbd>Double-click</kbd> fit all</span>
-        <span class="gesture-item"><kbd>Click</kbd> a point to copy frame</span>
+        <span class="gesture-item"><kbd>Scroll</kbd> {t('plot.gesture_scroll')}</span>
+        <span class="gesture-item"><kbd>Shift</kbd>+<kbd>Scroll</kbd> {t('plot.gesture_shift_scroll')}</span>
+        <span class="gesture-item"><kbd>Ctrl</kbd>+<kbd>Scroll</kbd> {t('plot.gesture_ctrl_scroll')}</span>
+        <span class="gesture-item"><kbd>Drag</kbd> {t('plot.gesture_drag')}</span>
+        <span class="gesture-item"><kbd>Shift</kbd>+<kbd>Drag</kbd> {t('plot.gesture_shift_drag')}</span>
+        <span class="gesture-item"><kbd>Double-click</kbd> {t('plot.gesture_dblclick')}</span>
+        <span class="gesture-item"><kbd>Click</kbd> {t('plot.gesture_click_point')}</span>
         {#if plotStore.mode === 'live'}
-          <span class="gesture-item" style="color: var(--accent);">In live mode use <strong>Follow</strong> to auto-scroll; zooming pauses it.</span>
+          <span class="gesture-item" style="color: var(--accent);">{t('plot.gesture_live_hint_prefix')} <strong>{t('plot.gesture_live_hint_middle')}</strong> {t('plot.gesture_live_hint_suffix')}</span>
         {/if}
-        <button class="gesture-dismiss" onclick={() => plotStore.dismissGestureHint()} title="Hide this hint (re-enable via ? button)">×</button>
+        <button class="gesture-dismiss" onclick={() => plotStore.dismissGestureHint()} title={t('plot.gesture_dismiss_title')}>×</button>
       </div>
     {/if}
 
@@ -1479,7 +1480,7 @@ if __name__ == "__main__":
         >
           <div
             class="view-drag-handle"
-            title="Drag to reorder"
+            title={t('plot.drag_reorder_title')}
             draggable="true"
             ondragstart={(e) => onViewDragStart(view, e)}
             ondragend={onViewDragEnd}
@@ -1488,29 +1489,29 @@ if __name__ == "__main__":
           {#if view === 'signals'}
             <div class="card">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
-                <strong style="font-size: 14px;">Signals</strong>
+                <strong style="font-size: 14px;">{t('plot.signals')}</strong>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                  <button class="btn-sm" onclick={() => plotStore.selectAll()}>All</button>
-                  <button class="btn-sm" onclick={() => plotStore.selectNone()}>None</button>
+                  <button class="btn-sm" onclick={() => plotStore.selectAll()}>{t('messages.all')}</button>
+                  <button class="btn-sm" onclick={() => plotStore.selectNone()}>{t('messages.none')}</button>
                   {#if plotStore.chartPanels.length > 0}
-                    <button class="btn-sm" onclick={fitX} title="Fit X axis (time) to data — keep Y zoom">Fit X</button>
-                    <button class="btn-sm" onclick={fitY} title="Fit Y axis (value) to data — keep X zoom">Fit Y</button>
-                    <button class="btn-sm" onclick={resetAllZoom} title="Fit both axes — same as double-clicking the chart">Fit</button>
+                    <button class="btn-sm" onclick={fitX} title={t('plot.fit_x_title')}>{t('plot.fit_x')}</button>
+                    <button class="btn-sm" onclick={fitY} title={t('plot.fit_y_title')}>{t('plot.fit_y')}</button>
+                    <button class="btn-sm" onclick={resetAllZoom} title={t('plot.fit_title')}>{t('plot.fit')}</button>
                     {#if plotStore.mode === 'live'}
                       <button class="btn-sm" class:chip-active={plotStore.followLive} onclick={toggleFollow}
-                        title="Auto-scroll the X axis to show the latest data. Turns off when you zoom or pan.">
-                        {plotStore.followLive ? 'Following' : 'Follow live'}
+                        title={t('plot.follow_title')}>
+                        {plotStore.followLive ? t('plot.following') : t('plot.follow_live')}
                       </button>
                       {#if plotStore.followLive}
-                        <label class="follow-window" title="Visible window when following live">
-                          Window
+                        <label class="follow-window" title={t('plot.window_title')}>
+                          {t('plot.window')}
                           <input type="number" min="1" max="3600" step="1"
                             value={plotStore.followWindowSeconds} oninput={onFollowWindowInput} />
                           s
                         </label>
                       {/if}
                     {/if}
-                    <button class="btn-sm" onclick={savePng}>Save PNG</button>
+                    <button class="btn-sm" onclick={savePng}>{t('plot.save_png')}</button>
                   {/if}
                 </div>
               </div>
@@ -1549,7 +1550,7 @@ if __name__ == "__main__":
                       <div class="chart-signal-tags">
                         <span
                           class="panel-drag-handle"
-                          title="Drag to reorder"
+                          title={t('plot.drag_reorder_title')}
                           draggable="true"
                           ondragstart={(e) => onPanelDragStart('signals', panel.id, e)}
                           ondragend={onPanelDragEnd}
@@ -1558,12 +1559,12 @@ if __name__ == "__main__":
                           <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[j % CHART_COLORS.length]}">
                             <span style="opacity: 0.6;">{series.group} /</span> {series.signal}{series.unit ? ` (${series.unit})` : ''}
                             {#if panel.keys.length > 1}
-                              <button class="chart-signal-tag-remove" onclick={() => plotStore.splitFromPanel(panel.id, series.key)} title="Split to own chart">x</button>
+                              <button class="chart-signal-tag-remove" onclick={() => plotStore.splitFromPanel(panel.id, series.key)} title={t('plot.split_title')}>x</button>
                             {/if}
                           </span>
                         {/each}
                         <div class="chart-add-wrapper">
-                          <button class="chart-add-btn" onclick={() => addDropdownOpen = addDropdownOpen === panel.id ? null : panel.id} title="Add signal to this chart">+</button>
+                          <button class="chart-add-btn" onclick={() => addDropdownOpen = addDropdownOpen === panel.id ? null : panel.id} title={t('plot.add_signal_title')}>+</button>
                           {#if addDropdownOpen === panel.id}
                             {@const available = plotStore.getAvailableForPanel(panel.id)}
                             {#if available.length > 0}
@@ -1577,13 +1578,13 @@ if __name__ == "__main__":
                               </div>
                             {:else}
                               <div class="chart-add-dropdown">
-                                <span style="color: var(--text-dim); font-size: 12px; padding: 8px;">No other selected signals</span>
+                                <span style="color: var(--text-dim); font-size: 12px; padding: 8px;">{t('plot.no_other_signals')}</span>
                               </div>
                             {/if}
                           {/if}
                         </div>
                       </div>
-                      <span class="chart-samples">{plotStore.getPanelSampleCount(panel)} samples</span>
+                      <span class="chart-samples">{plotStore.getPanelSampleCount(panel)} {t('plot.samples')}</span>
                     </div>
                     <div class="chart-container">
                       <canvas id="chart-{panel.id}"></canvas>
@@ -1596,44 +1597,44 @@ if __name__ == "__main__":
           {:else if view === 'timeline'}
             <div class="card">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-                <strong style="font-size: 14px;">Message Timeline</strong>
+                <strong style="font-size: 14px;">{t('plot.message_timeline')}</strong>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   {#if plotStore.messageTimingLabels.length > 0}
                     <button class="btn-sm" class:chip-active={plotStore.timelineMode === 'set-origin'}
                       onclick={() => plotStore.enterTimelineMode('set-origin')}
-                      title="Click then pick a frame to set its time as t=0">
-                      {plotStore.timelineMode === 'set-origin' ? 'Pick a frame…' : 'Set t=0'}
+                      title={t('plot.set_t0_title')}>
+                      {plotStore.timelineMode === 'set-origin' ? t('plot.set_t0_picking') : t('plot.set_t0')}
                     </button>
                     <button class="btn-sm" class:chip-active={plotStore.timelineMode === 'measure'}
                       onclick={() => plotStore.enterTimelineMode('measure')}
-                      title="Click then pick two frames to measure Δt">
-                      {plotStore.timelineMode === 'measure' ? `Pick frame ${plotStore.timelineMarkers.length + 1}/2…` : 'Measure Δt'}
+                      title={t('plot.measure_title')}>
+                      {plotStore.timelineMode === 'measure' ? `${t('plot.measure_picking')} ${plotStore.timelineMarkers.length + 1}/2…` : t('plot.measure_dt')}
                     </button>
-                    <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;" title="Also apply t=0 and markers to Signals/Interval views">
+                    <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer;" title={t('plot.apply_to_all_views_title')}>
                       <input type="checkbox"
                         checked={plotStore.applyTimingToAllViews}
                         onchange={() => plotStore.toggleApplyTimingToAllViews()}
                         style="accent-color: var(--accent);" />
-                      Apply to all views
+                      {t('plot.apply_to_all_views')}
                     </label>
-                    <button class="btn-sm" onclick={fitX} title="Fit X axis (time) to data — keep Y zoom">Fit X</button>
-                    <button class="btn-sm" onclick={fitY} title="Fit Y axis to data — keep X zoom">Fit Y</button>
-                    <button class="btn-sm" onclick={resetAllZoom} title="Fit both axes — same as double-clicking the chart">Fit</button>
+                    <button class="btn-sm" onclick={fitX} title={t('plot.fit_x_title')}>{t('plot.fit_x')}</button>
+                    <button class="btn-sm" onclick={fitY} title={t('plot.fit_y_title')}>{t('plot.fit_y')}</button>
+                    <button class="btn-sm" onclick={resetAllZoom} title={t('plot.fit_title')}>{t('plot.fit')}</button>
                     {#if plotStore.mode === 'live'}
                       <button class="btn-sm" class:chip-active={plotStore.followLive} onclick={toggleFollow}
-                        title="Auto-scroll the X axis to show the latest data. Turns off when you zoom or pan.">
-                        {plotStore.followLive ? 'Following' : 'Follow live'}
+                        title={t('plot.follow_title')}>
+                        {plotStore.followLive ? t('plot.following') : t('plot.follow_live')}
                       </button>
                       {#if plotStore.followLive}
-                        <label class="follow-window" title="Visible window when following live">
-                          Window
+                        <label class="follow-window" title={t('plot.window_title')}>
+                          {t('plot.window')}
                           <input type="number" min="1" max="3600" step="1"
                             value={plotStore.followWindowSeconds} oninput={onFollowWindowInput} />
                           s
                         </label>
                       {/if}
                     {/if}
-                    <button class="btn-sm" onclick={savePng}>Save PNG</button>
+                    <button class="btn-sm" onclick={savePng}>{t('plot.save_png')}</button>
                   {/if}
                 </div>
               </div>
@@ -1641,19 +1642,19 @@ if __name__ == "__main__":
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
                   {#if plotStore.timelineOrigin !== 0}
                     <span class="chart-signal-tag" style="--tag-color: #d29922;">
-                      t=0 origin @ {plotStore.timelineOrigin.toFixed(3)}s
-                      <button class="chart-signal-tag-remove" onclick={() => plotStore.resetTimelineOrigin()} title="Reset origin">x</button>
+                      {t('plot.t0_origin_at')} {plotStore.timelineOrigin.toFixed(3)}s
+                      <button class="chart-signal-tag-remove" onclick={() => plotStore.resetTimelineOrigin()} title={t('plot.reset_origin_title')}>x</button>
                     </span>
                   {/if}
                   {#if plotStore.timelineMarkers.length > 0}
                     <span class="chart-signal-tag" style="--tag-color: #39d2c0;">
                       {#if plotStore.timelineMarkerDelta !== null}
-                        Δt = {formatDelta(plotStore.timelineMarkerDelta)}
+                        {t('plot.delta_t_eq')} {formatDelta(plotStore.timelineMarkerDelta)}
                         <span style="opacity: 0.7;">({plotStore.timelineMarkers[0].time.toFixed(3)}s → {plotStore.timelineMarkers[1].time.toFixed(3)}s)</span>
                       {:else}
-                        Marker A @ {plotStore.timelineMarkers[0].time.toFixed(3)}s — pick second frame
+                        {t('plot.marker_a_at')} {plotStore.timelineMarkers[0].time.toFixed(3)}s {t('plot.marker_pick_second')}
                       {/if}
-                      <button class="chart-signal-tag-remove" onclick={() => plotStore.clearTimelineMarkers()} title="Clear markers">x</button>
+                      <button class="chart-signal-tag-remove" onclick={() => plotStore.clearTimelineMarkers()} title={t('plot.clear_markers_title')}>x</button>
                     </span>
                   {/if}
                 </div>
@@ -1684,29 +1685,29 @@ if __name__ == "__main__":
           {:else if view === 'interval'}
             <div class="card">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
-                <strong style="font-size: 14px;">Message Intervals</strong>
+                <strong style="font-size: 14px;">{t('plot.message_intervals')}</strong>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                  <button class="btn-sm" onclick={() => plotStore.selectAllInterval()}>All</button>
-                  <button class="btn-sm" onclick={() => plotStore.selectNoneInterval()}>None</button>
+                  <button class="btn-sm" onclick={() => plotStore.selectAllInterval()}>{t('messages.all')}</button>
+                  <button class="btn-sm" onclick={() => plotStore.selectNoneInterval()}>{t('messages.none')}</button>
                   {#if plotStore.intervalPanels.length > 0}
-                    <button class="btn-sm" onclick={fitX} title="Fit X axis (time) to data — keep Y zoom">Fit X</button>
-                    <button class="btn-sm" onclick={fitY} title="Fit Y axis to data — keep X zoom">Fit Y</button>
-                    <button class="btn-sm" onclick={resetAllZoom} title="Fit both axes — same as double-clicking the chart">Fit</button>
+                    <button class="btn-sm" onclick={fitX} title={t('plot.fit_x_title')}>{t('plot.fit_x')}</button>
+                    <button class="btn-sm" onclick={fitY} title={t('plot.fit_y_title')}>{t('plot.fit_y')}</button>
+                    <button class="btn-sm" onclick={resetAllZoom} title={t('plot.fit_title')}>{t('plot.fit')}</button>
                     {#if plotStore.mode === 'live'}
                       <button class="btn-sm" class:chip-active={plotStore.followLive} onclick={toggleFollow}
-                        title="Auto-scroll the X axis to show the latest data. Turns off when you zoom or pan.">
-                        {plotStore.followLive ? 'Following' : 'Follow live'}
+                        title={t('plot.follow_title')}>
+                        {plotStore.followLive ? t('plot.following') : t('plot.follow_live')}
                       </button>
                       {#if plotStore.followLive}
-                        <label class="follow-window" title="Visible window when following live">
-                          Window
+                        <label class="follow-window" title={t('plot.window_title')}>
+                          {t('plot.window')}
                           <input type="number" min="1" max="3600" step="1"
                             value={plotStore.followWindowSeconds} oninput={onFollowWindowInput} />
                           s
                         </label>
                       {/if}
                     {/if}
-                    <button class="btn-sm" onclick={savePng}>Save PNG</button>
+                    <button class="btn-sm" onclick={savePng}>{t('plot.save_png')}</button>
                   {/if}
                 </div>
               </div>
@@ -1737,7 +1738,7 @@ if __name__ == "__main__":
                       <div class="chart-signal-tags">
                         <span
                           class="panel-drag-handle"
-                          title="Drag to reorder"
+                          title={t('plot.drag_reorder_title')}
                           draggable="true"
                           ondragstart={(e) => onPanelDragStart('interval', panel.id, e)}
                           ondragend={onPanelDragEnd}
@@ -1746,12 +1747,12 @@ if __name__ == "__main__":
                           <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[j % CHART_COLORS.length]}">
                             {key}
                             {#if panel.keys.length > 1}
-                              <button class="chart-signal-tag-remove" onclick={() => plotStore.splitFromIntervalPanel(panel.id, key)} title="Split to own chart">x</button>
+                              <button class="chart-signal-tag-remove" onclick={() => plotStore.splitFromIntervalPanel(panel.id, key)} title={t('plot.split_title')}>x</button>
                             {/if}
                           </span>
                         {/each}
                         <div class="chart-add-wrapper">
-                          <button class="chart-add-btn" onclick={() => addDropdownOpen = addDropdownOpen === panel.id ? null : panel.id} title="Add message to this chart">+</button>
+                          <button class="chart-add-btn" onclick={() => addDropdownOpen = addDropdownOpen === panel.id ? null : panel.id} title={t('plot.add_message_title')}>+</button>
                           {#if addDropdownOpen === panel.id}
                             {@const available = plotStore.getAvailableForIntervalPanel(panel.id)}
                             {#if available.length > 0}
@@ -1764,13 +1765,13 @@ if __name__ == "__main__":
                               </div>
                             {:else}
                               <div class="chart-add-dropdown">
-                                <span style="color: var(--text-dim); font-size: 12px; padding: 8px;">No other selected messages</span>
+                                <span style="color: var(--text-dim); font-size: 12px; padding: 8px;">{t('plot.no_other_messages')}</span>
                               </div>
                             {/if}
                           {/if}
                         </div>
                       </div>
-                      <span class="chart-samples">{plotStore.getIntervalPanelSampleCount(panel)} intervals</span>
+                      <span class="chart-samples">{plotStore.getIntervalPanelSampleCount(panel)} {t('plot.intervals')}</span>
                     </div>
                     <div class="chart-container">
                       <canvas id="interval-{panel.id}"></canvas>

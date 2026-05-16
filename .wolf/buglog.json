@@ -745,6 +745,70 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-05-16T14:45:00.000Z"
+    },
+    {
+      "id": "bug-045",
+      "timestamp": "2026-05-16T07:41:39.777Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/decode/+page.svelte",
+      "root_cause": "Had 'Odd number of hex digits'",
+      "fix": "Changed to 'decode.odd_hex'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 6,
+      "last_seen": "2026-05-16T07:46:33.855Z"
+    },
+    {
+      "id": "bug-046",
+      "timestamp": "2026-05-16T07:45:29.702Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/docs/+page.svelte",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 13→3 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T07:45:29.702Z"
+    },
+    {
+      "id": "bug-047",
+      "timestamp": "2026-05-16T07:48:28.582Z",
+      "error_message": "Missing import: )}</button>\n          {#if plotStore.pendingLayoutConfig}\n            <span style=",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Module(s) not imported: )}</button>\n          {#if plotStore.pendingLayoutConfig}\n            <span style=",
+      "fix": "Added import(s) for )}</button>\n          {#if plotStore.pendingLayoutConfig}\n            <span style=",
+      "tags": [
+        "auto-detected",
+        "missing-import",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T07:48:28.582Z"
+    },
+    {
+      "id": "bug-048",
+      "timestamp": "2026-05-16T08:09:40.751Z",
+      "error_message": "CSS fix: max-width, gap",
+      "file": "web/src/app.css",
+      "root_cause": "max-width: 1100px → 1280px; gap: 32px → 20px",
+      "fix": "Changed max-width: 1100px → 1280px; gap: 32px → 20px",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "css"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-16T08:09:49.043Z"
     }
   ]
 }

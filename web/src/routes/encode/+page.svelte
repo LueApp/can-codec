@@ -1,6 +1,7 @@
 <script lang="ts">
   import { codecStore } from '$lib/codec-store.svelte';
   import { groupArraySignalDefs } from '$lib/codec';
+  import { t } from '$lib/i18n.svelte';
 
   let selectedDevice = $state('');
   let selectedMsg = $state('');
@@ -139,18 +140,18 @@
 
 <div class="container">
   <div class="page-header">
-    <h1>Encode</h1>
-    <p>Build a CAN frame from signal values</p>
+    <h1>{t('encode.title')}</h1>
+    <p>{t('encode.subtitle')}</p>
   </div>
 
   <div class="card">
     <!-- Step 1: Select device -->
     <div class="form-group">
-      <label for="dev-select">Device</label>
+      <label for="dev-select">{t('encode.label_device')}</label>
       <select id="dev-select" bind:value={selectedDevice} onchange={onDeviceChange}>
-        <option value="">Select a device...</option>
+        <option value="">{t('encode.placeholder_device')}</option>
         {#each deviceGroups as group}
-          <option value={group.device}>{group.device}{group.mavlink ? ' (MAVLink)' : ''} — {group.messages.length} messages</option>
+          <option value={group.device}>{group.device}{group.mavlink ? ' (MAVLink)' : ''} — {group.messages.length} {t('messages.count_messages')}</option>
         {/each}
       </select>
     </div>
@@ -159,9 +160,9 @@
     {#if selectedDevice}
       <div class="form-row">
         <div class="form-group" style="margin-bottom:0">
-          <label for="msg-select">Message</label>
+          <label for="msg-select">{t('encode.label_message')}</label>
           <select id="msg-select" bind:value={selectedMsg} onchange={onMsgChange}>
-            <option value="">Select a message...</option>
+            <option value="">{t('encode.placeholder_message')}</option>
             {#each messagesForDevice as name}
               <option value={name}>{name}</option>
             {/each}
@@ -169,16 +170,16 @@
         </div>
         <div class="form-group" style="margin-bottom:0">
           {#if isMavlink}
-            <label for="sys-id">System ID / Component ID</label>
+            <label for="sys-id">{t('encode.label_sys_comp')}</label>
             <div style="display:flex; gap:8px;">
               <input id="sys-id" type="number" bind:value={sysId} min="0" max="255" placeholder="sys_id" />
               <input type="number" bind:value={compId} min="0" max="255" placeholder="comp_id" />
             </div>
           {:else if broadcastMode}
-            <label>Broadcast</label>
-            <div style="font-size:13px; color:var(--text-dim); padding:8px 0;">All {msgDef?.node_count} nodes in one frame</div>
+            <label>{t('encode.label_broadcast')}</label>
+            <div style="font-size:13px; color:var(--text-dim); padding:8px 0;">{t('encode.broadcast_help_prefix')} {msgDef?.node_count} {t('encode.broadcast_help_suffix')}</div>
           {:else}
-            <label for="node-id">Node ID (multi-node)</label>
+            <label for="node-id">{t('encode.label_node_id')}</label>
             <input id="node-id" type="number" bind:value={nodeId} min="0" />
           {/if}
         </div>
@@ -187,7 +188,7 @@
 
     {#if selectedMsg && isMavlink}
       <div class="alert info" style="margin-top: 12px; margin-bottom: 0; font-size: 13px;">
-        MAVLink message — will output MAVLink v2 frame with CAN transport ID
+        {t('encode.mavlink_note')}
       </div>
     {/if}
 
@@ -197,9 +198,9 @@
           <input type="checkbox" bind:checked={broadcastMode} />
           <span class="toggle-slider"></span>
         </label>
-        <span style="font-size:13px;">Broadcast mode</span>
+        <span style="font-size:13px;">{t('encode.broadcast_mode')}</span>
         <span style="font-size:12px;color:var(--text-dim)">
-          Combine all {msgDef?.node_count} nodes into one CAN FD frame
+          {t('encode.broadcast_mode_help_prefix')} {msgDef?.node_count} {t('encode.broadcast_mode_help_suffix')}
         </span>
       </div>
     {/if}
@@ -214,10 +215,10 @@
                 class="node-tab"
                 class:active={activeNode === nid}
                 onclick={() => activeNode = nid}
-              >Node {nid}</button>
+              >{t('encode.node')} {nid}</button>
             {/each}
             <button class="copy-btn" style="margin-left:auto;font-size:11px;" onclick={copyToAllNodes}>
-              Copy to all nodes
+              {t('encode.copy_to_all_nodes')}
             </button>
           </div>
           <div class="signal-inputs">
@@ -228,14 +229,14 @@
                 </label>
                 {#if group.items.length === 1 && Object.keys(group.items[0].enum_map).length > 0}
                   <select id="bsig-{activeNode}-{group.key}" bind:value={broadcastValues[activeNode][group.key]}>
-                    <option value="">-- select --</option>
+                    <option value="">{t('encode.select_placeholder')}</option>
                     {#each Object.entries(group.items[0].enum_map) as [k, v]}
                       <option value={v}>{v} ({k})</option>
                     {/each}
                   </select>
                 {:else}
                   <input id="bsig-{activeNode}-{group.key}" bind:value={broadcastValues[activeNode][group.key]}
-                    placeholder={group.items[0].default_value !== null ? `default: ${group.items[0].default_value}` : ''}
+                    placeholder={group.items[0].default_value !== null ? `${t('encode.default_prefix')} ${group.items[0].default_value}` : ''}
                     onkeydown={(e) => e.key === 'Enter' && doEncode()} />
                 {/if}
                 {#if group.items[0].description}
@@ -248,7 +249,7 @@
       {:else}
         <!-- Normal single-node signal inputs -->
         <div style="margin-top: 20px;">
-          <span style="margin-bottom: 12px; display: block; font-size: 13px; font-weight: 500; color: var(--text-dim);">Signal Values</span>
+          <span style="margin-bottom: 12px; display: block; font-size: 13px; font-weight: 500; color: var(--text-dim);">{t('encode.signal_values')}</span>
           <div class="signal-inputs">
             {#each signalGroups as group}
               <div class="form-group" style="margin-bottom: 0;">
@@ -258,14 +259,14 @@
                 </label>
                 {#if group.items.length === 1 && Object.keys(group.items[0].enum_map).length > 0}
                   <select id="sig-{group.key}" bind:value={signalValues[group.key]}>
-                    <option value="">-- select --</option>
+                    <option value="">{t('encode.select_placeholder')}</option>
                     {#each Object.entries(group.items[0].enum_map) as [k, v]}
                       <option value={v}>{v} ({k})</option>
                     {/each}
                   </select>
                 {:else}
                   <input id="sig-{group.key}" bind:value={signalValues[group.key]}
-                    placeholder={group.items.length > 1 ? `[${group.items.map((_, i) => i).join(', ')}]` : (group.items[0].default_value !== null ? `default: ${group.items[0].default_value}` : '')}
+                    placeholder={group.items.length > 1 ? `[${group.items.map((_, i) => i).join(', ')}]` : (group.items[0].default_value !== null ? `${t('encode.default_prefix')} ${group.items[0].default_value}` : '')}
                     onkeydown={(e) => e.key === 'Enter' && doEncode()} />
                 {/if}
                 {#if group.items[0].description}
@@ -279,7 +280,7 @@
     {/if}
 
     <div style="margin-top: 20px;">
-      <button class="primary" onclick={doEncode} disabled={!selectedMsg}>Encode</button>
+      <button class="primary" onclick={doEncode} disabled={!selectedMsg}>{t('encode.button')}</button>
     </div>
   </div>
 
@@ -290,13 +291,13 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <strong>{selectedMsg}</strong>
         <span style="font-family:var(--font-mono);color:var(--orange)">
-          ID: 0x{canResult.canId.toString(16).toUpperCase().padStart(3, '0')}
+          {t('encode.id')} 0x{canResult.canId.toString(16).toUpperCase().padStart(3, '0')}
         </span>
       </div>
       <div class="hex-display">{hexStr(canResult.data)}</div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="copy-btn" onclick={() => copy(hexStr(canResult!.data), 'hex')}>{copied === 'hex' ? 'Copied!' : 'Copy hex'}</button>
-        <button class="copy-btn" onclick={() => copy(cansendStr(), 'cs')}>{copied === 'cs' ? 'Copied!' : 'Copy cansend'}</button>
+        <button class="copy-btn" onclick={() => copy(hexStr(canResult!.data), 'hex')}>{copied === 'hex' ? t('encode.copied') : t('encode.copy_hex')}</button>
+        <button class="copy-btn" onclick={() => copy(cansendStr(), 'cs')}>{copied === 'cs' ? t('encode.copied') : t('encode.copy_cansend')}</button>
       </div>
       <div style="margin-top:12px;font-family:var(--font-mono);font-size:13px;color:var(--text-dim);background:var(--bg);padding:10px;border-radius:var(--radius)">
         {cansendStr()}
@@ -309,11 +310,11 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <strong>{selectedMsg}</strong>
         <span style="font-family:var(--font-mono);color:var(--text-dim); font-size: 13px;">
-          MAVLink v2 | sys={sysId} comp={compId} | {mavResult.frames.length} frame{mavResult.frames.length > 1 ? 's' : ''}
+          MAVLink v2 | sys={sysId} comp={compId} | {mavResult.frames.length} {mavResult.frames.length > 1 ? t('encode.frames_many') : t('encode.frames_one')}
         </span>
       </div>
       <div class="hex-display" style="font-size: 13px;">
-        Payload: {hexStr(mavResult.rawPayload)}
+        {t('encode.payload')} {hexStr(mavResult.rawPayload)}
       </div>
       <div style="margin-top:12px;font-family:var(--font-mono);font-size:13px;color:var(--text-dim);background:var(--bg);padding:10px;border-radius:var(--radius);white-space:pre-wrap">
         {#each mavResult.frames as f, i}
@@ -323,8 +324,8 @@
         {/each}
       </div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="copy-btn" onclick={() => copy(mavCansendLines(), 'mav')}>{copied === 'mav' ? 'Copied!' : 'Copy cansend'}</button>
-        <button class="copy-btn" onclick={() => copy(hexStr(mavResult!.rawPayload), 'payload')}>{copied === 'payload' ? 'Copied!' : 'Copy payload'}</button>
+        <button class="copy-btn" onclick={() => copy(mavCansendLines(), 'mav')}>{copied === 'mav' ? t('encode.copied') : t('encode.copy_cansend')}</button>
+        <button class="copy-btn" onclick={() => copy(hexStr(mavResult!.rawPayload), 'payload')}>{copied === 'payload' ? t('encode.copied') : t('encode.copy_payload')}</button>
       </div>
     </div>
   {/if}

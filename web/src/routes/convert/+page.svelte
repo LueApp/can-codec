@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '$lib/i18n.svelte';
+
   let input = $state('');
   let output = $state('');
   let stats = $state({ total: 0, converted: 0, failed: 0 });
@@ -91,23 +93,23 @@
 
 <div class="container">
   <div class="page-header">
-    <h1>Convert</h1>
-    <p>Convert candump output to cansend format</p>
+    <h1>{t('convert.title')}</h1>
+    <p>{t('convert.subtitle')}</p>
   </div>
 
   <div class="card">
     <div class="form-group">
-      <label for="convert-input">candump input</label>
+      <label for="convert-input">{t('convert.label_input')}</label>
       <textarea id="convert-input" bind:value={input} rows="8"
-        placeholder={"Paste candump lines:\n  (1713800000.000000) vcan0 101#E803050000000000\n  vcan0 101 [8] E8 03 05 01 00 00 00 00\n  (1234.567890) can0 00010101##1FD0100000001..."}
+        placeholder={t('convert.placeholder_input')}
         onkeydown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); convert(); } }}
       ></textarea>
-      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Press Ctrl+Enter to convert</div>
+      <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">{t('convert.hint_ctrl_enter')}</div>
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
-      <button class="primary" onclick={convert}>Convert</button>
+      <button class="primary" onclick={convert}>{t('convert.button')}</button>
       <div style="display: flex; align-items: center; gap: 6px;">
-        <label for="bus-override" style="margin: 0; white-space: nowrap;">Bus:</label>
+        <label for="bus-override" style="margin: 0; white-space: nowrap;">{t('convert.bus_label')}</label>
         <input id="bus-override" bind:value={bus} style="width: 100px;" />
       </div>
     </div>
@@ -117,14 +119,14 @@
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <div>
-          <h2 style="margin-bottom: 0;">cansend output</h2>
+          <h2 style="margin-bottom: 0;">{t('convert.output_title')}</h2>
           <span style="font-size: 13px; color: var(--text-dim);">
-            {stats.converted} converted{stats.failed > 0 ? `, ${stats.failed} failed` : ''}
+            {stats.converted} {t('convert.converted_suffix')}{stats.failed > 0 ? `, ${stats.failed} ${t('convert.failed_suffix')}` : ''}
           </span>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button class="copy-btn" onclick={copyOutput}>{copied ? 'Copied!' : 'Copy'}</button>
-          <button class="copy-btn" onclick={copyAsScript}>Copy as script</button>
+          <button class="copy-btn" onclick={copyOutput}>{copied ? t('convert.copied') : t('convert.copy')}</button>
+          <button class="copy-btn" onclick={copyAsScript}>{t('convert.copy_as_script')}</button>
         </div>
       </div>
       <pre class="raw-frame-log">{output}</pre>

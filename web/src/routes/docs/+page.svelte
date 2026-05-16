@@ -1,5 +1,6 @@
 <script lang="ts">
-  let lang = $state<'en' | 'zh'>('en');
+  import { i18n } from '$lib/i18n.svelte';
+  const lang = $derived(i18n.locale);
 </script>
 
 <div class="container">
@@ -25,16 +26,6 @@
         </svg>
         GitHub
       </a>
-      <div style="display: flex; gap: 4px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;">
-        <button
-          onclick={() => lang = 'en'}
-          style="padding: 4px 14px; font-size: 13px; border-radius: 4px; {lang === 'en' ? 'background: var(--accent); color: #0f1419; font-weight: 600;' : 'background: none; color: var(--text-dim);'}"
-        >EN</button>
-        <button
-          onclick={() => lang = 'zh'}
-          style="padding: 4px 14px; font-size: 13px; border-radius: 4px; {lang === 'zh' ? 'background: var(--accent); color: #0f1419; font-weight: 600;' : 'background: none; color: var(--text-dim);'}"
-        >中文</button>
-      </div>
     </div>
   </div>
 
