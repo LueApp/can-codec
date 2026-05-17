@@ -525,7 +525,16 @@ export function encode(msgDef: Message, values: Record<string, string | number |
       if (r === null) throw new Error(`Unknown enum value '${val}' for signal '${sig.name}'. Valid: ${Object.values(sig.enum_map).join(', ')}`);
       raw = r;
     } else {
-      raw = physicalToRaw(Number(val), sig);
+      const num = typeof val === 'number' ? val : Number(val);
+      if (isNaN(num)) {
+        // Don't silently pack NaN bits — that's how forgotten variable references end up
+        // sending garbage onto the bus. Hint at the most likely cause.
+        const hint = typeof val === 'string'
+          ? ` (did you mean '=${val}' to evaluate as a variable / expression?)`
+          : '';
+        throw new Error(`Invalid value '${val}' for signal '${sig.name}': not a number${hint}`);
+      }
+      raw = physicalToRaw(num, sig);
     }
 
     if (sig.byte_order === 'big_endian') {

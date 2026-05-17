@@ -1,6 +1,7 @@
 import { codecStore } from './codec-store.svelte';
 import { parseCandump, MavlinkReassembler, type MavlinkBuf } from './codec';
-import { WebSocketClient, type RawFrame } from './websocket-client.svelte';
+import { busStore } from './bus-store.svelte';
+import type { RawFrame } from './websocket-client.svelte';
 import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from './types';
 import type {
   FrameRef, SignalSample, SignalSeries, ChartPanel, MessageTimingEntry,
@@ -21,11 +22,6 @@ class PlotStore {
   viewOrder = $state<ChartView[]>(['signals', 'timeline', 'interval']);
   messageTimingLabels = $state<string[]>([]);
   intervalPanels = $state<ChartPanel[]>([]);
-  wsUrl = $state(
-    typeof localStorage !== 'undefined'
-      ? (localStorage.getItem('cancodec_ws_url') ?? 'ws://localhost:8765')
-      : 'ws://localhost:8765'
-  );
   liveSampleCounts = $state<Record<string, number>>({});
   rawFrameCount = $state(0);
   rawLogMax = $state(2000);
@@ -64,7 +60,7 @@ class PlotStore {
 
   // --- Non-reactive state (performance) ---
   nextPanelId = 0;
-  wsClient = new WebSocketClient();
+  liveFrameUnsubscribe: (() => void) | null = null;
   liveSampleStore = new Map<string, SignalSample[]>();
   messageTimingStore = new Map<string, MessageTimingEntry[]>();
   rawFrameLog: string[] = [];
@@ -85,6 +81,11 @@ class PlotStore {
   unregisterRenderCallback() {
     this._renderCallback = null;
   }
+
+  // --- Shared bus proxies (the actual state lives in busStore) ---
+  get wsClient() { return busStore.client; }
+  get wsUrl() { return busStore.wsUrl; }
+  set wsUrl(v: string) { busStore.wsUrl = v; }
 
   // --- Derived getters ---
   get selected(): Set<string> {
@@ -230,7 +231,7 @@ class PlotStore {
   switchMode(newMode: InputMode) {
     if (this.mode === 'live' && newMode !== 'live') {
       this.stopDumpToFile();
-      this.wsClient.disconnect();
+      this.unsubscribeLiveFrames();
       this.clearMavlinkBuffers();
     }
     if (newMode !== this.mode) {
@@ -238,24 +239,43 @@ class PlotStore {
       this.requestRender(true);
     }
     this.mode = newMode;
+    // When entering live mode, subscribe immediately — even if the bus was
+    // already connected by another page (encode). Without this, frames flow
+    // past plot silently because the Connect button is hidden.
+    if (this.mode === 'live') {
+      this.subscribeLiveFrames();
+    }
   }
 
   // --- Connection management ---
-  connectLive() {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('cancodec_ws_url', this.wsUrl);
+  /** Public + idempotent: callers (plot page onMount, switchMode) can call freely. */
+  subscribeLiveFrames() {
+    if (this.liveFrameUnsubscribe) return;
+    this.liveFrameUnsubscribe = busStore.client.addFrameCallback(
+      (frame) => this.handleLiveFrame(frame)
+    );
+  }
+
+  unsubscribeLiveFrames() {
+    if (this.liveFrameUnsubscribe) {
+      this.liveFrameUnsubscribe();
+      this.liveFrameUnsubscribe = null;
     }
+  }
+
+  connectLive() {
     this.resetData();
     this.requestRender(true);
     this.clearMavlinkBuffers();
-    this.wsClient.setFrameCallback((frame) => this.handleLiveFrame(frame));
-    this.wsClient.connect(this.wsUrl);
+    this.subscribeLiveFrames();
+    busStore.connect();
   }
 
   disconnectLive() {
     this.paused = false;
     this.stopDumpToFile();
-    this.wsClient.disconnect();
+    this.unsubscribeLiveFrames();
+    busStore.disconnect();
     this.clearMavlinkBuffers();
   }
 
@@ -304,7 +324,9 @@ class PlotStore {
       : frame.arbitration_id.toString(16).toUpperCase().padStart(3, '0');
     const dlc = frame.data.length.toString().padStart(2, '0');
     const hex = Array.from(frame.data).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
-    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
+    // Always print a 2-char RX/TX token so columns line up regardless of direction.
+    const dir = frame.direction === 'tx' ? 'TX' : 'RX';
+    return ` (${ts})  ${dir}  ${iface}  ${id}  [${dlc}]  ${hex}`;
   }
 
   formatFrameShort(f: FrameRef): string {
@@ -390,7 +412,7 @@ class PlotStore {
         if (res) {
           matched = true;
           this.matchedFrameCount++;
-          this.appendDecoded(res.decoded, res.mavlink, frame.timestamp, frame.is_fd);
+          this.appendDecoded(res.decoded, res.mavlink, frame.timestamp, frame.is_fd, undefined, undefined, frame.direction);
         }
       } catch { /* skip */ }
       this.appendRawFrame(frame, matched);
@@ -486,12 +508,12 @@ class PlotStore {
 
   appendDecoded(
     decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number, is_fd: boolean,
-    rawFrames?: Uint8Array[], rawTimestamps?: number[]
+    rawFrames?: Uint8Array[], rawTimestamps?: number[], direction?: 'rx' | 'tx',
   ) {
     if (this.liveStartTime === null) this.liveStartTime = timestamp;
     const time = timestamp - this.liveStartTime;
     const primaryData = rawFrames ? Array.from(rawFrames[0]) : decoded.raw_data;
-    const frame: FrameRef = { id: decoded.msg_id, data: primaryData, timestamp, is_fd };
+    const frame: FrameRef = { id: decoded.msg_id, data: primaryData, timestamp, is_fd, direction };
     if (rawFrames && rawFrames.length > 1) {
       frame.extraFrames = rawFrames.slice(1).map((f, i) => ({
         data: Array.from(f),

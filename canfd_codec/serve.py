@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import os
+import queue
 import re
 import signal as signal_module
 import socket as socket_mod
@@ -21,6 +22,7 @@ import struct
 import subprocess
 import threading
 import time
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +33,10 @@ _CANDUMP_RE = re.compile(
 )
 
 
-def _parse_candump_line(line: str) -> tuple[float, int, str, bool] | None:
+def _parse_candump_line(line: str) -> tuple[float, int, str, int, bool] | None:
     """Parse a candump -ta output line.
 
-    Returns (timestamp, arbitration_id, data_hex_upper, is_fd) or None.
+    Returns (timestamp, arbitration_id, data_hex_upper, dlc, is_fd) or None.
     """
     m = _CANDUMP_RE.match(line)
     if not m:
@@ -44,7 +46,18 @@ def _parse_candump_line(line: str) -> tuple[float, int, str, bool] | None:
     dlc = int(m.group(4))
     data_hex = m.group(5).strip().replace(" ", "").upper()
     is_fd = dlc > 8
-    return timestamp, arb_id, data_hex, is_fd
+    return timestamp, arb_id, data_hex, dlc, is_fd
+
+
+def _format_cansend_arg(arb_id: int, data: bytes, is_fd: bool) -> str:
+    """Build the `id#data` (or `id##flags+data`) arg for cansend."""
+    extended = arb_id > 0x7FF
+    id_str = f"{arb_id:08X}" if extended else f"{arb_id:03X}"
+    hex_data = data.hex().upper()
+    if is_fd:
+        # `##` then a 1-nibble flags byte (0=no BRS/ESI) then data
+        return f"{id_str}##0{hex_data}"
+    return f"{id_str}#{hex_data}"
 
 
 def _ws_accept_key(client_key: str) -> str:
@@ -141,6 +154,13 @@ class CANWebSocketServer:
         self._running = False
         self._clients: set[asyncio.StreamWriter] = set()
         self._clients_lock = threading.Lock()
+        # Items: (arb_id:int, data:bytes, is_fd:bool, ack_writer:StreamWriter|None)
+        self._send_queue: queue.Queue = queue.Queue()
+        # Reference to the pycan Bus instance (set by _pycan_reader_thread). None otherwise.
+        self._pycan_bus = None
+        # Reference + lock to the upstream socket (set by _ws_source_reader_thread).
+        self._source_sock = None
+        self._source_sock_lock = threading.Lock()
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -253,6 +273,8 @@ class CANWebSocketServer:
                         await writer.drain()
                     elif opcode == 0xA:
                         pass
+                    elif opcode == 0x1:
+                        self._handle_text_message(payload, writer)
         except (ConnectionError, OSError) as e:
             disconnect_reason = f"connection error: {e}"
         except Exception as e:
@@ -269,6 +291,147 @@ class CANWebSocketServer:
                 writer.close()
             except Exception:
                 pass
+
+    def _handle_text_message(self, payload: bytes, writer: asyncio.StreamWriter):
+        """Parse an inbound text WS frame from a client.
+
+        Currently only `{type:"send", arbitration_id, data, is_fd}` is handled.
+        Bad payloads are rejected with a send_ack carrying an error.
+        """
+        try:
+            msg = json.loads(payload.decode("utf-8", errors="replace"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return  # silently drop garbage
+        if not isinstance(msg, dict):
+            return
+        mtype = msg.get("type")
+        if mtype != "send":
+            return
+        try:
+            arb_id_raw = msg.get("arbitration_id")
+            arb_id = int(arb_id_raw, 0) if isinstance(arb_id_raw, str) else int(arb_id_raw)
+            data_hex = str(msg.get("data", "")).replace(" ", "").replace(":", "")
+            if len(data_hex) % 2 != 0:
+                raise ValueError("odd-length data hex")
+            data = bytes.fromhex(data_hex)
+            is_fd = bool(msg.get("is_fd", False))
+        except (TypeError, ValueError) as e:
+            self._send_ack_to(writer, False, error=f"bad send payload: {e}")
+            return
+        if arb_id < 0 or arb_id > 0x1FFFFFFF:
+            self._send_ack_to(writer, False, arb_id=arb_id, error="arbitration_id out of range")
+            return
+        max_len = 64 if is_fd else 8
+        if len(data) > max_len:
+            self._send_ack_to(writer, False, arb_id=arb_id, error=f"data too long for {'CAN FD' if is_fd else 'classic CAN'} ({len(data)} > {max_len})")
+            return
+        # Enqueue for the sender thread to push to the bus.
+        self._send_queue.put((arb_id, data, is_fd, writer))
+
+    def _send_ack_to(
+        self,
+        writer: asyncio.StreamWriter,
+        ok: bool,
+        arb_id: Optional[int] = None,
+        error: Optional[str] = None,
+    ):
+        """Send a send_ack JSON frame to a specific client. Safe from any thread."""
+        msg = {"type": "send_ack", "ok": ok}
+        if arb_id is not None:
+            msg["arbitration_id"] = arb_id
+        if error:
+            msg["error"] = error
+        frame = _ws_build_frame(json.dumps(msg).encode())
+        try:
+            writer.write(frame)
+        except Exception:
+            pass
+
+    def _sender_thread(self, loop: asyncio.AbstractEventLoop):
+        """Drain the send queue and push frames to the bus."""
+        while self._running:
+            try:
+                item = self._send_queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            arb_id, data, is_fd, ack_writer = item
+            try:
+                err = self._send_one(arb_id, data, is_fd)
+            except Exception as e:
+                err = f"send failed: {e}"
+            if ack_writer is not None:
+                loop.call_soon_threadsafe(
+                    self._send_ack_to, ack_writer, err is None, arb_id, err
+                )
+            if err:
+                print(f"  send 0x{arb_id:X} ({len(data)}B, fd={is_fd}) -> {err}")
+            else:
+                # Broadcast a tx-tagged frame to all clients so the plot page can
+                # display what was just sent — separately from rx frames that
+                # candump/pycan might (or might not) loop back.
+                frame_json = json.dumps({
+                    "type": "frame",
+                    "direction": "tx",
+                    "arbitration_id": arb_id,
+                    "data": data.hex().upper(),
+                    "dlc": len(data),
+                    "timestamp": time.time(),
+                    "is_fd": is_fd,
+                })
+                loop.call_soon_threadsafe(self._broadcast_sync, frame_json)
+
+    def _send_one(self, arb_id: int, data: bytes, is_fd: bool) -> Optional[str]:
+        """Dispatch one frame to whichever backend is in use. Returns error or None."""
+        if self.source_url:
+            # Relay mode: forward the send command upstream.
+            with self._source_sock_lock:
+                sock = self._source_sock
+                if sock is None:
+                    return "upstream not connected"
+                try:
+                    msg = json.dumps({
+                        "type": "send",
+                        "arbitration_id": arb_id,
+                        "data": data.hex().upper(),
+                        "is_fd": is_fd,
+                    }).encode()
+                    sock.sendall(_ws_build_frame(msg, masked=True))
+                    return None
+                except OSError as e:
+                    return f"upstream write failed: {e}"
+        if self.interface != "socketcan" and self._pycan_bus is not None:
+            try:
+                import can
+            except ImportError:
+                return "python-can not installed"
+            try:
+                m = can.Message(
+                    arbitration_id=arb_id,
+                    data=data,
+                    is_fd=is_fd,
+                    is_extended_id=arb_id > 0x7FF,
+                )
+                self._pycan_bus.send(m)
+                return None
+            except Exception as e:
+                return f"python-can send failed: {e}"
+        # Default: socketcan -> shell out to cansend
+        arg = _format_cansend_arg(arb_id, data, is_fd)
+        try:
+            res = subprocess.run(
+                ["cansend", self.bus, arg],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except FileNotFoundError:
+            return "cansend not found (install can-utils)"
+        except subprocess.TimeoutExpired:
+            return "cansend timed out"
+        if res.returncode != 0:
+            err = (res.stderr or res.stdout or "").strip() or f"cansend exit {res.returncode}"
+            return err
+        return None
 
     def _candump_reader_thread(self, loop: asyncio.AbstractEventLoop):
         """Thread that reads candump output and schedules broadcasts."""
@@ -301,7 +464,7 @@ class CANWebSocketServer:
                     parsed = _parse_candump_line(line)
                     if parsed is None:
                         continue
-                    timestamp, arb_id, data_hex, is_fd = parsed
+                    timestamp, arb_id, data_hex, dlc, is_fd = parsed
                     if self.filter_ids and arb_id not in self.filter_ids:
                         continue
                     with self._clients_lock:
@@ -311,6 +474,7 @@ class CANWebSocketServer:
                     frame_json = json.dumps(
                         {
                             "type": "frame",
+                            "direction": "rx",
                             "arbitration_id": arb_id,
                             "data": data_hex,
                             "dlc": dlc,
@@ -374,6 +538,7 @@ class CANWebSocketServer:
 
             print(f"  CAN bus connected: {self.bus}")
             self._notify_bus_status(loop, connected=True)
+            self._pycan_bus = bus
 
             try:
                 while self._running:
@@ -393,6 +558,7 @@ class CANWebSocketServer:
                     frame_json = json.dumps(
                         {
                             "type": "frame",
+                            "direction": "rx",
                             "arbitration_id": arb_id,
                             "data": data_hex,
                             "dlc": msg.dlc,
@@ -404,6 +570,7 @@ class CANWebSocketServer:
             except (ConnectionError, OSError) as e:
                 logger.error("python-can reader error: %s", e)
             finally:
+                self._pycan_bus = None
                 try:
                     bus.shutdown()
                 except Exception:
@@ -476,6 +643,8 @@ class CANWebSocketServer:
                 trailing = resp_buf[header_end + 4:]
                 print(f"  Source connected: {host}:{port}")
                 self._notify_bus_status(loop, connected=True)
+                with self._source_sock_lock:
+                    self._source_sock = sock
 
                 buf = trailing
                 sock.settimeout(30)
@@ -525,6 +694,9 @@ class CANWebSocketServer:
                 print(f"  Source lost: {e}")
                 self._notify_bus_status(loop, connected=False, error=str(e))
             finally:
+                with self._source_sock_lock:
+                    if self._source_sock is sock:
+                        self._source_sock = None
                 if sock:
                     try:
                         sock.close()
@@ -575,12 +747,20 @@ class CANWebSocketServer:
         )
         reader_thread.start()
 
+        sender_thread = threading.Thread(
+            target=self._sender_thread,
+            args=(loop,),
+            daemon=True,
+        )
+        sender_thread.start()
+
         while self._running:
             await asyncio.sleep(0.5)
 
         server.close()
         await server.wait_closed()
         reader_thread.join(timeout=3.0)
+        sender_thread.join(timeout=3.0)
         print("\nServer stopped.")
 
     def stop(self):

@@ -16,6 +16,42 @@ pip install .
 pip install ".[monitor]"
 ```
 
+## Web UI
+
+The hosted Web UI at [can-codec.lue-app.com](https://can-codec.lue-app.com/) (also runnable
+locally — see `web/`) provides a browser-based companion to the CLI. All processing happens
+client-side; only live-bus features need the bridge server.
+
+| Page | What it does |
+|------|--------------|
+| **Messages** | Browse / filter the message definitions loaded from your YAML or MAVLink XML. |
+| **Decode** | Paste raw hex → see decoded signals. |
+| **Encode** | Fill signal values → get hex bytes + cansend output, copy or send to the bus. |
+| **Program** | Build multi-step CAN command sequences with notebook-style cells and **closed-loop** control. |
+| **Plot** | Live signal plotter; receives frames over WebSocket from the bridge server. TX frames sent from Program/Encode are tagged and visible on the same timeline. |
+| **Convert** | candump ↔ cansend format conversion. |
+
+### Program page: scripted + closed-loop sequences
+
+The Program page lets you compose a small AST of statements (Send, Wait, Repeat, Every,
+Sweep, Group, Set, Bind, Read) and run it against a live CAN bus. Some highlights:
+
+- **Notebook cells** — top-level Group blocks each get a ▶ Run button; variables persist
+  across cell runs until you click *Reset vars*.
+- **Variables & expressions** — `set x = 1.5`, then use `=x * 2` in any Send / Bind / Read
+  field, including `nodeId` for multi-node messages.
+- **Closed loop** — `Bind  pos ← Telemetry.position @=motor_idx` continuously writes the
+  decoded physical value into the variable on every matching RX frame; `Read` is the
+  one-shot blocking variant with a timeout. A live bindings panel shows current values
+  and last-seen age.
+- **Multi-block drag** — click a block, shift+click another (same parent) to select a
+  range, then drag any of them to move the whole range as one unit.
+- Import/Export the sequence as JSON for sharing or version control.
+
+To enable live bus features (Plot, Program transmit/receive), download the bridge script
+from any of those pages and run it on the machine with the CAN interface — see the
+[Documentation](https://can-codec.lue-app.com/docs) page for the full setup walkthrough.
+
 ## Quick Start
 
 ### 1. Define your device config
