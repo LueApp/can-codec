@@ -164,59 +164,8 @@ def cmd_describe(args):
     print(codec.describe_message(args.message))
 
 
-def cmd_decode(args):
-    """Decode a raw CAN frame."""
-    codec = Codec(args.config)
-
-    can_id = int(args.id, 0)
-    data = parse_hex_data(args.data)
-
-    # MAVLink CAN transport: extract sys_id/comp_id from 29-bit extended CAN ID
-    mavlink_info = None
-    decoded = None
-
-    if args.mavlink:
-        from .mavlink_loader import parse_mavlink_v2_header
-
-        # CAN ID format: 0x10000 | (system_id << 8) | component_id
-        if can_id & 0x10000:  # Check MAVLink marker bit
-            can_sys_id = (can_id >> 8) & 0xFF
-            can_comp_id = can_id & 0xFF
-            mavlink_info = {"sys_id": can_sys_id, "comp_id": can_comp_id}
-
-            # Check if this is a full MAVLink v2 frame (starts with 0xFD)
-            hdr = parse_mavlink_v2_header(data)
-            if hdr is not None:
-                mavlink_info["frame_sys_id"] = hdr["sys_id"]
-                mavlink_info["frame_comp_id"] = hdr["comp_id"]
-                mavlink_info["msg_id"] = hdr["msg_id"]
-                mavlink_info["seq"] = hdr["seq"]
-
-                # Decode payload using the codec engine (message looked up by msg_id)
-                # Pad payload back to full DLC size (MAVLink v2 trims trailing zeros)
-                msg_id = hdr["msg_id"]
-                payload = hdr["payload"]
-                decoded = codec.decode(msg_id, payload)
-                if decoded is None:
-                    print(f"Error: Unknown MAVLink message ID 0x{msg_id:X}", file=sys.stderr)
-                    sys.exit(1)
-            else:
-                print(f"Error: Expected MAVLink v2 frame (starting with 0xFD)", file=sys.stderr)
-                sys.exit(1)
-        else:
-            print(f"Warning: CAN ID 0x{can_id:08X} does not have MAVLink marker bit set", file=sys.stderr)
-            decoded = codec.decode(can_id, data)
-    else:
-        # Standard decode by CAN ID
-        decoded = codec.decode(can_id, data)
-
-    if decoded is None:
-        print(f"Error: Unknown message ID 0x{can_id:03X}", file=sys.stderr)
-        print(f"Known IDs: {', '.join(f'0x{m.id:03X}' for d in codec.devices for m in d.messages)}",
-              file=sys.stderr)
-        sys.exit(1)
-
-    # Override the displayed ID with actual CAN ID for MAVLink
+def _print_decoded(decoded, can_id: int, args, mavlink_info: dict | None):
+    """Render one DecodedMessage, with optional MAVLink context."""
     if mavlink_info:
         decoded.msg_id = can_id
 
@@ -271,6 +220,65 @@ def cmd_decode(args):
                 info_parts.append(f"seq={mavlink_info['seq']}")
             print(f"MAVLink: {', '.join(info_parts)}")
         print(decoded)
+
+
+def cmd_decode(args):
+    """Decode raw CAN frame(s). Multiple data values are reassembled for MAVLink."""
+    codec = Codec(args.config)
+
+    can_id = int(args.id, 0)
+    frames = [parse_hex_data(d) for d in args.data]
+
+    if args.mavlink and (can_id & 0x10000):
+        from .mavlink_loader import MavlinkReassembler, parse_mavlink_v2_header
+
+        can_sys_id = (can_id >> 8) & 0xFF
+        can_comp_id = can_id & 0xFF
+
+        reasm = MavlinkReassembler()
+        completed: list[bytes] = []
+        for f in frames:
+            completed.extend(reasm.feed(can_id, f))
+
+        if not completed:
+            print("Error: No complete MAVLink v2 frame in provided data", file=sys.stderr)
+            sys.exit(1)
+
+        any_decoded = False
+        for full_frame in completed:
+            hdr = parse_mavlink_v2_header(full_frame)
+            if hdr is None:
+                continue
+            mavlink_info = {
+                "sys_id": can_sys_id,
+                "comp_id": can_comp_id,
+                "frame_sys_id": hdr["sys_id"],
+                "frame_comp_id": hdr["comp_id"],
+                "msg_id": hdr["msg_id"],
+                "seq": hdr["seq"],
+            }
+            decoded = codec.decode_mavlink(hdr["msg_id"], hdr["payload"], actual_can_id=can_id)
+            if decoded is None:
+                print(f"Error: Unknown MAVLink message ID 0x{hdr['msg_id']:X}", file=sys.stderr)
+                continue
+            _print_decoded(decoded, can_id, args, mavlink_info)
+            any_decoded = True
+        if not any_decoded:
+            sys.exit(1)
+        return
+
+    if args.mavlink and not (can_id & 0x10000):
+        print(f"Warning: CAN ID 0x{can_id:08X} does not have MAVLink marker bit set", file=sys.stderr)
+
+    # Standard decode (one or more frames)
+    for data in frames:
+        decoded = codec.decode(can_id, data)
+        if decoded is None:
+            print(f"Error: Unknown message ID 0x{can_id:03X}", file=sys.stderr)
+            print(f"Known IDs: {', '.join(f'0x{m.id:03X}' for d in codec.devices for m in d.messages)}",
+                  file=sys.stderr)
+            sys.exit(1)
+        _print_decoded(decoded, can_id, args, None)
 
 
 def cmd_encode(args):
@@ -449,7 +457,9 @@ def main():
     # --- decode ---
     p_dec = sub.add_parser("decode", help="Decode a raw CAN frame")
     p_dec.add_argument("id", help="CAN ID (hex, e.g., 0x201 or 0x00010101 for MAVLink)")
-    p_dec.add_argument("data", help="Data bytes as hex (e.g., 'E8 03 00 00')")
+    p_dec.add_argument("data", nargs="+",
+                       help="Data bytes as hex per CAN frame (e.g., 'E8 03 00 00'). "
+                            "Pass multiple values to reassemble a multi-frame MAVLink message.")
     p_dec.add_argument("--json", action="store_true", help="Output as JSON")
     p_dec.add_argument("--mavlink", action="store_true",
                        help="MAVLink CAN transport mode: extract sys_id/comp_id from CAN ID, auto-detect message by DLC")

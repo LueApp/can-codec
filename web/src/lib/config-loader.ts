@@ -200,14 +200,25 @@ export function parseMavlinkXml(xmlText: string, filename: string = 'unknown'): 
 
     const description = msgEl.querySelector('description')?.textContent?.trim() ?? '';
 
-    // Collect raw fields
-    const rawFields: { name: string; base_type: string; bit_length: number; value_type: Signal['value_type']; array_count: number; wire_size: number; enum_map: Record<number, string>; description: string }[] = [];
+    // Collect raw fields in document order, splitting at <extensions/>.
+    // Core fields go before the marker (sorted by size, in CRC_EXTRA);
+    // extension fields go after (declaration order, excluded from CRC_EXTRA).
+    type RawField = { name: string; base_type: string; bit_length: number; value_type: Signal['value_type']; array_count: number; wire_size: number; enum_map: Record<number, string>; description: string };
+    const coreFields: RawField[] = [];
+    const extFields: RawField[] = [];
+    let inExtensions = false;
 
-    for (const fieldEl of Array.from(msgEl.querySelectorAll('field'))) {
-      const typeStr = fieldEl.getAttribute('type') ?? '';
-      const fieldName = fieldEl.getAttribute('name') ?? '';
-      const fieldEnum = fieldEl.getAttribute('enum') ?? '';
-      const fieldDesc = fieldEl.textContent?.trim() ?? '';
+    for (const child of Array.from(msgEl.children)) {
+      if (child.tagName === 'extensions') {
+        inExtensions = true;
+        continue;
+      }
+      if (child.tagName !== 'field') continue;
+
+      const typeStr = child.getAttribute('type') ?? '';
+      const fieldName = child.getAttribute('name') ?? '';
+      const fieldEnum = child.getAttribute('enum') ?? '';
+      const fieldDesc = child.textContent?.trim() ?? '';
 
       const arrayMatch = typeStr.match(/^(\w+)\[(\d+)\]$/);
       const baseType = arrayMatch ? arrayMatch[1] : typeStr;
@@ -217,7 +228,7 @@ export function parseMavlinkXml(xmlText: string, filename: string = 'unknown'): 
       if (!typeInfo) continue;
       const [bit_length, value_type, wire_size] = typeInfo;
 
-      rawFields.push({
+      const fieldInfo: RawField = {
         name: fieldName,
         base_type: baseType,
         bit_length,
@@ -226,12 +237,15 @@ export function parseMavlinkXml(xmlText: string, filename: string = 'unknown'): 
         wire_size,
         enum_map: fieldEnum && enums[fieldEnum] ? enums[fieldEnum] : {},
         description: fieldDesc,
-      });
+      };
+      (inExtensions ? extFields : coreFields).push(fieldInfo);
     }
 
-    // MAVLink wire ordering: largest type first (stable sort)
-    const wireFields = [...rawFields].sort((a, b) => b.wire_size - a.wire_size);
-    const crc_extra = computeCrcExtra(msgName, wireFields);
+    // Core fields: stable sort by wire size, largest first.
+    // Extensions: declaration order, appended after core.
+    const sortedCore = [...coreFields].sort((a, b) => b.wire_size - a.wire_size);
+    const wireFields = [...sortedCore, ...extFields];
+    const crc_extra = computeCrcExtra(msgName, sortedCore);
 
     // Build signals with sequential bit offsets
     const signals: Signal[] = [];

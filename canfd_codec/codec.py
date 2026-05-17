@@ -791,6 +791,22 @@ class Codec:
         """Look up a MAVLink message by its MAVLink message ID."""
         return self._by_mavlink_id.get(msg_id)
 
+    def decode_mavlink(self, mavlink_msg_id: int, payload: bytes,
+                       actual_can_id: int | None = None) -> DecodedMessage | None:
+        """Decode a MAVLink message payload by its MAVLink msg_id (not CAN arb ID).
+
+        Pads zero-trimmed payloads up to the message's declared DLC.
+        """
+        entry = self._by_mavlink_id.get(mavlink_msg_id)
+        if entry is None:
+            return None
+        _, msg_def = entry
+        if len(payload) < msg_def.dlc:
+            payload = payload + b"\x00" * (msg_def.dlc - len(payload))
+        return decode(msg_def, payload,
+                      actual_id=actual_can_id if actual_can_id is not None else msg_def.id,
+                      node_id=0)
+
     def decode(self, msg_id: int, data: bytes) -> DecodedMessage | None:
         """Decode a CAN frame by ID. Returns None if ID is unknown."""
         result = self._find_message_by_id(msg_id, dlc=len(data))

@@ -325,6 +325,83 @@ export function reassembleMavlinkFrames(frames: Uint8Array[]): Uint8Array {
   return result;
 }
 
+export interface MavlinkBuf {
+  frames: Uint8Array[];
+  timestamps: number[];
+  expectedTotal: number;
+  currentLength: number;
+  is_fd: boolean;
+}
+
+/**
+ * Stateful reassembler for multi-frame MAVLink-over-CAN messages.
+ *
+ * Continuation CAN frames carry no identifier, so when two MAVLink messages
+ * are in flight at the same CAN ID, continuation frames are assigned to the
+ * oldest incomplete buffer (FIFO). Completion is detected from the 0xFD
+ * header's payload_len field (total wire length = 12 + payload_len).
+ */
+export class MavlinkReassembler {
+  private buffers: Map<number, MavlinkBuf[]> = new Map();
+
+  /** Feed one CAN frame's payload. Returns any buffers that just completed. */
+  feed(canId: number, data: Uint8Array, timestamp = 0, is_fd = false): MavlinkBuf[] {
+    if (data.length === 0) return [];
+    const complete: MavlinkBuf[] = [];
+    const isStart = data[0] === 0xFD;
+
+    if (isStart) {
+      const payloadLen = data[1] ?? 0;
+      const expectedTotal = 12 + payloadLen;
+      const buf: MavlinkBuf = {
+        frames: [data],
+        timestamps: [timestamp],
+        expectedTotal,
+        currentLength: data.length,
+        is_fd,
+      };
+      if (buf.currentLength >= expectedTotal) {
+        complete.push(buf);
+      } else {
+        const list = this.buffers.get(canId) ?? [];
+        list.push(buf);
+        this.buffers.set(canId, list);
+      }
+    } else {
+      const list = this.buffers.get(canId);
+      if (list && list.length > 0) {
+        const buf = list[0];
+        buf.frames.push(data);
+        buf.timestamps.push(timestamp);
+        buf.currentLength += data.length;
+        if (buf.currentLength >= buf.expectedTotal) {
+          complete.push(buf);
+          list.shift();
+          if (list.length === 0) this.buffers.delete(canId);
+        }
+      }
+    }
+    return complete;
+  }
+
+  /** Drop in-flight state and return whatever was pending (incomplete buffers). */
+  flush(): { canId: number; buf: MavlinkBuf }[] {
+    const out: { canId: number; buf: MavlinkBuf }[] = [];
+    for (const [canId, list] of this.buffers) {
+      for (const buf of list) out.push({ canId, buf });
+    }
+    this.buffers.clear();
+    return out;
+  }
+
+  /** Number of in-flight buffers across all canIds. */
+  pendingCount(): number {
+    let n = 0;
+    for (const list of this.buffers.values()) n += list.length;
+    return n;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Candump parser
 // ---------------------------------------------------------------------------
@@ -341,24 +418,35 @@ export interface CandumpFrame {
 /**
  * Parse a candump/cansend line.
  * Formats:
- *   vcan0 101#E803050000000000           (classic CAN)
- *   vcan0 00010101##1FD01000000...       (CAN FD, ##1 = BRS flag)
- *   (timestamp) vcan0 101 [8] E8 03 05   (candump -l format)
+ *   vcan0 101#E803050000000000                              (classic CAN)
+ *   vcan0 00010101##1FD01000000...                          (CAN FD, ##1 = BRS flag)
+ *   (timestamp) vcan0 101 [8] E8 03 05                      (candump -l format)
+ *   (timestamp) can0 TX B - 00010101 [35] FD 55 00 ...      (direction/flag variant)
  */
 export function parseCandump(line: string): CandumpFrame | null {
-  const trimmed = line.trim();
+  let trimmed = line.trim();
   if (!trimmed) return null;
 
-  // Format: [(timestamp)] interface ID#DATA or interface ID##FDATA
+  // Extract a leading "(NUMBER.NUMBER)" timestamp if present, before running the
+  // body regex. The body parsers won't see it. Done here because some candump
+  // variants insert direction/flag tokens (e.g. "TX B -") between iface and ID,
+  // which would otherwise force the body regex to backtrack past the timestamp.
+  let ts: number | undefined;
+  const tsMatch = trimmed.match(/^\((\d+(?:\.\d+)?)\)\s+(.+)$/);
+  if (tsMatch) {
+    ts = parseFloat(tsMatch[1]);
+    trimmed = tsMatch[2];
+  }
+
+  // Format: interface ID#DATA or interface ID##FDATA
   const cansendMatch = trimmed.match(
-    /^(?:\((\d+\.\d+)\)\s+)?(\S+)\s+([0-9A-Fa-f]+)(##([01]))?#?([0-9A-Fa-f]*)$/
+    /^(\S+)\s+([0-9A-Fa-f]+)(##([01]))?#?([0-9A-Fa-f]*)$/
   );
   if (cansendMatch) {
-    const ts = cansendMatch[1] ? parseFloat(cansendMatch[1]) : undefined;
-    const iface = cansendMatch[2];
-    const idStr = cansendMatch[3];
-    const isFD = cansendMatch[4] !== undefined;
-    const hexData = cansendMatch[6] || '';
+    const iface = cansendMatch[1];
+    const idStr = cansendMatch[2];
+    const isFD = cansendMatch[3] !== undefined;
+    const hexData = cansendMatch[5] || '';
     const canId = parseInt(idStr, 16);
     const bytes = new Uint8Array(hexData.length / 2);
     for (let i = 0; i < bytes.length; i++)
@@ -366,17 +454,17 @@ export function parseCandump(line: string): CandumpFrame | null {
     return { interface: iface, canId, data: bytes, isFD, isExtended: idStr.length > 3, timestamp: ts };
   }
 
-  // Format: (timestamp) interface ID [DLC] HH HH HH ...
+  // Format: interface [optional direction/flag tokens] ID [DLC] HH HH HH ...
+  // The (?:\S+\s+){0,4} chunk absorbs up to 4 short non-ID tokens like "TX B -".
   const candumpMatch = trimmed.match(
-    /(?:\((\d+\.\d+)\)\s+)?(\S+)\s+([0-9A-Fa-f]+)\s+\[(\d+)\]\s+((?:[0-9A-Fa-f]{2}\s*)+)/
+    /^(\S+)\s+(?:\S+\s+){0,4}([0-9A-Fa-f]{3,8})\s+\[(\d+)\]\s+((?:[0-9A-Fa-f]{2}\s*)+)/
   );
   if (candumpMatch) {
-    const ts = candumpMatch[1] ? parseFloat(candumpMatch[1]) : undefined;
-    const iface = candumpMatch[2];
-    const canId = parseInt(candumpMatch[3], 16);
-    const hexParts = candumpMatch[5].trim().split(/\s+/);
+    const iface = candumpMatch[1];
+    const canId = parseInt(candumpMatch[2], 16);
+    const hexParts = candumpMatch[4].trim().split(/\s+/);
     const bytes = new Uint8Array(hexParts.map(h => parseInt(h, 16)));
-    return { interface: iface, canId, data: bytes, isFD: bytes.length > 8, isExtended: candumpMatch[3].length > 3, timestamp: ts };
+    return { interface: iface, canId, data: bytes, isFD: bytes.length > 8, isExtended: candumpMatch[2].length > 3, timestamp: ts };
   }
 
   return null;
@@ -437,7 +525,16 @@ export function encode(msgDef: Message, values: Record<string, string | number |
       if (r === null) throw new Error(`Unknown enum value '${val}' for signal '${sig.name}'. Valid: ${Object.values(sig.enum_map).join(', ')}`);
       raw = r;
     } else {
-      raw = physicalToRaw(Number(val), sig);
+      const num = typeof val === 'number' ? val : Number(val);
+      if (isNaN(num)) {
+        // Don't silently pack NaN bits — that's how forgotten variable references end up
+        // sending garbage onto the bus. Hint at the most likely cause.
+        const hint = typeof val === 'string'
+          ? ` (did you mean '=${val}' to evaluate as a variable / expression?)`
+          : '';
+        throw new Error(`Invalid value '${val}' for signal '${sig.name}': not a number${hint}`);
+      }
+      raw = physicalToRaw(num, sig);
     }
 
     if (sig.byte_order === 'big_endian') {

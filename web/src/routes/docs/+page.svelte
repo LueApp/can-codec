@@ -1,5 +1,6 @@
 <script lang="ts">
-  let lang = $state<'en' | 'zh'>('en');
+  import { i18n } from '$lib/i18n.svelte';
+  const lang = $derived(i18n.locale);
 </script>
 
 <div class="container">
@@ -25,16 +26,6 @@
         </svg>
         GitHub
       </a>
-      <div style="display: flex; gap: 4px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;">
-        <button
-          onclick={() => lang = 'en'}
-          style="padding: 4px 14px; font-size: 13px; border-radius: 4px; {lang === 'en' ? 'background: var(--accent); color: #0f1419; font-weight: 600;' : 'background: none; color: var(--text-dim);'}"
-        >EN</button>
-        <button
-          onclick={() => lang = 'zh'}
-          style="padding: 4px 14px; font-size: 13px; border-radius: 4px; {lang === 'zh' ? 'background: var(--accent); color: #0f1419; font-weight: 600;' : 'background: none; color: var(--text-dim);'}"
-        >中文</button>
-      </div>
     </div>
   </div>
 
@@ -51,6 +42,7 @@
           { label: 'Messages', href: '/', desc: 'Browse & filter' },
           { label: 'Decode', href: '/decode', desc: 'Raw → signals' },
           { label: 'Encode', href: '/encode', desc: 'Signals → raw' },
+          { label: 'Program', href: '/program', desc: 'Notebook + closed-loop' },
           { label: 'Plot', href: '/plot', desc: 'Live monitor' },
           { label: 'Convert', href: '/convert', desc: 'candump ↔ cansend' },
           { label: 'Changelog', href: '/changelog', desc: 'Version history' },
@@ -73,7 +65,7 @@
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">2. Browse Messages</h3>
       <p>After loading, the <a href="/">Messages</a> page lists all decoded message definitions grouped by device. Each row shows the CAN ID, message name, direction (TX/RX), DLC, and description.</p>
 
-      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">3. Use Decode / Encode / Plot</h3>
+      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">3. Use Decode / Encode / Program / Plot</h3>
       <p>Navigate to any tool page using the nav bar. The loaded configs are shared across all pages in the same session.</p>
     </div>
 
@@ -130,6 +122,76 @@
             <li>Click <strong>Encode</strong> to generate the frame</li>
             <li>Output is shown as hex bytes and in cansend format (<code>can0 481##1FF7F…</code>)</li>
             <li>Click <strong>Copy</strong> to copy the cansend command to clipboard</li>
+            <li>If you're connected to a bus, click <strong>Send to bus</strong> to transmit. Click <strong>+ Sequence</strong> to push the current message into the Program page as a Send block.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="doc-section">
+        <div class="doc-section-label">
+          <a href="/program" class="section-link">Program <span style="font-size: 11px; font-weight: 400;">/program</span></a>
+        </div>
+        <div class="doc-section-body">
+          <p>Build and run multi-step CAN command sequences (a small AST of statements). Mix open-loop sends with closed-loop signal bindings to react to live telemetry.</p>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Connection</p>
+          <ul class="doc-list">
+            <li>Shares the same bus connection as the Plot and Encode pages. Connect once on any page and all three see live frames.</li>
+            <li>Use the <strong>Download server script</strong> button if you haven't set up the bridge yet — see <a href="#live-monitor">Live Monitor Setup</a>.</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Statement types</p>
+          <ul class="doc-list">
+            <li><strong>Send</strong> — encode and transmit a CAN frame. Pick a message, fill values, set node id (or expression for multi-node). For messages with a broadcast id, tick <strong>broadcast</strong> to address all nodes in one frame — node tabs appear so you can edit each node's values independently.</li>
+            <li><strong>Wait</strong> — sleep for N ms.</li>
+            <li><strong>Repeat</strong> — run a body N times.</li>
+            <li><strong>Every</strong> — fire a body on a periodic timer. Unset <em>duration</em> runs in the background while the rest of the sequence continues; set <em>duration</em> blocks for that many ms.</li>
+            <li><strong>Sweep</strong> — auto-generate a series of Sends stepping one signal from <code>from</code> to <code>to</code> by <code>step</code>, one frame every <em>period</em> ms.</li>
+            <li><strong>Group</strong> — labeled container for organisation. Top-level groups also act as notebook cells (see below).</li>
+            <li><strong>Set</strong> — assign <code>name = expr</code>. Expressions support <code>+ - * / %</code>, parentheses, hex/decimal/binary literals, and references to other variables.</li>
+            <li><strong>Bind</strong> — continuous closed loop: <code>varName ← Msg.signal</code>. Each matching RX frame decodes the signal's physical value and writes it to the variable. Persists across runs until the binding is replaced or <em>Reset vars</em> is clicked.</li>
+            <li><strong>Read</strong> — one-shot blocking variant of Bind: waits for the next matching frame (with a timeout), writes the value, then advances.</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Variables &amp; expressions</p>
+          <ul class="doc-list">
+            <li>Any Send field can take an expression by prefixing with <code>=</code>: e.g. <code>position = =target_pos * 2</code>.</li>
+            <li><code>nodeId</code> on Send, Bind and Read accepts the same syntax — handy for closed-loop control of one motor out of many: <code>set motor_idx = 2; bind pos ← Telemetry.position @=motor_idx</code>.</li>
+            <li>Forgetting the <code>=</code> in front of a variable name raises a friendly error (no silent <code>NaN</code> sends).</li>
+            <li>Variables persist across cell runs and Run All — only <strong>Reset vars</strong> clears them.</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Notebook-style cells</p>
+          <ul class="doc-list">
+            <li>Each top-level <strong>Group</strong> block gets its own ▶ Run button (Jupyter-cell style).</li>
+            <li>Click ▶ to run just that cell. Variables set in one cell are visible to the next.</li>
+            <li><strong>Run All</strong> runs the whole sequence top to bottom; <strong>Stop</strong> cancels in-flight wait/every/read.</li>
+            <li><strong>Reset vars</strong> wipes the vars map and drops all active bindings (use to start fresh).</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Drag &amp; rearrange</p>
+          <ul class="doc-list">
+            <li>Click and drag any block (anywhere on the row) to a new position — before, after, or inside a container.</li>
+            <li><strong>Shift+click</strong> a second block (same parent) to select a contiguous range; drag any of them to move the whole range together.</li>
+            <li><kbd>Esc</kbd> clears the selection. <strong>⎘</strong> duplicates a block; <strong>×</strong> removes it.</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Live bindings panel</p>
+          <ul class="doc-list">
+            <li>Appears under the run controls whenever a Bind has been executed.</li>
+            <li>Each row shows <code>varName ← Msg.signal[@node] : lastValue  Ns ago</code>, updated on every matching frame.</li>
+            <li>Bindings re-resolve their <code>nodeId</code> expression once, when the Bind statement executes — re-run the cell to chase a moving target.</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">TX/RX in the Plot view</p>
+          <ul class="doc-list">
+            <li>Frames the Program page transmits also appear in <a href="/plot">Plot</a>, tagged <strong>TX</strong> in the status bar, raw log and chart tooltips so you can correlate command and response on one timeline.</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Import / Export</p>
+          <ul class="doc-list">
+            <li><strong>Export</strong> saves the current sequence as JSON for sharing or version control.</li>
+            <li><strong>Import</strong> loads a JSON file back into the page.</li>
           </ul>
         </div>
       </div>
@@ -159,14 +221,18 @@
           <ul class="doc-list">
             <li><strong>Signal selector</strong> — check/uncheck series; drag to group into panels</li>
             <li><strong>Views</strong> — Signals (line chart), Timeline (per-message event timing), Interval (per-signal delta-time)</li>
-            <li><strong>Zoom</strong> — scroll wheel, pinch, or drag to zoom; double-click to reset</li>
-            <li><strong>Timeline markers A/B</strong> — click on the timeline chart to set markers and measure Δt</li>
-            <li><strong>t=0 origin</strong> — right-click a data point in the timeline to set it as the time origin</li>
+            <li><strong>Zoom &amp; pan</strong> — scroll wheel zooms time; <kbd>Shift</kbd>+scroll zooms value; <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+scroll zooms both. Left-drag pans, <kbd>Shift</kbd>+drag box-zooms, double-click fits to data. Pinch on touch zooms both axes.</li>
+            <li><strong>Fit X / Fit Y / Fit</strong> — toolbar buttons. <em>Fit</em> resets both axes, <em>Fit X</em> auto-scales only the time axis (preserves Y zoom), <em>Fit Y</em> only the value axis.</li>
+            <li><strong>Follow live</strong> (live mode only) — auto-scrolls the X axis with a rolling window. Adjust the window seconds inline. <em>Manually zooming or panning pauses follow</em> so you can investigate without the stream snapping you back; click <em>Follow live</em> again to resume.</li>
+            <li><strong>Click a data point</strong> — copies the candump line (id + bytes + timestamp) to the clipboard</li>
+            <li><strong>Timeline markers A/B</strong> — click <em>Measure Δt</em> then pick two frames on the timeline to measure time delta</li>
+            <li><strong>t=0 origin</strong> — click <em>Set t=0</em> then pick a frame on the timeline to make it the time origin</li>
             <li><strong>Export Layout</strong> / <strong>Import Layout</strong> — save/restore panel arrangement as YAML</li>
             <li><strong>Save PNG</strong> — export all charts as a PNG image</li>
             <li><strong>Record to file</strong> — save raw frames to a <code>.log</code> file during live capture</li>
             <li><strong>Clear</strong> — reset all collected data</li>
           </ul>
+          <p style="margin-top: 8px; font-size: 12px; color: var(--text-dim);">Tip: the <kbd>?</kbd> button next to <em>Clear</em> on the Plot page re-shows the gesture cheat-sheet if you've dismissed it.</p>
         </div>
       </div>
 
@@ -335,6 +401,7 @@ canfd-codec -c ./configs serve --bus /dev/ttyACM0 --interface slcan --bitrate 10
           { label: 'Messages（消息）', href: '/', desc: '浏览与筛选' },
           { label: 'Decode（解码）', href: '/decode', desc: '原始帧 → 信号' },
           { label: 'Encode（编码）', href: '/encode', desc: '信号 → 原始帧' },
+          { label: 'Program（程序）', href: '/program', desc: 'Notebook + 闭环' },
           { label: 'Plot（绘图）', href: '/plot', desc: '实时监控' },
           { label: 'Convert（转换）', href: '/convert', desc: 'candump ↔ cansend' },
           { label: 'Changelog（更新日志）', href: '/changelog', desc: '版本历史' },
@@ -357,7 +424,7 @@ canfd-codec -c ./configs serve --bus /dev/ttyACM0 --interface slcan --bitrate 10
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">2. 浏览消息定义</h3>
       <p>加载完成后，<a href="/">Messages</a> 页面会按设备分组展示所有消息定义。每行显示 CAN ID、消息名称、收发方向（TX/RX）、DLC 和描述。</p>
 
-      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">3. 使用解码 / 编码 / 绘图功能</h3>
+      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">3. 使用解码 / 编码 / Program / 绘图功能</h3>
       <p>通过导航栏切换到任意工具页面。当前会话加载的配置文件在所有页面间共享。</p>
     </div>
 
@@ -414,6 +481,76 @@ canfd-codec -c ./configs serve --bus /dev/ttyACM0 --interface slcan --bitrate 10
             <li>点击 <strong>Encode</strong> 生成帧</li>
             <li>输出为十六进制字节，并提供 cansend 格式（<code>can0 481##1FF7F…</code>）</li>
             <li>点击 <strong>Copy</strong> 将 cansend 命令复制到剪贴板</li>
+            <li>若已连接到总线，点击 <strong>Send to bus</strong> 直接发送；点击 <strong>+ Sequence</strong> 把当前消息作为 Send 块推送到 Program 页面。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="doc-section">
+        <div class="doc-section-label">
+          <a href="/program" class="section-link">Program <span style="font-size: 11px; font-weight: 400;">/program</span></a>
+        </div>
+        <div class="doc-section-body">
+          <p>构建并运行多步 CAN 命令序列（小型 AST）。开环发送与闭环信号绑定可混合使用，让程序对实时遥测做出反应。</p>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">连接</p>
+          <ul class="doc-list">
+            <li>与 Plot、Encode 页面共享同一条总线连接。任一页面连接后，三处都能看到实时帧。</li>
+            <li>尚未配置桥接？点击 <strong>Download server script</strong>，或参考 <a href="#live-monitor-zh">实时监控配置</a>。</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">语句类型</p>
+          <ul class="doc-list">
+            <li><strong>Send</strong>——编码并发送 CAN 帧。选择消息、填写值，设置节点号（也可用表达式）。若消息配置了广播 ID，勾选 <strong>broadcast</strong> 即可一帧寻址所有节点；勾选后会出现节点页签，可分别编辑每个节点的数值。</li>
+            <li><strong>Wait</strong>——暂停 N 毫秒。</li>
+            <li><strong>Repeat</strong>——将一段子序列执行 N 次。</li>
+            <li><strong>Every</strong>——按周期定时触发子序列。未设置 <em>duration</em> 时在后台运行（外层立刻继续）；设置后则阻塞指定毫秒数。</li>
+            <li><strong>Sweep</strong>——自动生成一组 Send，将某个信号从 <code>from</code> 步进到 <code>to</code>，每 <em>period</em> 毫秒一帧。</li>
+            <li><strong>Group</strong>——带标签的容器。顶层 Group 同时作为 notebook 的 cell（见下文）。</li>
+            <li><strong>Set</strong>——赋值 <code>name = expr</code>，支持 <code>+ - * / %</code>、括号、十/十六/二进制字面量，以及对其它变量的引用。</li>
+            <li><strong>Bind</strong>——持续闭环：<code>varName ← Msg.signal</code>。每次匹配到的 RX 帧都把该信号的物理值写入变量。绑定持续存在，直到重新绑定或点击 <em>Reset vars</em>。</li>
+            <li><strong>Read</strong>——一次性阻塞读取：等待下一条匹配帧（带超时），写入变量后继续。</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">变量与表达式</p>
+          <ul class="doc-list">
+            <li>Send 字段以 <code>=</code> 开头即视为表达式：例如 <code>position = =target_pos * 2</code>。</li>
+            <li>Send、Bind、Read 的 <code>nodeId</code> 同样支持表达式——便于在多电机系统中绑定单个节点：<code>set motor_idx = 2; bind pos ← Telemetry.position @=motor_idx</code>。</li>
+            <li>忘记 <code>=</code> 直接写变量名会报错，避免静默发送 <code>NaN</code>。</li>
+            <li>变量跨 cell 运行、跨 Run All 持久，只有 <strong>Reset vars</strong> 会清空。</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Notebook cell 模式</p>
+          <ul class="doc-list">
+            <li>每个顶层 <strong>Group</strong> 都有自己的 ▶ Run 按钮（类似 Jupyter 的 cell）。</li>
+            <li>点击 ▶ 只运行该 cell。前一个 cell 写入的变量对后一个 cell 可见。</li>
+            <li><strong>Run All</strong> 从头到尾运行整张表；<strong>Stop</strong> 中断 wait / every / read。</li>
+            <li><strong>Reset vars</strong> 清空所有变量并取消全部 Bind（用于重头开始）。</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">拖拽与重排</p>
+          <ul class="doc-list">
+            <li>点击块的任意空白处拖到新位置——前、后、或拖入容器内部。</li>
+            <li><strong>Shift+点击</strong> 同一父级下的第二个块以选中连续范围，拖动其中任一块即可一起移动。</li>
+            <li><kbd>Esc</kbd> 清除选择。<strong>⎘</strong> 复制块；<strong>×</strong> 删除块。</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">实时绑定面板</p>
+          <ul class="doc-list">
+            <li>有 Bind 执行后，运行控制下方会自动出现绑定面板。</li>
+            <li>每行显示 <code>varName ← Msg.signal[@node] : lastValue  Ns ago</code>，每帧匹配后更新。</li>
+            <li>Bind 的 <code>nodeId</code> 表达式在该语句执行时一次性解析——要追随变量变化，请重新执行 cell。</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">Plot 中的 TX/RX 区分</p>
+          <ul class="doc-list">
+            <li>Program 页面发送的帧同样在 <a href="/plot">Plot</a> 中显示，状态栏、原始日志、tooltip 都标记为 <strong>TX</strong>，可在同一时间线上对照命令与响应。</li>
+          </ul>
+
+          <p style="font-weight: 600; margin-top: 12px; margin-bottom: 4px;">导入 / 导出</p>
+          <ul class="doc-list">
+            <li><strong>Export</strong> 将当前序列保存为 JSON，便于分享或纳入版本管理。</li>
+            <li><strong>Import</strong> 加载 JSON 重新填入页面。</li>
           </ul>
         </div>
       </div>
@@ -443,14 +580,18 @@ canfd-codec -c ./configs serve --bus /dev/ttyACM0 --interface slcan --bitrate 10
           <ul class="doc-list">
             <li><strong>信号选择器</strong>——勾选/取消信号系列；拖拽可分组到不同面板</li>
             <li><strong>视图切换</strong>——Signals（折线图）、Timeline（消息事件时序）、Interval（逐信号时间间隔）</li>
-            <li><strong>缩放</strong>——滚轮缩放、双指缩放或框选缩放；双击复位</li>
-            <li><strong>时间线标记 A/B</strong>——在时序图上点击设置标记并测量 Δt</li>
-            <li><strong>t=0 起点</strong>——在时序图上右键点击数据点，将其设为时间原点</li>
+            <li><strong>缩放与平移</strong>——滚轮缩放时间轴；<kbd>Shift</kbd>+滚轮缩放数值轴；<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+滚轮同时缩放双轴。左键拖拽平移，<kbd>Shift</kbd>+拖拽框选缩放，双击适配数据。触摸双指捏合同时缩放双轴。</li>
+            <li><strong>Fit X / Fit Y / Fit</strong>——工具栏按钮。<em>Fit</em> 复位双轴；<em>Fit X</em> 仅自适应时间轴（保留 Y 缩放）；<em>Fit Y</em> 仅自适应数值轴。</li>
+            <li><strong>Follow live</strong>（仅实时模式）——自动滚动 X 轴跟随最新数据，可在按钮旁修改窗口秒数。<em>手动缩放或平移会暂停跟随</em>，避免实时流不断把视图拉回，方便排查；再次点击 <em>Follow live</em> 即可恢复。</li>
+            <li><strong>点击数据点</strong>——将该帧的 candump 行（id + 字节 + 时间戳）复制到剪贴板</li>
+            <li><strong>时间线标记 A/B</strong>——点击 <em>Measure Δt</em> 后在时序图上选两帧测量时间差</li>
+            <li><strong>t=0 起点</strong>——点击 <em>Set t=0</em> 后在时序图上选一帧将其设为时间原点</li>
             <li><strong>导出/导入布局</strong>——将面板排列保存为 YAML 文件</li>
             <li><strong>保存 PNG</strong>——将所有图表导出为 PNG 图像</li>
             <li><strong>录制到文件</strong>——实时采集时将原始帧保存为 <code>.log</code> 文件</li>
             <li><strong>Clear</strong>——清空所有已采集数据</li>
           </ul>
+          <p style="margin-top: 8px; font-size: 12px; color: var(--text-dim);">提示：Plot 页面 <em>Clear</em> 按钮旁的 <kbd>?</kbd> 可重新显示手势速查条。</p>
         </div>
       </div>
 

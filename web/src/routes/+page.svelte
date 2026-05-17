@@ -1,6 +1,7 @@
 <script lang="ts">
   import { codecStore } from '$lib/codec-store.svelte';
   import { CONFIG_TEMPLATES } from '$lib/templates';
+  import { t } from '$lib/i18n.svelte';
 
   let search = $state('');
   let selectedDevice = $state('');
@@ -37,18 +38,18 @@
 
 <div class="container">
   <div class="page-header">
-    <h1>Messages</h1>
-    <p>Browse all loaded CAN message definitions</p>
+    <h1>{t('messages.title')}</h1>
+    <p>{t('messages.subtitle')}</p>
   </div>
 
   <!-- Config Management Card -->
   <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: {codecStore.configs.length > 0 ? '16px' : '0'};">
-      <h2 style="margin-bottom: 0;">Configs ({codecStore.configs.length})</h2>
+      <h2 style="margin-bottom: 0;">{t('messages.configs_heading')} ({codecStore.configs.length})</h2>
       <div style="display: flex; gap: 8px; align-items: center;">
         {#if codecStore.configs.length > 1}
-          <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.enableAllConfigs()}>All</button>
-          <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.disableAllConfigs()}>None</button>
+          <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.enableAllConfigs()}>{t('messages.all')}</button>
+          <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.disableAllConfigs()}>{t('messages.none')}</button>
           <span style="width: 1px; height: 20px; background: var(--border);"></span>
         {/if}
         <input bind:this={fileInput} type="file" accept=".yaml,.yml,.xml" multiple
@@ -56,14 +57,14 @@
         <input bind:this={folderInput} type="file" accept=".yaml,.yml,.xml"
           style="display:none" onchange={(e) => handleFiles((e.target as HTMLInputElement).files)}
           webkitdirectory />
-        <button onclick={() => fileInput.click()}>+ Files</button>
-        <button onclick={() => folderInput.click()}>+ Folder</button>
+        <button onclick={() => fileInput.click()}>{t('nav.add_files')}</button>
+        <button onclick={() => folderInput.click()}>{t('nav.add_folder')}</button>
       </div>
     </div>
     {#if codecStore.configs.length === 0}
       <div style="text-align: center; padding: 24px; color: var(--text-dim);">
-        <p style="margin-bottom: 16px;">Upload YAML or MAVLink XML config files to get started</p>
-        <p style="margin-bottom: 12px; font-size: 13px;">Or load an example template:</p>
+        <p style="margin-bottom: 16px;">{t('messages.empty_hint')}</p>
+        <p style="margin-bottom: 12px; font-size: 13px;">{t('messages.template_hint')}</p>
         <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
           {#each CONFIG_TEMPLATES as tmpl}
             <button onclick={() => codecStore.loadTemplate(tmpl.id)} style="display: flex; flex-direction: column; align-items: center; padding: 12px 20px;">
@@ -89,13 +90,13 @@
               </span>
             </div>
           </div>
-          <button class="danger" style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.removeConfig(cfg.filename)}>Remove</button>
+          <button class="danger" style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.removeConfig(cfg.filename)}>{t('messages.remove')}</button>
         </div>
       {/each}
-      {#if CONFIG_TEMPLATES.some(t => !codecStore.configs.find(c => c.filename === t.filename))}
+      {#if CONFIG_TEMPLATES.some(tpl => !codecStore.configs.find(c => c.filename === tpl.filename))}
         <div style="padding: 8px 0; border-top: 1px solid var(--border); margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <span style="font-size: 12px; color: var(--text-dim);">Templates:</span>
-          {#each CONFIG_TEMPLATES.filter(t => !codecStore.configs.find(c => c.filename === t.filename)) as tmpl}
+          <span style="font-size: 12px; color: var(--text-dim);">{t('messages.templates_label')}</span>
+          {#each CONFIG_TEMPLATES.filter(tpl => !codecStore.configs.find(c => c.filename === tpl.filename)) as tmpl}
             <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.loadTemplate(tmpl.id)}>+ {tmpl.name}</button>
           {/each}
         </div>
@@ -106,9 +107,9 @@
   {#if allMessages.length > 0}
     <div class="card" style="padding: 16px;">
       <div class="form-row" style="margin-bottom: 0;">
-        <input placeholder="Search messages..." bind:value={search} />
+        <input placeholder={t('messages.search_placeholder')} bind:value={search} />
         <select bind:value={selectedDevice}>
-          <option value="">All devices ({allMessages.length} messages)</option>
+          <option value="">{t('messages.all_devices')} ({allMessages.length} {t('messages.count_messages')})</option>
           {#each deviceNames as name}
             {@const count = allMessages.filter(m => m.device === name).length}
             <option value={name}>{name} ({count})</option>
@@ -121,19 +122,19 @@
       <div class="card" style="padding: 0; overflow: hidden;">
         <div style="padding: 12px 16px; background: var(--bg-input); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px;">
           <strong>{device}</strong>
-          <span style="font-size: 12px; color: var(--text-dim);">({msgs.length} messages)</span>
+          <span style="font-size: 12px; color: var(--text-dim);">({msgs.length} {t('messages.count_messages')})</span>
           {#if msgs[0]?.mavlink}
-            <span class="tag" style="background:rgba(139,148,158,0.15); color:var(--text-dim); font-size:10px;">MAVLink</span>
+            <span class="tag" style="background:rgba(139,148,158,0.15); color:var(--text-dim); font-size:10px;">{t('messages.mavlink_tag')}</span>
           {/if}
           <span style="margin-left: auto; display: flex; gap: 4px;">
-            <button style="padding: 2px 8px; font-size: 11px;" onclick={() => codecStore.enableAllMessages(msgs[0].filename)}>All</button>
-            <button style="padding: 2px 8px; font-size: 11px;" onclick={() => codecStore.disableAllMessages(msgs[0].filename)}>None</button>
+            <button style="padding: 2px 8px; font-size: 11px;" onclick={() => codecStore.enableAllMessages(msgs[0].filename)}>{t('messages.all')}</button>
+            <button style="padding: 2px 8px; font-size: 11px;" onclick={() => codecStore.disableAllMessages(msgs[0].filename)}>{t('messages.none')}</button>
           </span>
         </div>
         <table>
           <thead>
             <tr>
-              <th style="width: 36px;"></th><th>ID</th><th>Name</th><th>Dir</th><th>DLC</th><th>Description</th>
+              <th style="width: 36px;"></th><th>{t('messages.col_id')}</th><th>{t('messages.col_name')}</th><th>{t('messages.col_dir')}</th><th>{t('messages.col_dlc')}</th><th>{t('messages.col_description')}</th>
             </tr>
           </thead>
           <tbody>
@@ -153,7 +154,7 @@
                 <td>
                   <strong>{msg.name}</strong>
                   {#if (() => { const f = codecStore.getMessageFilter(msg.filename, msg.name); return f && (f.disabledNodes.length > 0 || f.disabledSignals.length > 0 || Object.keys(f.disabledEnumValues ?? {}).length > 0); })()}
-                    <span class="tag" style="background: rgba(210,153,34,0.15); color: var(--orange); font-size: 10px; margin-left: 6px;">filtered</span>
+                    <span class="tag" style="background: rgba(210,153,34,0.15); color: var(--orange); font-size: 10px; margin-left: 6px;">{t('messages.filtered')}</span>
                   {/if}
                 </td>
                 <td><span class="tag {msg.direction}">{msg.direction.toUpperCase()}</span></td>
@@ -171,11 +172,11 @@
                         {@const nodeIds = Array.from({length: msg.node_count}, (_, i) => msg.node_id_start + i)}
                         <div style="margin-bottom: 16px;">
                           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                            <strong style="font-size: 13px; color: var(--text-dim);">Nodes ({msg.node_count})</strong>
+                            <strong style="font-size: 13px; color: var(--text-dim);">{t('messages.nodes')} ({msg.node_count})</strong>
                             <button style="padding: 2px 8px; font-size: 11px;"
-                              onclick={() => codecStore.enableAllNodes(msg.filename, msg.name)}>All</button>
+                              onclick={() => codecStore.enableAllNodes(msg.filename, msg.name)}>{t('messages.all')}</button>
                             <button style="padding: 2px 8px; font-size: 11px;"
-                              onclick={() => codecStore.disableAllNodes(msg.filename, msg.name, nodeIds)}>None</button>
+                              onclick={() => codecStore.disableAllNodes(msg.filename, msg.name, nodeIds)}>{t('messages.none')}</button>
                           </div>
                           <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                             {#each nodeIds as nodeId}
@@ -199,12 +200,12 @@
                         <div style="margin-bottom: 16px;">
                           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <strong style="font-size: 13px; color: var(--text-dim);">
-                              {enumSig.name} filter ({enumEntries.length})
+                              {enumSig.name} {t('messages.filter_label')} ({enumEntries.length})
                             </strong>
                             <button style="padding: 2px 8px; font-size: 11px;"
-                              onclick={() => codecStore.enableAllEnumValues(msg.filename, msg.name, enumSig.name)}>All</button>
+                              onclick={() => codecStore.enableAllEnumValues(msg.filename, msg.name, enumSig.name)}>{t('messages.all')}</button>
                             <button style="padding: 2px 8px; font-size: 11px;"
-                              onclick={() => codecStore.disableAllEnumValues(msg.filename, msg.name, enumSig.name, allEnumValues)}>None</button>
+                              onclick={() => codecStore.disableAllEnumValues(msg.filename, msg.name, enumSig.name, allEnumValues)}>{t('messages.none')}</button>
                           </div>
                           <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                             {#each enumEntries as [key, name]}
@@ -222,14 +223,14 @@
 
                       <!-- Signals table -->
                       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                        <strong style="color: var(--text-dim); font-size: 13px;">Signals ({msgDef.signals.length})</strong>
+                        <strong style="color: var(--text-dim); font-size: 13px;">{t('messages.signals')} ({msgDef.signals.length})</strong>
                         <button style="padding: 2px 8px; font-size: 11px;"
-                          onclick={() => codecStore.enableAllSignals(msg.filename, msg.name)}>All</button>
+                          onclick={() => codecStore.enableAllSignals(msg.filename, msg.name)}>{t('messages.all')}</button>
                         <button style="padding: 2px 8px; font-size: 11px;"
-                          onclick={() => codecStore.disableAllSignals(msg.filename, msg.name, msgDef.signals.map(s => s.name))}>None</button>
+                          onclick={() => codecStore.disableAllSignals(msg.filename, msg.name, msgDef.signals.map(s => s.name))}>{t('messages.none')}</button>
                       </div>
                       <table style="font-size: 13px;">
-                        <thead><tr><th style="width: 36px;"></th><th>Name</th><th>Bits</th><th>Type</th><th>Scale/Offset</th><th>Unit</th><th>Enum/Bitfield</th></tr></thead>
+                        <thead><tr><th style="width: 36px;"></th><th>{t('messages.col_name')}</th><th>{t('messages.col_bits')}</th><th>{t('messages.col_type')}</th><th>{t('messages.col_scale_offset')}</th><th>{t('messages.col_unit')}</th><th>{t('messages.col_enum_bitfield')}</th></tr></thead>
                         <tbody>
                           {#each msgDef.signals as sig}
                             {@const sigDisabled = msgFilter?.disabledSignals.includes(sig.name) ?? false}
@@ -258,7 +259,7 @@
                         </tbody>
                       </table>
                     {:else if !msg.enabled}
-                      <span style="color: var(--text-dim); font-size: 13px;">Enable this message to view signal details</span>
+                      <span style="color: var(--text-dim); font-size: 13px;">{t('messages.enable_to_view')}</span>
                     {/if}
                   </td>
                 </tr>
@@ -270,7 +271,7 @@
     {/each}
 
     {#if messages.length === 0}
-      <div class="card" style="text-align: center; padding: 32px; color: var(--text-dim);">No messages match your search</div>
+      <div class="card" style="text-align: center; padding: 32px; color: var(--text-dim);">{t('messages.no_match')}</div>
     {/if}
   {/if}
 </div>

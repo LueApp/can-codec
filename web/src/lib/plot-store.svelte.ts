@@ -1,6 +1,7 @@
 import { codecStore } from './codec-store.svelte';
-import { parseCandump } from './codec';
-import { WebSocketClient, type RawFrame } from './websocket-client.svelte';
+import { parseCandump, MavlinkReassembler, type MavlinkBuf } from './codec';
+import { busStore } from './bus-store.svelte';
+import type { RawFrame } from './websocket-client.svelte';
 import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from './types';
 import type {
   FrameRef, SignalSample, SignalSeries, ChartPanel, MessageTimingEntry,
@@ -21,11 +22,6 @@ class PlotStore {
   viewOrder = $state<ChartView[]>(['signals', 'timeline', 'interval']);
   messageTimingLabels = $state<string[]>([]);
   intervalPanels = $state<ChartPanel[]>([]);
-  wsUrl = $state(
-    typeof localStorage !== 'undefined'
-      ? (localStorage.getItem('cancodec_ws_url') ?? 'ws://localhost:8765')
-      : 'ws://localhost:8765'
-  );
   liveSampleCounts = $state<Record<string, number>>({});
   rawFrameCount = $state(0);
   rawLogMax = $state(2000);
@@ -44,15 +40,33 @@ class PlotStore {
   timelineMarkers = $state<{ time: number; label: string }[]>([]);
   applyTimingToAllViews = $state(false);
 
+  // --- Zoom / follow-live state ---
+  followLive = $state(
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('cancodec_follow_live') !== '0'
+      : true
+  );
+  followWindowSeconds = $state(
+    typeof localStorage !== 'undefined'
+      ? Number(localStorage.getItem('cancodec_follow_window')) || 10
+      : 10
+  );
+  userZoomed = $state(false);
+  showGestureHint = $state(
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('cancodec_hide_gesture_hint') !== '1'
+      : true
+  );
+
   // --- Non-reactive state (performance) ---
   nextPanelId = 0;
-  wsClient = new WebSocketClient();
+  liveFrameUnsubscribe: (() => void) | null = null;
   liveSampleStore = new Map<string, SignalSample[]>();
   messageTimingStore = new Map<string, MessageTimingEntry[]>();
   rawFrameLog: string[] = [];
   liveStartTime: number | null = null;
-  mavlinkBuffers = new Map<number, { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }>();
-  mavlinkTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  mavlinkReassembler = new MavlinkReassembler();
+  mavlinkFlushTimer: ReturnType<typeof setTimeout> | null = null;
   chartUpdatePending = false;
   rawLogVersion = 0;
   dumpWriter: FileSystemWritableFileStream | null = null;
@@ -67,6 +81,11 @@ class PlotStore {
   unregisterRenderCallback() {
     this._renderCallback = null;
   }
+
+  // --- Shared bus proxies (the actual state lives in busStore) ---
+  get wsClient() { return busStore.client; }
+  get wsUrl() { return busStore.wsUrl; }
+  set wsUrl(v: string) { busStore.wsUrl = v; }
 
   // --- Derived getters ---
   get selected(): Set<string> {
@@ -163,6 +182,46 @@ class PlotStore {
     this.requestRender(false);
   }
 
+  // --- Zoom / follow-live ---
+  noteUserInteraction() {
+    if (!this.userZoomed) this.userZoomed = true;
+    if (this.followLive) {
+      this.followLive = false;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('cancodec_follow_live', '0');
+      }
+    }
+  }
+
+  toggleFollowLive() {
+    this.followLive = !this.followLive;
+    if (this.followLive) this.userZoomed = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cancodec_follow_live', this.followLive ? '1' : '0');
+    }
+    this.requestRender(false);
+  }
+
+  setFollowWindowSeconds(seconds: number) {
+    const s = Math.max(1, Math.min(3600, Math.round(seconds)));
+    this.followWindowSeconds = s;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cancodec_follow_window', String(s));
+    }
+    this.requestRender(false);
+  }
+
+  clearUserZoom() {
+    this.userZoomed = false;
+  }
+
+  dismissGestureHint() {
+    this.showGestureHint = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cancodec_hide_gesture_hint', '1');
+    }
+  }
+
   get timelineMarkerDelta(): number | null {
     if (this.timelineMarkers.length !== 2) return null;
     return this.timelineMarkers[1].time - this.timelineMarkers[0].time;
@@ -172,7 +231,7 @@ class PlotStore {
   switchMode(newMode: InputMode) {
     if (this.mode === 'live' && newMode !== 'live') {
       this.stopDumpToFile();
-      this.wsClient.disconnect();
+      this.unsubscribeLiveFrames();
       this.clearMavlinkBuffers();
     }
     if (newMode !== this.mode) {
@@ -180,31 +239,52 @@ class PlotStore {
       this.requestRender(true);
     }
     this.mode = newMode;
+    // When entering live mode, subscribe immediately — even if the bus was
+    // already connected by another page (encode). Without this, frames flow
+    // past plot silently because the Connect button is hidden.
+    if (this.mode === 'live') {
+      this.subscribeLiveFrames();
+    }
   }
 
   // --- Connection management ---
-  connectLive() {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('cancodec_ws_url', this.wsUrl);
+  /** Public + idempotent: callers (plot page onMount, switchMode) can call freely. */
+  subscribeLiveFrames() {
+    if (this.liveFrameUnsubscribe) return;
+    this.liveFrameUnsubscribe = busStore.client.addFrameCallback(
+      (frame) => this.handleLiveFrame(frame)
+    );
+  }
+
+  unsubscribeLiveFrames() {
+    if (this.liveFrameUnsubscribe) {
+      this.liveFrameUnsubscribe();
+      this.liveFrameUnsubscribe = null;
     }
+  }
+
+  connectLive() {
     this.resetData();
     this.requestRender(true);
-    this.mavlinkBuffers.clear();
-    this.wsClient.setFrameCallback((frame) => this.handleLiveFrame(frame));
-    this.wsClient.connect(this.wsUrl);
+    this.clearMavlinkBuffers();
+    this.subscribeLiveFrames();
+    busStore.connect();
   }
 
   disconnectLive() {
     this.paused = false;
     this.stopDumpToFile();
-    this.wsClient.disconnect();
+    this.unsubscribeLiveFrames();
+    busStore.disconnect();
     this.clearMavlinkBuffers();
   }
 
   clearMavlinkBuffers() {
-    for (const timer of this.mavlinkTimers.values()) clearTimeout(timer);
-    this.mavlinkTimers.clear();
-    this.mavlinkBuffers.clear();
+    if (this.mavlinkFlushTimer) {
+      clearTimeout(this.mavlinkFlushTimer);
+      this.mavlinkFlushTimer = null;
+    }
+    this.mavlinkReassembler.flush();
   }
 
   // --- Pause ---
@@ -244,7 +324,9 @@ class PlotStore {
       : frame.arbitration_id.toString(16).toUpperCase().padStart(3, '0');
     const dlc = frame.data.length.toString().padStart(2, '0');
     const hex = Array.from(frame.data).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
-    return ` (${ts})  ${iface}  ${id}  [${dlc}]  ${hex}`;
+    // Always print a 2-char RX/TX token so columns line up regardless of direction.
+    const dir = frame.direction === 'tx' ? 'TX' : 'RX';
+    return ` (${ts})  ${dir}  ${iface}  ${id}  [${dlc}]  ${hex}`;
   }
 
   formatFrameShort(f: FrameRef): string {
@@ -309,30 +391,20 @@ class PlotStore {
     if (this.isMavlinkCanId(canId)) {
       this.appendRawFrame(frame);
 
-      const isStartFrame = frame.data.length > 0 && frame.data[0] === 0xFD;
-      const buf = this.mavlinkBuffers.get(canId);
-
-      if (isStartFrame && buf && buf.frames.length > 0) {
-        this.flushMavlinkBuffer(canId, buf);
+      for (const buf of this.mavlinkReassembler.feed(canId, frame.data, frame.timestamp, frame.is_fd)) {
+        this.decodeMavlinkBuf(canId, buf);
       }
 
-      if (isStartFrame) {
-        this.mavlinkBuffers.set(canId, { frames: [frame.data], timestamps: [frame.timestamp], is_fd: frame.is_fd });
-      } else if (buf) {
-        buf.frames.push(frame.data);
-        buf.timestamps.push(frame.timestamp);
-      }
-
-      const existing = this.mavlinkTimers.get(canId);
-      if (existing) clearTimeout(existing);
-      this.mavlinkTimers.set(canId, setTimeout(() => {
-        const b = this.mavlinkBuffers.get(canId);
-        if (b && b.frames.length > 0) {
-          this.flushMavlinkBuffer(canId, b);
+      if (this.mavlinkFlushTimer) clearTimeout(this.mavlinkFlushTimer);
+      if (this.mavlinkReassembler.pendingCount() > 0) {
+        this.mavlinkFlushTimer = setTimeout(() => {
+          this.mavlinkFlushTimer = null;
+          for (const { canId: cid, buf } of this.mavlinkReassembler.flush()) {
+            this.decodeMavlinkBuf(cid, buf);
+          }
           this.scheduleChartUpdate();
-        }
-        this.mavlinkTimers.delete(canId);
-      }, 100));
+        }, 100);
+      }
     } else {
       let matched = false;
       try {
@@ -340,7 +412,7 @@ class PlotStore {
         if (res) {
           matched = true;
           this.matchedFrameCount++;
-          this.appendDecoded(res.decoded, res.mavlink, frame.timestamp, frame.is_fd);
+          this.appendDecoded(res.decoded, res.mavlink, frame.timestamp, frame.is_fd, undefined, undefined, frame.direction);
         }
       } catch { /* skip */ }
       this.appendRawFrame(frame, matched);
@@ -349,7 +421,7 @@ class PlotStore {
     this.scheduleChartUpdate();
   }
 
-  flushMavlinkBuffer(canId: number, buf: { frames: Uint8Array[]; timestamps: number[]; is_fd: boolean }) {
+  decodeMavlinkBuf(canId: number, buf: MavlinkBuf) {
     let decoded = false;
     try {
       const res = buf.frames.length === 1
@@ -376,7 +448,6 @@ class PlotStore {
         this.dumpFrameCount++;
       }
     }
-    this.mavlinkBuffers.delete(canId);
   }
 
   appendSignalSamples(
@@ -437,12 +508,12 @@ class PlotStore {
 
   appendDecoded(
     decoded: DecodedMessage, mavlink: MavlinkInfo | undefined, timestamp: number, is_fd: boolean,
-    rawFrames?: Uint8Array[], rawTimestamps?: number[]
+    rawFrames?: Uint8Array[], rawTimestamps?: number[], direction?: 'rx' | 'tx',
   ) {
     if (this.liveStartTime === null) this.liveStartTime = timestamp;
     const time = timestamp - this.liveStartTime;
     const primaryData = rawFrames ? Array.from(rawFrames[0]) : decoded.raw_data;
-    const frame: FrameRef = { id: decoded.msg_id, data: primaryData, timestamp, is_fd };
+    const frame: FrameRef = { id: decoded.msg_id, data: primaryData, timestamp, is_fd, direction };
     if (rawFrames && rawFrames.length > 1) {
       frame.extraFrames = rawFrames.slice(1).map((f, i) => ({
         data: Array.from(f),
@@ -749,22 +820,26 @@ class PlotStore {
     type FrameGroup = { canId: number; timestamps: (number | undefined)[]; datas: Uint8Array[] };
     const groups: (FrameGroup | { line: string; timestamp?: number })[] = [];
 
+    const reasm = new MavlinkReassembler();
+    const pushBuf = (canId: number, buf: MavlinkBuf) => {
+      groups.push({ canId, timestamps: buf.timestamps, datas: buf.frames });
+    };
+
     for (const line of lines) {
       const frame = parseCandump(line);
       if (!frame) continue;
 
       if (this.isMavlinkCanId(frame.canId)) {
-        const last = groups[groups.length - 1];
-        if (last && 'canId' in last && last.canId === frame.canId) {
-          last.timestamps.push(frame.timestamp);
-          last.datas.push(frame.data);
-        } else {
-          groups.push({ canId: frame.canId, timestamps: [frame.timestamp], datas: [frame.data] });
+        const ts = frame.timestamp ?? 0;
+        for (const buf of reasm.feed(frame.canId, frame.data, ts, frame.isFD)) {
+          pushBuf(frame.canId, buf);
         }
       } else {
         groups.push({ line, timestamp: frame.timestamp });
       }
     }
+
+    for (const { canId, buf } of reasm.flush()) pushBuf(canId, buf);
 
     for (const group of groups) {
       let decoded: DecodedMessage | null = null;

@@ -1,11 +1,49 @@
 <script lang="ts">
-  let lang = $state<'en' | 'zh'>('en');
+  import { i18n } from '$lib/i18n.svelte';
+  const lang = $derived(i18n.locale);
 
   const versions = [
     {
+      version: '1.4.0',
+      date: '2026-05-17',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'feat', text: 'Program: new page for building and running multi-step CAN command sequences with statements like send, wait, repeat, every, sweep, group, set, bind, read' },
+          { type: 'feat', text: 'Program: notebook-style cells — top-level Group blocks each get a ▶ Run button; `set` variables persist across cell runs and Run All until you click Reset vars' },
+          { type: 'feat', text: 'Program: variables and expressions usable in any Send / Bind / Read field (including nodeId), e.g. `set motor_idx = 2; bind pos ← Telemetry.position @=motor_idx`' },
+          { type: 'feat', text: 'Program: closed-loop control via Bind (continuous) and Read (one-shot blocking with timeout); a live bindings panel shows current value and last-seen age' },
+          { type: 'feat', text: 'Program: shift+click range selection — pick consecutive same-parent blocks and drag any one to move them together; ⎘ duplicates a block' },
+          { type: 'feat', text: 'Program: in-place broadcast toggle in the Send editor with per-node tabs for messages that have a broadcast id' },
+          { type: 'feat', text: 'Plot: TX frames from Program / Encode are tagged separately from RX in the status bar, raw log and chart tooltips; raw log now uses a fixed-width RX/TX column so both directions align' },
+          { type: 'feat', text: 'Plot: human-friendly zoom — scroll = time, Shift+scroll = value, Ctrl/⌘+scroll = both axes; left-drag pans, Shift+drag box-zooms, double-click fits to data; pinch zooms both on touch. New ? button reveals a gesture cheat-sheet' },
+          { type: 'feat', text: 'Plot: paste-mode timestamp parser handles candump variants with direction/flag tokens (e.g. `TX B -`) between iface and ID so timestamps survive the round-trip' },
+          { type: 'feat', text: 'Encode: shared bus connection with Plot / Program — connect once, all three pages see live frames. "Send to bus" and "+ Sequence" actions hook into the same connection' },
+          { type: 'feat', text: 'Web: site-wide EN / 中文 i18n. All seven pages read user-facing strings via a global locale store; default follows navigator.language (zh-* → 中文) and persists in localStorage. Nav has a single language toggle' },
+          { type: 'fix', text: 'Codec: encoding non-numeric values now throws with a hint about the `=` expression prefix instead of silently packing NaN' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'feat', text: 'Program：全新页面，用于构建并运行多步 CAN 命令序列，包含 send、wait、repeat、every、sweep、group、set、bind、read 等语句' },
+          { type: 'feat', text: 'Program：notebook 风格的 cell —— 顶层 Group 块各自带有 ▶ 运行按钮，`set` 变量跨 cell 运行和 Run All 保留，直至点击 Reset vars' },
+          { type: 'feat', text: 'Program：所有 Send / Bind / Read 字段（包括 nodeId）均可使用变量与表达式，例如 `set motor_idx = 2; bind pos ← Telemetry.position @=motor_idx`' },
+          { type: 'feat', text: 'Program：闭环控制——Bind 持续绑定，Read 单次带超时阻塞读取；实时绑定面板显示当前值与最近更新时间' },
+          { type: 'feat', text: 'Program：Shift+点击区间选择——选中同父级下的连续块，拖动其中任一块即可一起移动；⎘ 可复制块' },
+          { type: 'feat', text: 'Program：Send 编辑器内的广播开关，对配置了 broadcast id 的消息显示节点页签，可分别编辑每个节点的数值' },
+          { type: 'feat', text: 'Plot：来自 Program / Encode 的 TX 帧在状态栏、原始日志和图表 tooltip 中独立标记，原始日志使用定宽的 RX/TX 列以保证两个方向的对齐' },
+          { type: 'feat', text: 'Plot：更直观的缩放手势——滚轮缩放时间，Shift+滚轮缩放数值，Ctrl/⌘+滚轮同时缩放两轴；左键拖动平移，Shift+拖动框选缩放，双击自适应，触摸双指缩放双轴。新增 ? 按钮可显示手势速查表' },
+          { type: 'feat', text: 'Plot：粘贴模式的时间戳解析现已支持包含方向/标志 token（如 `TX B -`）的 candump 变体，时间戳不再因此丢失' },
+          { type: 'feat', text: 'Encode：与 Plot / Program 共享同一条总线连接——任一页面连接后，三处都能看到实时帧；"Send to bus" 与 "+ Sequence" 操作复用同一连接' },
+          { type: 'feat', text: 'Web：站点级 EN / 中文 i18n。全部七个页面通过统一的语言 store 读取文案，默认跟随 navigator.language（zh-* → 中文）并写入 localStorage；导航栏新增单一语言切换按钮' },
+          { type: 'fix', text: 'Codec：发送非数值时抛出错误并提示使用 `=` 表达式前缀，不再静默地发送 NaN' },
+        ],
+      },
+    },
+    {
       version: '1.3.0',
       date: '2026-05-12',
-      tag: 'latest',
+      tag: null,
       en: {
         changes: [
           { type: 'feat', text: 'Plot: Timeline t=0 origin — right-click any data point to set as the time reference; all charts shift accordingly' },
@@ -138,16 +176,6 @@
         <h1>更新日志</h1>
         <p>CAN Codec 版本历史</p>
       {/if}
-    </div>
-    <div style="display: flex; gap: 4px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;">
-      <button
-        onclick={() => lang = 'en'}
-        style="padding: 4px 14px; font-size: 13px; border-radius: 4px; {lang === 'en' ? 'background: var(--accent); color: #0f1419; font-weight: 600;' : 'background: none; color: var(--text-dim);'}"
-      >EN</button>
-      <button
-        onclick={() => lang = 'zh'}
-        style="padding: 4px 14px; font-size: 13px; border-radius: 4px; {lang === 'zh' ? 'background: var(--accent); color: #0f1419; font-weight: 600;' : 'background: none; color: var(--text-dim);'}"
-      >中文</button>
     </div>
   </div>
 

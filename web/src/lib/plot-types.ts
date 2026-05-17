@@ -3,6 +3,7 @@ export interface FrameRef {
   data: number[];
   timestamp: number;
   is_fd: boolean;
+  direction?: 'rx' | 'tx';
   extraFrames?: { data: number[]; timestamp: number }[];
 }
 
