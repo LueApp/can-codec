@@ -314,6 +314,8 @@ export function parseYamlConfig(yamlText: string, filename: string = 'unknown'):
     bus: (devRaw['bus'] as string) ?? 'vcan0',
     fd: (devRaw['fd'] as boolean) ?? true,
     mavlink: false,
+    bitrate: typeof devRaw['bitrate'] === 'number' ? (devRaw['bitrate'] as number) : 500000,
+    data_bitrate: typeof devRaw['data_bitrate'] === 'number' ? (devRaw['data_bitrate'] as number) : 2000000,
     messages,
   };
 }

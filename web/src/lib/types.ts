@@ -38,6 +38,8 @@ export interface DeviceConfig {
   bus: string;
   fd: boolean;
   mavlink: boolean;
+  bitrate?: number;
+  data_bitrate?: number;
   messages: Message[];
 }
 

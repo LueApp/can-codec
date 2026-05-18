@@ -8,6 +8,7 @@ const en = {
   'nav.program': 'Program',
   'nav.plot': 'Plot',
   'nav.convert': 'Convert',
+  'nav.genlib': 'GenLib',
   'nav.docs': 'Docs',
   'nav.changelog': 'Changelog',
   'nav.configs_loaded': 'configs loaded',
@@ -346,6 +347,20 @@ const en = {
   'convert.copied': 'Copied!',
   'convert.copy_as_script': 'Copy as script',
 
+  // ----- GenLib (library generator) -----
+  'genlib.title': 'Generate Device Library',
+  'genlib.subtitle': 'Emit a standalone Python / C / C++ / Rust codec for a loaded device. The file has zero runtime dependency on this project.',
+  'genlib.no_device_loaded': 'Load a YAML config first — the generator reads message definitions from your enabled devices.',
+  'genlib.label_device': 'Device',
+  'genlib.label_language': 'Target language',
+  'genlib.message_singular': 'message',
+  'genlib.message_plural': 'messages',
+  'genlib.lines': 'lines',
+  'genlib.copy': 'Copy',
+  'genlib.copied': 'Copied!',
+  'genlib.download': 'Download',
+  'genlib.how_to_use': 'How to use it',
+
   // ----- Language switch -----
   'lang.toggle_title': 'Switch language',
 } as const;
@@ -358,6 +373,7 @@ const zh: Record<keyof typeof en, string> = {
   'nav.program': '程序',
   'nav.plot': '绘图',
   'nav.convert': '转换',
+  'nav.genlib': '生成库',
   'nav.docs': '文档',
   'nav.changelog': '更新日志',
   'nav.configs_loaded': '个配置已加载',
@@ -695,6 +711,20 @@ const zh: Record<keyof typeof en, string> = {
   'convert.copy': '复制',
   'convert.copied': '已复制！',
   'convert.copy_as_script': '复制为脚本',
+
+  // ----- GenLib (library generator) -----
+  'genlib.title': '生成设备代码库',
+  'genlib.subtitle': '为已加载的设备生成独立的 Python / C / C++ / Rust 编解码器，不依赖本项目运行时。',
+  'genlib.no_device_loaded': '请先加载 YAML 配置 — 生成器需要从已启用的设备读取消息定义。',
+  'genlib.label_device': '设备',
+  'genlib.label_language': '目标语言',
+  'genlib.message_singular': '条消息',
+  'genlib.message_plural': '条消息',
+  'genlib.lines': '行',
+  'genlib.copy': '复制',
+  'genlib.copied': '已复制！',
+  'genlib.download': '下载',
+  'genlib.how_to_use': '使用方法',
 
   // ----- Language switch -----
   'lang.toggle_title': '切换语言',
