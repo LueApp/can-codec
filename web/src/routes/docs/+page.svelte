@@ -267,7 +267,54 @@ pip install python-can&gt;=4.0 pyserial&gt;=3.5
 # or via the package:
 pip install "canfd-codec[serve]"</code></pre>
 
-      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">Step 3 — Run the server</h3>
+      <h3 id="usb-permissions" style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">Step 3 — USB adapter permissions (Linux, USB SLCAN/SLCANFD devices only)</h3>
+      <p style="font-size: 13px;">If you're using a USB-to-CAN(FD) adapter such as <strong>CANable v2 / USB2SLCANFD</strong>, Linux by default exposes it as a <code>/dev/ttyACM*</code> device that only <code>root</code> can open. Skip this step if you only use built-in SocketCAN (<code>can0</code>, <code>vcan0</code>) — those don't go through <code>/dev/tty*</code>.</p>
+      <p style="font-size: 13px; margin-top: 8px;"><strong>Symptoms of missing permission:</strong></p>
+      <ul class="doc-list">
+        <li><code>[Errno 13] Permission denied: '/dev/ttyACM0'</code> when starting <code>can_ws_server.py</code></li>
+        <li><code>serial.serialutil.SerialException: could not open port</code></li>
+        <li>ModemManager grabs the port for ~30 s on plug-in and replies to AT commands, corrupting the SLCAN protocol</li>
+      </ul>
+
+      <p style="font-size: 13px; margin-top: 10px;"><strong>1. Identify your adapter's USB IDs.</strong> Plug it in and run:</p>
+      <pre><code class="doc-code">lsusb | grep -i -E 'can|stm|cdc'
+# Example output for CANable v2:
+# Bus 001 Device 005: ID 16d0:117e MCS CANable2</code></pre>
+      <p style="font-size: 13px;">Note the <code>idVendor:idProduct</code> pair (here <code>16d0:117e</code>). Common USB2SLCANFD adapters: <code>16d0:117e</code> (CANable v2 / canable.io), <code>1d50:606f</code> (gs_usb / CANable v1).</p>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>2. Create a udev rule</strong> at <code>/etc/udev/rules.d/99-canable2.rules</code>:</p>
+      <pre><code class="doc-code"># /etc/udev/rules.d/99-canable2.rules
+# CANable2 / USB-to-CAN-FD adapter — set group + permissions, stop ModemManager hijack
+SUBSYSTEM=="usb", ATTR&lcub;idVendor&rcub;=="16d0", ATTR&lcub;idProduct&rcub;=="117e", ENV&lcub;ID_MM_DEVICE_IGNORE&rcub;="1"
+SUBSYSTEM=="tty", KERNEL=="ttyACM[0-9]*", ATTRS&lcub;idVendor&rcub;=="16d0", ATTRS&lcub;idProduct&rcub;=="117e", \
+    GROUP="dialout", MODE:="0660", TAG+="uaccess", SYMLINK+="usb2can", ENV&lcub;ID_MM_DEVICE_IGNORE&rcub;="1"</code></pre>
+      <p style="font-size: 12px; color: var(--text-dim);">If your <code>lsusb</code> showed different IDs, replace the four <code>idVendor</code>/<code>idProduct</code> values with yours. The rule does four things: (1) sets group <code>dialout</code> and rw for owner/group (<code>0660</code>), (2) tags <code>uaccess</code> so the currently logged-in graphical user can access the port without group setup, (3) creates a stable <code>/dev/usb2can</code> symlink so you can write <code>--bus /dev/usb2can</code> instead of guessing <code>ttyACM0</code> / <code>ttyACM1</code>, (4) sets <code>ID_MM_DEVICE_IGNORE=1</code> so ModemManager doesn't probe the adapter.</p>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>3. Reload udev and replug the adapter:</strong></p>
+      <pre><code class="doc-code">sudo udevadm control --reload-rules
+sudo udevadm trigger
+# then unplug and replug the USB cable</code></pre>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>4. Make sure your user is in the <code>dialout</code> group</strong> (needed only if your distro doesn't honour <code>TAG+="uaccess"</code>):</p>
+      <pre><code class="doc-code">sudo usermod -aG dialout $USER
+# Then log out and log back in for the new group to take effect.
+groups   # verify "dialout" appears</code></pre>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>5. Verify permissions:</strong></p>
+      <pre><code class="doc-code">ls -l /dev/usb2can /dev/ttyACM*
+# Expected: crw-rw---- 1 root dialout ... /dev/ttyACM0
+#           lrwxrwxrwx 1 root root    ... /dev/usb2can -> ttyACM0</code></pre>
+
+      <div style="margin-top: 12px; padding: 12px 16px; background: var(--bg-input); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;">
+        <strong>Troubleshooting:</strong>
+        <ul class="doc-list" style="margin-top: 6px;">
+          <li>Still "Permission denied" after logging out/in? Run <code>id</code> — if <code>dialout</code> isn't listed, the group change didn't apply (try a full reboot).</li>
+          <li>Adapter disconnects randomly mid-stream? ModemManager is still probing — confirm <code>ID_MM_DEVICE_IGNORE=1</code> applied with <code>udevadm info -a /dev/ttyACM0 | grep ID_MM</code>. As a last resort, disable it entirely: <code>sudo systemctl disable --now ModemManager</code>.</li>
+          <li>Multiple adapters plugged in? Use the <code>SYMLINK+="usb2can"</code> alias (or extend the rule with <code>ATTRS&lcub;serial&rcub;==...</code> to disambiguate per-serial-number).</li>
+        </ul>
+      </div>
+
+      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">Step 4 — Run the server</h3>
       <pre><code class="doc-code"># SocketCAN interface
 python3 can_ws_server.py --bus can0
 
@@ -276,14 +323,14 @@ sudo modprobe vcan
 sudo ip link add dev vcan0 type vcan &amp;&amp; sudo ip link set up vcan0
 python3 can_ws_server.py --bus vcan0
 
-# USB SLCAN adapter (CAN FD)
-python3 can_ws_server.py --bus /dev/ttyACM0 --interface slcan \
-    --bitrate 1000000 --data-bitrate 5000000
+# USB SLCAN adapter (CAN FD) — use the /dev/usb2can symlink from the udev rule above
+python3 can_ws_server.py --bus /dev/usb2can --interface slcan --bitrate 1000000 --data-bitrate 5000000
+# (or --bus /dev/ttyACM0 if you didn't add the SYMLINK)
 
 # LAN relay — run on remote CAN machine, re-serve on this PC
 python3 can_ws_server.py --source ws://192.168.x.x:8765</code></pre>
 
-      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">Step 4 — Connect in the browser</h3>
+      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">Step 5 — Connect in the browser</h3>
       <p>Go to the <a href="/plot">Plot</a> page, enter <code>ws://localhost:8765</code> in the URL field, and click <strong>Connect</strong>.</p>
 
       <div style="margin-top: 16px; padding: 12px 16px; background: var(--bg-input); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;">
@@ -626,7 +673,54 @@ pip install python-can&gt;=4.0 pyserial&gt;=3.5
 # 或通过包安装：
 pip install "canfd-codec[serve]"</code></pre>
 
-      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">第三步——启动服务器</h3>
+      <h3 id="usb-permissions-zh" style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">第三步——USB 适配器权限配置（仅 Linux + USB SLCAN/SLCANFD 设备）</h3>
+      <p style="font-size: 13px;">如果使用 <strong>CANable v2 / USB2SLCANFD</strong> 等 USB 转 CAN(FD) 适配器，Linux 默认会把它注册为 <code>/dev/ttyACM*</code>，普通用户没有读写权限。如果只用系统自带的 SocketCAN（<code>can0</code>、<code>vcan0</code>），可跳过本步骤——它们不走 <code>/dev/tty*</code>。</p>
+      <p style="font-size: 13px; margin-top: 8px;"><strong>权限不足时的常见现象：</strong></p>
+      <ul class="doc-list">
+        <li>启动 <code>can_ws_server.py</code> 时报 <code>[Errno 13] Permission denied: '/dev/ttyACM0'</code></li>
+        <li><code>serial.serialutil.SerialException: could not open port</code></li>
+        <li>插入后约 30 秒内 ModemManager 会探测设备并发 AT 指令，破坏 SLCAN 协议</li>
+      </ul>
+
+      <p style="font-size: 13px; margin-top: 10px;"><strong>1. 识别适配器的 USB ID。</strong> 插入设备后执行：</p>
+      <pre><code class="doc-code">lsusb | grep -i -E 'can|stm|cdc'
+# CANable v2 的典型输出：
+# Bus 001 Device 005: ID 16d0:117e MCS CANable2</code></pre>
+      <p style="font-size: 13px;">记下 <code>idVendor:idProduct</code>（此处为 <code>16d0:117e</code>）。常见 USB2SLCANFD 适配器：<code>16d0:117e</code>（CANable v2 / canable.io）、<code>1d50:606f</code>（gs_usb / CANable v1）。</p>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>2. 创建 udev 规则</strong>，文件路径 <code>/etc/udev/rules.d/99-canable2.rules</code>：</p>
+      <pre><code class="doc-code"># /etc/udev/rules.d/99-canable2.rules
+# CANable2 / USB 转 CAN-FD 适配器——设置用户组、权限，阻止 ModemManager 抢占
+SUBSYSTEM=="usb", ATTR&lcub;idVendor&rcub;=="16d0", ATTR&lcub;idProduct&rcub;=="117e", ENV&lcub;ID_MM_DEVICE_IGNORE&rcub;="1"
+SUBSYSTEM=="tty", KERNEL=="ttyACM[0-9]*", ATTRS&lcub;idVendor&rcub;=="16d0", ATTRS&lcub;idProduct&rcub;=="117e", \
+    GROUP="dialout", MODE:="0660", TAG+="uaccess", SYMLINK+="usb2can", ENV&lcub;ID_MM_DEVICE_IGNORE&rcub;="1"</code></pre>
+      <p style="font-size: 12px; color: var(--text-dim);">如果 <code>lsusb</code> 显示的不是 <code>16d0:117e</code>，把上面四处 <code>idVendor</code>/<code>idProduct</code> 改为你的实际值即可。该规则做了四件事：（1）将设备组设为 <code>dialout</code>、权限设为 <code>0660</code>；（2）添加 <code>uaccess</code> 标签，让当前登录的桌面用户无需加组即可访问；（3）创建固定的 <code>/dev/usb2can</code> 软链接，命令行可直接 <code>--bus /dev/usb2can</code>，无需猜测 <code>ttyACM0</code> / <code>ttyACM1</code>；（4）设置 <code>ID_MM_DEVICE_IGNORE=1</code>，阻止 ModemManager 探测。</p>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>3. 重新加载 udev 规则并重新插拔设备：</strong></p>
+      <pre><code class="doc-code">sudo udevadm control --reload-rules
+sudo udevadm trigger
+# 然后拔下并重新插入 USB 线</code></pre>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>4. 把当前用户加入 <code>dialout</code> 组</strong>（仅当发行版不支持 <code>TAG+="uaccess"</code> 时需要）：</p>
+      <pre><code class="doc-code">sudo usermod -aG dialout $USER
+# 需要重新登录才能生效。
+groups   # 确认输出包含 "dialout"</code></pre>
+
+      <p style="font-size: 13px; margin-top: 12px;"><strong>5. 验证权限：</strong></p>
+      <pre><code class="doc-code">ls -l /dev/usb2can /dev/ttyACM*
+# 预期：crw-rw---- 1 root dialout ... /dev/ttyACM0
+#       lrwxrwxrwx 1 root root    ... /dev/usb2can -> ttyACM0</code></pre>
+
+      <div style="margin-top: 12px; padding: 12px 16px; background: var(--bg-input); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;">
+        <strong>故障排查：</strong>
+        <ul class="doc-list" style="margin-top: 6px;">
+          <li>重新登录后仍报 "Permission denied"？运行 <code>id</code> 查看用户组——若没有 <code>dialout</code>，请重启系统让组变更生效。</li>
+          <li>采集时设备随机断开？很可能仍被 ModemManager 干扰，执行 <code>udevadm info -a /dev/ttyACM0 | grep ID_MM</code> 确认 <code>ID_MM_DEVICE_IGNORE=1</code> 已应用。极端情况下可彻底关闭它：<code>sudo systemctl disable --now ModemManager</code>。</li>
+          <li>同时插了多个适配器？使用 <code>SYMLINK+="usb2can"</code> 别名（或在规则里追加 <code>ATTRS&lcub;serial&rcub;==...</code> 用序列号区分）。</li>
+        </ul>
+      </div>
+
+      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">第四步——启动服务器</h3>
       <pre><code class="doc-code"># SocketCAN 接口
 python3 can_ws_server.py --bus can0
 
@@ -635,14 +729,14 @@ sudo modprobe vcan
 sudo ip link add dev vcan0 type vcan &amp;&amp; sudo ip link set up vcan0
 python3 can_ws_server.py --bus vcan0
 
-# USB SLCAN 适配器（CAN FD）
-python3 can_ws_server.py --bus /dev/ttyACM0 --interface slcan \
-    --bitrate 1000000 --data-bitrate 5000000
+# USB SLCAN 适配器（CAN FD）——使用上面 udev 规则创建的 /dev/usb2can 软链接
+python3 can_ws_server.py --bus /dev/usb2can --interface slcan --bitrate 1000000 --data-bitrate 5000000
+# 没有添加 SYMLINK 时，可写 --bus /dev/ttyACM0
 
 # 局域网中继——在远端 CAN 机器上运行，在本机转发
 python3 can_ws_server.py --source ws://192.168.x.x:8765</code></pre>
 
-      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">第四步——在浏览器中连接</h3>
+      <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">第五步——在浏览器中连接</h3>
       <p>打开 <a href="/plot">Plot</a> 页面，在 URL 输入框中填写 <code>ws://localhost:8765</code>，点击 <strong>Connect</strong> 即可连接。</p>
 
       <div style="margin-top: 16px; padding: 12px 16px; background: var(--bg-input); border-left: 3px solid var(--orange); border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px;">

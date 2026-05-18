@@ -1968,6 +1968,38 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-18T05:16:44.957Z"
+    },
+    {
+      "id": "bug-121",
+      "timestamp": "2026-05-18T07:46:32.576Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/docs/+page.svelte",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 23→71 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T07:46:32.576Z"
+    },
+    {
+      "id": "bug-122",
+      "timestamp": "2026-05-18T07:54:51.487Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/docs/+page.svelte",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 23→71 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T07:54:51.488Z"
     }
   ]
 }
