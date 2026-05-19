@@ -35,6 +35,7 @@
   let rawLogEl: HTMLPreElement | undefined;
   let rawLogAutoScroll = true;
   let rawLogRenderedVersion = 0;
+  let fileInputEl: HTMLInputElement | undefined;
 
   // ---- Drag state ----
 
@@ -923,6 +924,20 @@
       </div>
       <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <button class="primary" onclick={() => plotStore.analyze()} disabled={codecStore.configs.length === 0}>{t('plot.analyze')}</button>
+        <button class="btn-sm" onclick={() => fileInputEl?.click()}
+          disabled={codecStore.configs.length === 0}
+          title={t('plot.load_file_title')}>{t('plot.load_file')}</button>
+        <input
+          type="file"
+          accept=".log,.txt,.asc,.csv"
+          style="display: none;"
+          bind:this={fileInputEl}
+          onchange={(e) => {
+            const f = (e.currentTarget as HTMLInputElement).files?.[0];
+            if (f) plotStore.loadFromFile(f);
+            (e.currentTarget as HTMLInputElement).value = '';
+          }}
+        />
         {#if codecStore.configs.length === 0}
           <span style="font-size: 13px; color: var(--text-dim);">{t('plot.load_config_first')}</span>
         {/if}

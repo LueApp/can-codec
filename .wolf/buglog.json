@@ -2000,6 +2000,54 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-18T07:54:51.488Z"
+    },
+    {
+      "id": "bug-123",
+      "timestamp": "2026-05-19T10:01:29.897Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T10:01:29.897Z"
+    },
+    {
+      "id": "bug-124",
+      "timestamp": "2026-05-19T10:01:48.663Z",
+      "error_message": "Missing await",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Async call without await — returned Promise instead of value",
+      "fix": "Added await to async call",
+      "tags": [
+        "auto-detected",
+        "async-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T10:01:48.663Z"
+    },
+    {
+      "id": "bug-125",
+      "timestamp": "2026-05-19T10:02:10.233Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T10:02:10.233Z"
     }
   ]
 }

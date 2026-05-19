@@ -11,6 +11,49 @@ import yaml from 'js-yaml';
 
 const CHART_UPDATE_INTERVAL = 50;
 
+// ZLG USBCAN/USBCANFD CSV export → candump-line text. Header columns we use:
+//   MAKE_CAN_ID(HEX)  e.g. "0x10101"
+//   CAN/CANFD         "can_fd" | "can"
+//   RX_TIMESTAMP      "[<microseconds>]"
+//   DATA(HEX)         "fd 06 00 ..."   (space-separated bytes, trailing space possible)
+export function zlgCsvToCandump(text: string): string {
+  const stripped = text.replace(/^﻿/, '');
+  const lines = stripped.split(/\r?\n/);
+  if (lines.length < 2) return '';
+
+  const header = lines[0].split(',').map(s => s.trim());
+  const col = (name: string) => header.indexOf(name);
+  const idCol = col('MAKE_CAN_ID(HEX)');
+  const dataCol = col('DATA(HEX)');
+  const tsCol = col('RX_TIMESTAMP');
+  const fdCol = col('CAN/CANFD');
+  if (idCol < 0 || dataCol < 0) return '';
+
+  const out: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i];
+    if (!row.trim()) continue;
+    const c = row.split(',');
+    if (c.length <= Math.max(idCol, dataCol)) continue;
+
+    const idStr = (c[idCol] ?? '').trim().replace(/^0x/i, '');
+    const hex = (c[dataCol] ?? '').trim().replace(/\s+/g, '');
+    if (!idStr || !hex) continue;
+
+    const isFd = fdCol >= 0 && c[fdCol]?.trim() === 'can_fd';
+    const tsRaw = tsCol >= 0 ? (c[tsCol] ?? '').trim().replace(/^\[|\]$/g, '') : '';
+    const tsNum = Number(tsRaw);
+    const sep = isFd ? '##1' : '#';
+
+    if (Number.isFinite(tsNum) && tsRaw !== '') {
+      out.push(`(${(tsNum / 1e6).toFixed(6)}) can0 ${idStr}${sep}${hex}`);
+    } else {
+      out.push(`can0 ${idStr}${sep}${hex}`);
+    }
+  }
+  return out.join('\n');
+}
+
 class PlotStore {
   // --- Reactive state ---
   mode = $state<InputMode>('paste');
@@ -1079,6 +1122,19 @@ class PlotStore {
   clearData() {
     this.resetData();
     this.requestRender(true);
+  }
+
+  // Load a candump .log or ZLG USBCANFD .csv export, populate the textarea, and run analyze().
+  async loadFromFile(file: File) {
+    const text = await file.text();
+    const head = text.slice(0, 256);
+    const isZlgCsv = /^WRITE_TIME\s*,\s*GROUP_ID/i.test(head)
+      || (file.name.toLowerCase().endsWith('.csv') && /MAKE_CAN_ID\(HEX\)/i.test(head));
+    this.input = isZlgCsv ? zlgCsvToCandump(text) : text;
+    this.analyze();
+    if (isZlgCsv && this.input === '') {
+      this.status = `Failed to parse ZLG CSV (${file.name})`;
+    }
   }
 
   // --- Clear raw log (from UI) ---
