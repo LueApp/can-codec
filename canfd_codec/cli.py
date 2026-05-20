@@ -404,6 +404,61 @@ def cmd_monitor(args):
             log_file.close()
 
 
+def cmd_genlib(args):
+    """Generate a standalone codec library for a target language."""
+    from .codegen import generate, extension_for, GENERATORS
+    from .codegen.common import to_snake_case
+
+    lang = args.lang.lower()
+    if lang not in GENERATORS:
+        print(f"Error: unknown language '{lang}'. Choose one of: {sorted(set(GENERATORS.keys()))}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    codec = Codec(args.config)
+    if not codec.devices:
+        print(f"Error: no devices loaded from {args.config}", file=sys.stderr)
+        sys.exit(1)
+
+    ext = extension_for(lang)
+    out_path = args.output
+
+    # Decide single-file vs directory output
+    write_dir = False
+    if out_path is None:
+        if len(codec.devices) > 1:
+            print(f"Error: {len(codec.devices)} devices loaded but no --output given. "
+                  "Use --output <dir/> to write per-device files, or point -c at a single config file.",
+                  file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Treat as directory if it ends with '/' or already exists as a dir, or no extension
+        if out_path.endswith(os.sep) or os.path.isdir(out_path) or "." not in os.path.basename(out_path):
+            write_dir = True
+            os.makedirs(out_path, exist_ok=True)
+
+    if not write_dir and len(codec.devices) > 1:
+        print(f"Error: {len(codec.devices)} devices loaded but --output is a single file. "
+              "Use a directory path (with trailing /) to write per-device files.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    for dev in codec.devices:
+        source = generate(lang, dev)
+        if out_path is None:
+            sys.stdout.write(source)
+        elif write_dir:
+            fname = f"{to_snake_case(dev.name)}{ext}"
+            fpath = os.path.join(out_path, fname)
+            with open(fpath, "w") as f:
+                f.write(source)
+            print(f"Wrote {fpath}", file=sys.stderr)
+        else:
+            with open(out_path, "w") as f:
+                f.write(source)
+            print(f"Wrote {out_path}", file=sys.stderr)
+
+
 def cmd_serve(args):
     """Start WebSocket server for live CAN frame streaming."""
     from .serve import CANWebSocketServer
@@ -511,6 +566,16 @@ def main():
                        help="Summary refresh rate in seconds (default: 0.25)")
     p_mon.add_argument("--log", help="Log decoded output to file")
 
+    # --- genlib ---
+    p_gen = sub.add_parser("genlib", help="Generate a standalone codec library for a target language")
+    p_gen.add_argument("--lang", required=True,
+                       choices=["python", "py", "python3", "c", "cpp", "c++", "rust", "rs"],
+                       help="Target language")
+    p_gen.add_argument("-o", "--output",
+                       help="Output file or directory. If omitted, prints to stdout. "
+                            "If the path ends in '/' or already exists as a directory, "
+                            "writes one file per device named after the device.")
+
     # --- serve ---
     p_srv = sub.add_parser("serve", help="WebSocket server for live CAN frame streaming")
     p_srv.add_argument("--bus", default="vcan0",
@@ -542,6 +607,7 @@ def main():
         "encode": cmd_encode,
         "monitor": cmd_monitor,
         "serve": cmd_serve,
+        "genlib": cmd_genlib,
     }
     handlers[args.command](args)
 

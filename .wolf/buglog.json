@@ -809,6 +809,1245 @@
       "related_bugs": [],
       "occurrences": 2,
       "last_seen": "2026-05-16T08:09:49.043Z"
+    },
+    {
+      "id": "bug-049",
+      "timestamp": "2026-05-16T08:27:57.419Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "No early return/throw for edge case: this.mode === 'live' && newMode !== 'live'",
+      "fix": "Added guard clause: if (this.mode === 'live' && newMode !== 'liv)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T08:27:57.419Z"
+    },
+    {
+      "id": "bug-050",
+      "timestamp": "2026-05-16T08:29:20.887Z",
+      "error_message": "Significant refactor of ",
+      "file": "canfd_codec/serve.py",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 14→25 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T08:29:20.887Z"
+    },
+    {
+      "id": "bug-051",
+      "timestamp": "2026-05-16T08:34:51.837Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 16→21 lines (2 removed) | Also: ts, aid, data, is_fd = p; json.dumps({\"type\":\"frame\",\"arbitration_id\":aid,\"d",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-16T08:35:41.187Z"
+    },
+    {
+      "id": "bug-052",
+      "timestamp": "2026-05-16T08:45:26.208Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T08:45:26.208Z"
+    },
+    {
+      "id": "bug-053",
+      "timestamp": "2026-05-16T08:50:56.784Z",
+      "error_message": "Incorrect value in code",
+      "file": "../../../../tmp/ws_smoketest.py",
+      "root_cause": "Had \"projects\"",
+      "fix": "Changed to \"/home/lue/qiuzhi/can-codec\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T08:50:56.784Z"
+    },
+    {
+      "id": "bug-054",
+      "timestamp": "2026-05-16T08:51:20.106Z",
+      "error_message": "Significant refactor of ",
+      "file": "../../../../tmp/ws_smoketest.py",
+      "root_cause": "8 lines replaced/restructured",
+      "fix": "Rewrote 15→28 lines (8 removed) | Also: srv.stop(); time.sleep(0.5)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-16T08:51:26.087Z"
+    },
+    {
+      "id": "bug-055",
+      "timestamp": "2026-05-16T17:00:00.000Z",
+      "error_message": "NameError: name 'dlc' is not defined (latent — would have triggered on first frame in candump reader thread)",
+      "file": "canfd_codec/serve.py",
+      "root_cause": "_parse_candump_line() returned (timestamp, arb_id, data_hex, is_fd) but computed `dlc` only as a local; the candump reader unpacked the 4-tuple yet still referenced `dlc` when assembling the broadcast JSON. The path was unexercised because no smoke test had ever sent a frame through serve.py via the candump backend.",
+      "fix": "Changed _parse_candump_line() to return (timestamp, arb_id, data_hex, dlc, is_fd) and updated the unpack/JSON-assembly to include dlc. Mirrored in the embedded SERVER_SCRIPT inside web/src/routes/plot/+page.svelte. Discovered while wiring inbound `{type:send}` handler for the new Encode-page send/SOP feature.",
+      "tags": [
+        "serve",
+        "candump",
+        "latent-bug",
+        "python"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T17:00:00.000Z"
+    },
+    {
+      "id": "bug-056",
+      "timestamp": "2026-05-16T12:02:06.058Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 28→35 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T12:02:06.058Z"
+    },
+    {
+      "id": "bug-057",
+      "timestamp": "2026-05-16T18:30:00.000Z",
+      "error_message": "Plot page shows status=connected but no raw CAN frames appear in the raw-frame log or chart",
+      "file": "web/src/lib/plot-store.svelte.ts, web/src/routes/plot/+page.svelte",
+      "root_cause": "After refactoring plot-store to use the shared busStore, plot's handleLiveFrame callback was only being subscribed inside plotStore.connectLive() — which only ran when the user explicitly clicked the Connect button on the plot page. If another page (e.g. /encode) had already connected the bus, the Connect button was hidden (status='connected'), and plot never subscribed, so frames flowed past silently. The bus connection was shared, but the frame callback was not.",
+      "fix": "Made subscribeLiveFrames() public + idempotent. Call it from (1) plotStore.switchMode when transitioning to 'live', and (2) the plot page's onMount when mode is already 'live'. unsubscribeLiveFrames() remains called on switchMode out of live and disconnectLive.",
+      "tags": [
+        "plot",
+        "websocket",
+        "live-mode",
+        "shared-state",
+        "subscription"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T18:30:00.000Z"
+    },
+    {
+      "id": "bug-058",
+      "timestamp": "2026-05-16T12:06:33.690Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-16T12:06:33.690Z"
+    },
+    {
+      "id": "bug-059",
+      "timestamp": "2026-05-16T12:07:25.939Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: {#snippet sendEditor(stmt: SendStmt)}; {@const msg = stmt.msgName ? codecStore.codec.getMessageByNa",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-16T12:08:18.119Z"
+    },
+    {
+      "id": "bug-060",
+      "timestamp": "2026-05-17T06:42:37.653Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T06:42:37.653Z"
+    },
+    {
+      "id": "bug-061",
+      "timestamp": "2026-05-17T06:44:31.214Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "No early return/throw for edge case: sequenceStore.running",
+      "fix": "Added guard clause: if (sequenceStore.running)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T06:44:31.214Z"
+    },
+    {
+      "id": "bug-062",
+      "timestamp": "2026-05-17T06:45:18.499Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T06:45:18.499Z"
+    },
+    {
+      "id": "bug-063",
+      "timestamp": "2026-05-17T07:19:40.262Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 16→25 lines (4 removed) | Also: cursor: grab;; padding: 0 4px;",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-17T07:20:16.939Z"
+    },
+    {
+      "id": "bug-064",
+      "timestamp": "2026-05-17T07:31:41.035Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Had 'encode.drag_handle_title'",
+      "fix": "Changed to 'encode.drop_at_end'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-17T07:31:47.740Z"
+    },
+    {
+      "id": "bug-065",
+      "timestamp": "2026-05-17T07:32:21.441Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T07:32:21.441Z"
+    },
+    {
+      "id": "bug-066",
+      "timestamp": "2026-05-17T07:34:02.780Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 9→31 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T07:34:02.780Z"
+    },
+    {
+      "id": "bug-067",
+      "timestamp": "2026-05-17T07:55:20.418Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "No early return/throw for edge case: c === ' ' || c === '\\t'",
+      "fix": "Added guard clause: if (c === ' ' || c === '\\t')",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-17T07:57:03.716Z"
+    },
+    {
+      "id": "bug-068",
+      "timestamp": "2026-05-17T07:56:21.551Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T07:56:21.551Z"
+    },
+    {
+      "id": "bug-069",
+      "timestamp": "2026-05-17T07:56:47.353Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 25→33 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T07:56:47.353Z"
+    },
+    {
+      "id": "bug-070",
+      "timestamp": "2026-05-17T07:58:22.112Z",
+      "error_message": "Null/undefined access in ",
+      "file": "../../../../tmp/ast_runner_test.mjs",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "mjs"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T07:58:22.112Z"
+    },
+    {
+      "id": "bug-071",
+      "timestamp": "2026-05-17T08:00:06.333Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T08:00:06.333Z"
+    },
+    {
+      "id": "bug-072",
+      "timestamp": "2026-05-17T08:00:56.189Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "Had 'send'",
+      "fix": "Changed to 'set'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T08:00:56.189Z"
+    },
+    {
+      "id": "bug-073",
+      "timestamp": "2026-05-17T08:16:25.985Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "No early return/throw for edge case: v === undefined || v === null",
+      "fix": "Added guard clause: if (v === undefined || v === null)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T08:16:25.985Z"
+    },
+    {
+      "id": "bug-074",
+      "timestamp": "2026-05-17T08:18:36.946Z",
+      "error_message": "Missing error handling in sendNow",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T08:18:36.946Z"
+    },
+    {
+      "id": "bug-075",
+      "timestamp": "2026-05-17T08:26:34.917Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/encode/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T08:26:34.917Z"
+    },
+    {
+      "id": "bug-076",
+      "timestamp": "2026-05-17T08:35:56.651Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 16→23 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T08:35:56.651Z"
+    },
+    {
+      "id": "bug-077",
+      "timestamp": "2026-05-17T09:07:02.947Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/+layout.svelte",
+      "root_cause": "Had \"/plot\"",
+      "fix": "Changed to \"/program\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T09:07:02.947Z"
+    },
+    {
+      "id": "bug-078",
+      "timestamp": "2026-05-17T09:17:43.264Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/server-script.ts",
+      "root_cause": "Had \"arbitration_id\"",
+      "fix": "Changed to \"direction\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T09:17:43.264Z"
+    },
+    {
+      "id": "bug-079",
+      "timestamp": "2026-05-17T09:18:47.783Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/websocket-client.svelte.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T09:18:47.783Z"
+    },
+    {
+      "id": "bug-080",
+      "timestamp": "2026-05-17T09:20:02.208Z",
+      "error_message": "Wrong reference: sendCount should be txFrameCount",
+      "file": "web/src/lib/websocket-client.svelte.ts",
+      "root_cause": "Used \"sendCount\" instead of \"txFrameCount\"",
+      "fix": "Changed sendCount → txFrameCount",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T09:20:02.208Z"
+    },
+    {
+      "id": "bug-081",
+      "timestamp": "2026-05-17T09:23:14.723Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T09:23:14.723Z"
+    },
+    {
+      "id": "bug-082",
+      "timestamp": "2026-05-17T13:23:50.879Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation | Also: this.runningCellId = null;; // Vars are NOT cleared here — they persist across cell runs",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-17T13:24:06.287Z"
+    },
+    {
+      "id": "bug-083",
+      "timestamp": "2026-05-17T13:26:35.000Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T13:26:35.000Z"
+    },
+    {
+      "id": "bug-084",
+      "timestamp": "2026-05-17T13:27:50.116Z",
+      "error_message": "Incorrect value in code",
+      "file": "../../../../tmp/run_cell_test.mjs",
+      "root_cause": "Had '..'",
+      "fix": "Changed to '/home/lue/qiuzhi/can-codec/web'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "mjs"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T13:27:50.116Z"
+    },
+    {
+      "id": "bug-085",
+      "timestamp": "2026-05-17T13:40:40.793Z",
+      "error_message": "Wrong operator: === should be &&",
+      "file": "web/src/routes/program/+page.svelte",
+      "root_cause": "Used \"===\" instead of \"&&\"",
+      "fix": "Changed operator === → &&",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T13:40:40.793Z"
+    },
+    {
+      "id": "bug-086",
+      "timestamp": "2026-05-17T13:43:49.388Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/routes/program/+page.svelte",
+      "root_cause": "No early return/throw for edge case: selectedIds.length === 0 && anchorId === null",
+      "fix": "Added guard clause: if (selectedIds.length === 0 && anchorId ===)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T13:43:49.388Z"
+    },
+    {
+      "id": "bug-087",
+      "timestamp": "2026-05-17T14:15:20.410Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 10→39 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:15:20.410Z"
+    },
+    {
+      "id": "bug-088",
+      "timestamp": "2026-05-17T14:16:33.525Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:16:33.525Z"
+    },
+    {
+      "id": "bug-089",
+      "timestamp": "2026-05-17T14:17:11.676Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:17:11.676Z"
+    },
+    {
+      "id": "bug-090",
+      "timestamp": "2026-05-17T14:17:27.183Z",
+      "error_message": "Wrong condition in logic",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Condition was: if (!dec || dec.message_name !== s.msgName)",
+      "fix": "Changed to: if (!dec || dec.name !== s.msgName)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:17:27.183Z"
+    },
+    {
+      "id": "bug-091",
+      "timestamp": "2026-05-17T14:21:36.942Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/program/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: {#if Object.keys(sequenceStore.bindings).length > 0}; {@const bindingEntries = Object.entries(sequenceStore.bindin",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-17T14:22:00.269Z"
+    },
+    {
+      "id": "bug-092",
+      "timestamp": "2026-05-17T14:22:19.172Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/routes/program/+page.svelte",
+      "root_cause": "No early return/throw for edge case: Object.keys(sequenceStore.bindings",
+      "fix": "Added guard clause: if (Object.keys(sequenceStore.bindings)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:22:19.172Z"
+    },
+    {
+      "id": "bug-093",
+      "timestamp": "2026-05-17T14:53:12.018Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:53:12.018Z"
+    },
+    {
+      "id": "bug-094",
+      "timestamp": "2026-05-17T14:53:57.201Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "web/src/lib/sequence-store.svelte.ts",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:53:57.201Z"
+    },
+    {
+      "id": "bug-095",
+      "timestamp": "2026-05-17T14:54:08.071Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/program/+page.svelte",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 10→14 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T14:54:08.071Z"
+    },
+    {
+      "id": "bug-096",
+      "timestamp": "2026-05-17T14:54:19.347Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Had 'Multi-node message: enter the node id you want to",
+      "fix": "Changed to 'Multi-node message: enter the node id, or an expr",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-17T14:54:25.916Z"
+    },
+    {
+      "id": "bug-097",
+      "timestamp": "2026-05-17T15:02:53.933Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/docs/+page.svelte",
+      "root_cause": "Had 'Plot（绘图）'",
+      "fix": "Changed to 'Program（程序）'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T15:02:53.933Z"
+    },
+    {
+      "id": "bug-098",
+      "timestamp": "2026-05-17T15:16:17.678Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Had ' TX'",
+      "fix": "Changed to 'TX'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T15:16:17.678Z"
+    },
+    {
+      "id": "bug-099",
+      "timestamp": "2026-05-17T15:17:17.976Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/program/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: {@const bcSupported = !!(msg && msg.broadcast_node_id !== nu; {@const editorValues = sendValuesFor(stmt)}",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-17T15:18:07.602Z"
+    },
+    {
+      "id": "bug-100",
+      "timestamp": "2026-05-17T15:39:52.740Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Had \"font-size: 12px; color: var(--text-dim); display:",
+      "fix": "Changed to \"font-size: 12px; color: var(--text-dim); display:",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-17T15:39:52.740Z"
+    },
+    {
+      "id": "bug-101",
+      "timestamp": "2026-05-18T12:23:00Z",
+      "error_message": "GCC error: unused parameter 'src'/'dst'/'data' in generated codec encode/decode functions for messages with only constant signals",
+      "file": "canfd_codec/codegen/c_gen.py, canfd_codec/codegen/cpp_gen.py",
+      "root_cause": "When a YAML message has only constant signals (e.g. EnableMotor with byte0..byte7 all set to 0xFF), the loop over non-constant signals in the generated encode/decode is empty, leaving the function parameters unread. -Werror=unused-parameter rejects this.",
+      "fix": "Detect when the user-facing field list is empty and emit (void)src; / (void)data; (void)dst; casts to silence the warning. See _emit_struct in c_gen.py and cpp_gen.py.",
+      "tags": [
+        "codegen",
+        "c",
+        "cpp",
+        "compile-warnings",
+        "constant-signals"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T12:23:00Z"
+    },
+    {
+      "id": "bug-102",
+      "timestamp": "2026-05-18T12:23:30Z",
+      "error_message": "Generated C macros use mixed-case prefix: motor_controller_v2_switch_mode_mode_POSITION_CONTROL",
+      "file": "canfd_codec/codegen/c_gen.py",
+      "root_cause": "_emit_enum used the message+signal snake_case prefix verbatim then appended an uppercased enum name. The signal/message portion stayed lowercase, breaking C convention.",
+      "fix": "Apply .upper() to the entire prefix before joining with the enum/bitfield value name. Now emits MOTOR_CONTROLLER_V2_SWITCH_MODE_MODE_POSITION_CONTROL.",
+      "tags": [
+        "codegen",
+        "c",
+        "naming-convention",
+        "macros"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T12:23:30Z"
+    },
+    {
+      "id": "bug-103",
+      "timestamp": "2026-05-18T12:24:00Z",
+      "error_message": "rustc -D warnings: variable does not need to be mutable (multiple sites in generated decode + decode_frame)",
+      "file": "canfd_codec/codegen/rust_gen.py",
+      "root_cause": "(1) decode() always emitted `let mut m = Self::default()` even when no non-constant signals followed; (2) `decode_frame` dispatcher always used `if let Some(mut m) = X::decode(data)` even for single-node messages where the `m.node_id = nid` line is gated out. Rustc flags unused mut.",
+      "fix": "Track whether the decode body mutates `m`. Only emit `mut` for the multi-node case in decode_frame, and only when there are non-constant signals in decode. Same fix applied to decode_broadcast.",
+      "tags": [
+        "codegen",
+        "rust",
+        "unused-mut",
+        "compile-warnings"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T12:24:00Z"
+    },
+    {
+      "id": "bug-104",
+      "timestamp": "2026-05-18T04:57:51.401Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/codegen/common.ts",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 18→9 lines (7 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T04:57:51.401Z"
+    },
+    {
+      "id": "bug-105",
+      "timestamp": "2026-05-18T04:58:07.382Z",
+      "error_message": "Wrong operator: >= should be ||",
+      "file": "web/src/lib/codegen/common.ts",
+      "root_cause": "Used \">=\" instead of \"||\"",
+      "fix": "Changed operator >= → ||",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T04:58:07.382Z"
+    },
+    {
+      "id": "bug-106",
+      "timestamp": "2026-05-18T05:05:51.370Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/+layout.svelte",
+      "root_cause": "Had \"/docs\"",
+      "fix": "Changed to \"/genlib\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:05:51.370Z"
+    },
+    {
+      "id": "bug-107",
+      "timestamp": "2026-05-18T05:06:37.362Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Had 'nav.docs'",
+      "fix": "Changed to 'nav.genlib'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-18T05:07:00.196Z"
+    },
+    {
+      "id": "bug-108",
+      "timestamp": "2026-05-18T05:11:19.097Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/codegen/python.ts",
+      "root_cause": "Had `        ${JSON.stringify(name.toLowerCase())}: ${",
+      "fix": "Changed to `        ${pyRepr(name.toLowerCase())}: ${rawVal},",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 8,
+      "last_seen": "2026-05-18T05:19:00.614Z"
+    },
+    {
+      "id": "bug-109",
+      "timestamp": "2026-05-18T05:12:10.027Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/codegen/common.ts",
+      "root_cause": "No early return/throw for edge case: hasSingle && !hasDouble",
+      "fix": "Added guard clause: if (hasSingle && !hasDouble)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:12:10.027Z"
+    },
+    {
+      "id": "bug-110",
+      "timestamp": "2026-05-18T05:12:35.357Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codegen/python.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:12:35.357Z"
+    },
+    {
+      "id": "bug-111",
+      "timestamp": "2026-05-18T05:12:52.915Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codegen/c.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:12:52.915Z"
+    },
+    {
+      "id": "bug-112",
+      "timestamp": "2026-05-18T05:13:00.618Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codegen/cpp.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:13:00.618Z"
+    },
+    {
+      "id": "bug-113",
+      "timestamp": "2026-05-18T05:13:10.384Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codegen/rust.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:13:10.384Z"
+    },
+    {
+      "id": "bug-114",
+      "timestamp": "2026-05-18T05:13:52.441Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/codegen/c.ts",
+      "root_cause": "Had `    /* constant: ${sig.name} = ${JSON.stringify(s",
+      "fix": "Changed to `    /* constant: ${sig.name} = ${pyReprAny(sig.de",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-18T05:16:15.218Z"
+    },
+    {
+      "id": "bug-115",
+      "timestamp": "2026-05-18T05:14:10.442Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/codegen/cpp.ts",
+      "root_cause": "Had `        // constant: ${sig.name} = ${JSON.stringi",
+      "fix": "Changed to `        // constant: ${sig.name} = ${pyReprAny(si",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-18T05:16:30.655Z"
+    },
+    {
+      "id": "bug-116",
+      "timestamp": "2026-05-18T05:14:54.704Z",
+      "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
+      "file": "web/src/lib/codegen/python.ts",
+      "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
+      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:14:54.704Z"
+    },
+    {
+      "id": "bug-117",
+      "timestamp": "2026-05-18T05:15:06.682Z",
+      "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
+      "file": "web/src/lib/codegen/c.ts",
+      "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
+      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:15:06.682Z"
+    },
+    {
+      "id": "bug-118",
+      "timestamp": "2026-05-18T05:16:21.360Z",
+      "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
+      "file": "web/src/lib/codegen/cpp.ts",
+      "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
+      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:16:21.360Z"
+    },
+    {
+      "id": "bug-119",
+      "timestamp": "2026-05-18T05:16:36.861Z",
+      "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
+      "file": "web/src/lib/codegen/rust.ts",
+      "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
+      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:16:36.861Z"
+    },
+    {
+      "id": "bug-120",
+      "timestamp": "2026-05-18T05:16:44.957Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/codegen/rust.ts",
+      "root_cause": "Had `(${variable} as u64) & ${signalMaxRawHex(sig)}u64",
+      "fix": "Changed to `(${variable} as u64) & ${signalMaxRawDec(sig)}u64",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T05:16:44.957Z"
+    },
+    {
+      "id": "bug-121",
+      "timestamp": "2026-05-18T07:46:32.576Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/docs/+page.svelte",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 23→71 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T07:46:32.576Z"
+    },
+    {
+      "id": "bug-122",
+      "timestamp": "2026-05-18T07:54:51.487Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/docs/+page.svelte",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 23→71 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-18T07:54:51.488Z"
+    },
+    {
+      "id": "bug-123",
+      "timestamp": "2026-05-19T10:01:29.897Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T10:01:29.897Z"
+    },
+    {
+      "id": "bug-124",
+      "timestamp": "2026-05-19T10:01:48.663Z",
+      "error_message": "Missing await",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Async call without await — returned Promise instead of value",
+      "fix": "Added await to async call",
+      "tags": [
+        "auto-detected",
+        "async-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T10:01:48.663Z"
+    },
+    {
+      "id": "bug-125",
+      "timestamp": "2026-05-19T10:02:10.233Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-19T10:02:10.233Z"
     }
   ]
 }

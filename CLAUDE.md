@@ -25,9 +25,10 @@ Two main use cases:
 │   └── your_mavlink.xml     # MAVLink XML definitions
 ├── canfd_codec/          # Python package
 │   ├── codec.py          # Core engine: config loading, bit pack/unpack, encode/decode
-│   ├── cli.py            # CLI entry point (argparse, 5 subcommands)
+│   ├── cli.py            # CLI entry point (argparse, 6 subcommands)
 │   ├── monitor.py        # Live CAN bus monitor (requires python-can)
-│   └── mavlink_loader.py # MAVLink XML message definition parser
+│   ├── mavlink_loader.py # MAVLink XML message definition parser
+│   └── codegen/          # Per-language library generators (python/c/cpp/rust)
 └── pyproject.toml
 ```
 
@@ -45,6 +46,12 @@ canfd-codec -c ./configs list
 canfd-codec -c ./configs decode 0x101 "98 3A 05 01 00 00 00 00"
 canfd-codec -c ./configs encode SetSpeed target_speed=1500 direction=forward enable=on
 canfd-codec -c ./configs monitor --bus vcan0
+
+# Generate a standalone library for the device (python / c / cpp / rust)
+canfd-codec -c ./configs/example_damiao.yaml genlib --lang python -o damiao.py
+canfd-codec -c ./configs/example_damiao.yaml genlib --lang c      -o damiao.h
+canfd-codec -c ./configs/example_damiao.yaml genlib --lang cpp    -o damiao.hpp
+canfd-codec -c ./configs/example_damiao.yaml genlib --lang rust   -o damiao.rs
 ```
 
 ### Testing with Virtual CAN
@@ -72,9 +79,11 @@ canfd-codec -c ./configs decode 0x101 "98 3A 05 00 00 00 00 00"
 
 - **codec.py** — Central engine: config loading, bit pack/unpack, encode/decode. The `Codec` class loads all YAML configs from a directory, builds ID→Message and Name→Message lookup maps, and exposes `decode(id, bytes)` and `encode(name, values_dict)`.
 
-- **cli.py** — CLI entry point with 5 subcommands: `list`, `describe`, `decode`, `encode`, `monitor`. The `-c`/`--config` flag is global and must come before the subcommand.
+- **cli.py** — CLI entry point with 6 subcommands: `list`, `describe`, `decode`, `encode`, `monitor`, `genlib`. The `-c`/`--config` flag is global and must come before the subcommand.
 
 - **monitor.py** — Live CAN bus monitor (requires `python-can`). Two modes: scrolling real-time display (`Monitor`) and live-updating summary table (`SummaryMonitor`).
+
+- **codegen/** — Per-language library generators that translate a parsed `DeviceConfig` into a single self-contained source file (Python/C/C++/Rust). Each generator (`python_gen.py`, `c_gen.py`, `cpp_gen.py`, `rust_gen.py`) emits the same algorithm as `codec.py` so the generated code is bit-exact with the master codec. `common.py` holds language-agnostic helpers (identifier sanitization, signal type → native type mapping, default value resolution).
 
 ### Bit Operations
 
@@ -129,7 +138,14 @@ Add a `cmd_<name>(args)` function in `cli.py`, register it in the `sub` subparse
 
 ### Modifying bit packing logic
 
-Edit the four `_extract_bits_*` / `_pack_bits_*` functions in `codec.py`.
+Edit the four `_extract_bits_*` / `_pack_bits_*` functions in `codec.py`. **If you change them, also update the runtime helpers in `canfd_codec/codegen/{python,c,cpp,rust}_gen.py`** — they re-implement the same algorithm in the target language. They must stay bit-for-bit equivalent or generated libs will diverge from the master codec.
+
+### Adding a new codegen target
+
+1. Create `canfd_codec/codegen/<lang>_gen.py` exporting `generate_<lang>(device: DeviceConfig) -> str`.
+2. Register it in `canfd_codec/codegen/__init__.py` (add to `GENERATORS` and `EXTENSIONS`).
+3. Add the language name(s) to the `choices=` list in `cli.py`'s `p_gen` subparser.
+4. Mirror the bit-pack/extract helpers (LE + BE) and the signed/float reinterpret routines from `codec.py` so the generated code stays bit-exact with the master codec.
 
 ## Config YAML Schema
 

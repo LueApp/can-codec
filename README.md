@@ -150,6 +150,47 @@ msg_id, data = codec.encode("MITControl", {
 print(f"0x{msg_id:03X}: {data.hex(' ')}")
 ```
 
+### 4. Generate a device-specific library (Python / C / C++ / Rust)
+
+Need to talk to the same device from a non-Python project? `genlib` emits a
+single self-contained source file with structs/classes for every message,
+encode/decode methods, multi-node + broadcast helpers, and named enum/bitfield
+constants. The generated code has zero runtime dependency on this package.
+
+```bash
+# Python module (Python 3.7+)
+canfd-codec -c configs/example_damiao.yaml genlib --lang python -o damiao.py
+
+# C99 header-only library
+canfd-codec -c configs/example_damiao.yaml genlib --lang c      -o damiao.h
+
+# C++17 header-only library
+canfd-codec -c configs/example_damiao.yaml genlib --lang cpp    -o damiao.hpp
+
+# Rust single-file module
+canfd-codec -c configs/example_damiao.yaml genlib --lang rust   -o damiao.rs
+```
+
+Point `-c` at a directory and `-o` at a directory (trailing `/`) to emit one
+file per device. Omit `-o` to print to stdout.
+
+Usage of the generated Python lib:
+
+```python
+import damiao  # the generated file
+
+cmd = damiao.MitControl(position=1.5, velocity=0.0, kp=10.0, kd=0.1)
+can_id, payload = cmd.encode(node_id=2)        # -> (0x02, b'\x8f\x5b...')
+
+# Decode any known frame
+msg = damiao.decode_frame(can_id, payload)     # picks the right message class
+print(msg.position, msg.kp)
+```
+
+Same shape in C / C++ / Rust — every generated message gets `encode`/`decode`,
+`id_for_node`/`node_for_id`, plus `encode_broadcast`/`decode_broadcast` and
+`broadcast_id` when the YAML defines `broadcast_node_id`.
+
 ## Config File Reference
 
 ### Signal Properties

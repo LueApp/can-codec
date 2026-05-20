@@ -4,9 +4,24 @@
 
   const versions = [
     {
+      version: '1.4.1',
+      date: '2026-05-19',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'feat', text: 'Plot: "Load File" button in paste mode — pick a candump .log or ZLG USBCAN(FD) .csv export from disk; CSV is auto-detected by header and converted in-browser to cansend-format lines, then run through the existing decode path' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'feat', text: 'Plot：粘贴模式新增 "Load File" 按钮——可直接从磁盘选择 candump .log 或致远（ZLG）USBCAN(FD) 导出的 .csv 文件；CSV 通过表头自动识别，浏览器内转换为 cansend 行后走原有解码流程' },
+        ],
+      },
+    },
+    {
       version: '1.4.0',
       date: '2026-05-17',
-      tag: 'latest',
+      tag: null,
       en: {
         changes: [
           { type: 'feat', text: 'Program: new page for building and running multi-step CAN command sequences with statements like send, wait, repeat, every, sweep, group, set, bind, read' },

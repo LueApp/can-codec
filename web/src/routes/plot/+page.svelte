@@ -35,6 +35,7 @@
   let rawLogEl: HTMLPreElement | undefined;
   let rawLogAutoScroll = true;
   let rawLogRenderedVersion = 0;
+  let fileInputEl: HTMLInputElement | undefined;
 
   // ---- Drag state ----
 
@@ -923,6 +924,20 @@
       </div>
       <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
         <button class="primary" onclick={() => plotStore.analyze()} disabled={codecStore.configs.length === 0}>{t('plot.analyze')}</button>
+        <button class="btn-sm" onclick={() => fileInputEl?.click()}
+          disabled={codecStore.configs.length === 0}
+          title={t('plot.load_file_title')}>{t('plot.load_file')}</button>
+        <input
+          type="file"
+          accept=".log,.txt,.asc,.csv"
+          style="display: none;"
+          bind:this={fileInputEl}
+          onchange={(e) => {
+            const f = (e.currentTarget as HTMLInputElement).files?.[0];
+            if (f) plotStore.loadFromFile(f);
+            (e.currentTarget as HTMLInputElement).value = '';
+          }}
+        />
         {#if codecStore.configs.length === 0}
           <span style="font-size: 13px; color: var(--text-dim);">{t('plot.load_config_first')}</span>
         {/if}
@@ -1097,7 +1112,12 @@
             </details>
             <details style="margin-top: 8px;">
               <summary style="cursor: pointer; color: var(--text-dim); font-size: 12px;">{t('plot.usb_adapters')}</summary>
-              <pre><code># SLCAN adapters with CAN FD (requires: pip install python-can pyserial){'\n'}python3 can_ws_server.py --bus /dev/ttyACM0 --interface slcan \\{'\n'}    --bitrate 1000000 --data-bitrate 5000000{'\n'}{'\n'}# SLCAN classic CAN only (via slcand, no pip needed){'\n'}sudo slcand -o -c -s6 /dev/ttyACM0 slcan0{'\n'}sudo ip link set up slcan0{'\n'}python3 can_ws_server.py --bus slcan0{'\n'}{'\n'}# gs_usb adapters (e.g. CANable with candleLight firmware){'\n'}sudo ip link set can0 type can bitrate 1000000{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0{'\n'}{'\n'}# gs_usb with CAN FD{'\n'}sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0</code></pre>
+              <pre><code># SLCAN adapters with CAN FD (requires: pip install python-can pyserial){'\n'}python3 can_ws_server.py --bus /dev/ttyACM0 --interface slcan --bitrate 1000000 --data-bitrate 5000000{'\n'}{'\n'}# SLCAN classic CAN only (via slcand, no pip needed){'\n'}sudo slcand -o -c -s6 /dev/ttyACM0 slcan0{'\n'}sudo ip link set up slcan0{'\n'}python3 can_ws_server.py --bus slcan0{'\n'}{'\n'}# gs_usb adapters (e.g. CANable with candleLight firmware){'\n'}sudo ip link set can0 type can bitrate 1000000{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0{'\n'}{'\n'}# gs_usb with CAN FD{'\n'}sudo ip link set can0 type can bitrate 1000000 dbitrate 5000000 fd on{'\n'}sudo ip link set up can0{'\n'}python3 can_ws_server.py --bus can0</code></pre>
+              <p style="font-size: 12px; color: var(--text-dim); margin-top: 6px;">
+                {t('plot.usb_perm_prefix')}<code>/dev/ttyACM*</code>{t('plot.usb_perm_middle')}
+                <a href="/docs#usb-permissions" style="color: var(--accent);">{t('plot.usb_perm_link')}</a>
+                {t('plot.usb_perm_suffix')}
+              </p>
             </details>
           </div>
         {/if}
