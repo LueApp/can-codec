@@ -8,6 +8,28 @@
   import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, ScatterController } from 'chart.js';
   import zoomPlugin from 'chartjs-plugin-zoom';
   import { downloadServerScript as downloadServer } from '$lib/server-script';
+  import { unitPrefs } from '$lib/unit-pref-store.svelte';
+  import { convert } from '$lib/unit-conversion';
+
+  // Plot's series.group can be "MsgName", "MsgName / N1", "1.1 / MsgName", or
+  // include a "[mux=...]" suffix. unitPrefs are keyed by the bare message name
+  // as it appears on the messages page, so strip those decorations here.
+  function baseMessageName(group: string): string {
+    return group
+      .replace(/^\d+\.\d+\s*\/\s*/, '')   // MAVLink "sys.comp / "
+      .replace(/\s*\/\s*N\d+.*$/, '')     // multi-node " / N<id>" (and anything after)
+      .replace(/\s*\[[^\]]*\]\s*$/, '');  // mux suffix " [mode=...]"
+  }
+
+  function seriesDisplayUnit(s: SignalSeries): string {
+    return s.unit ? unitPrefs.resolve(baseMessageName(s.group), s.signal, s.unit) : s.unit;
+  }
+
+  function convertY(s: SignalSeries, value: number): number {
+    if (!s.unit) return value;
+    const target = unitPrefs.resolve(baseMessageName(s.group), s.signal, s.unit);
+    return target === s.unit ? value : convert(value, s.unit, target);
+  }
 
   Chart.register(LineController, ScatterController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, zoomPlugin);
 
@@ -242,16 +264,17 @@
 
         const seriesList = panel.keys.map(k => plotStore.allSeries.find(s => s.key === k)).filter(Boolean) as SignalSeries[];
         const multi = seriesList.length > 1;
-        const units = new Set(seriesList.map(s => s.unit).filter(Boolean));
+        const units = new Set(seriesList.map(s => seriesDisplayUnit(s)).filter(Boolean));
         const yLabel = units.size === 1 ? [...units][0] : t('plot.value_label');
 
         const signalsOrigin = originForView(false);
         const datasets = seriesList.map((series, j) => {
           const color = CHART_COLORS[j % CHART_COLORS.length];
           const samples = plotStore.getSamples(series.key);
+          const dispUnit = seriesDisplayUnit(series);
           return {
-            label: `${series.group} / ${series.signal}${series.unit ? ` (${series.unit})` : ''}`,
-            data: samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.frame?.timestamp ?? s.time })),
+            label: `${series.group} / ${series.signal}${dispUnit ? ` (${dispUnit})` : ''}`,
+            data: samples.map(s => ({ x: s.time - signalsOrigin, y: convertY(series, s.value), frame: s.frame, absTime: s.frame?.timestamp ?? s.time })),
             borderColor: color,
             backgroundColor: color + '20',
             borderWidth: 1.5,
@@ -303,7 +326,8 @@
                     const s = seriesList[item.datasetIndex];
                     const raw = item.raw as any;
                     const dirTag = raw?.frame?.direction === 'tx' ? ' [TX]' : '';
-                    return s ? `${s.group} / ${s.signal}: ${item.parsed.y}${s.unit ? ' ' + s.unit : ''}${dirTag}` : '';
+                    const u = s ? seriesDisplayUnit(s) : '';
+                    return s ? `${s.group} / ${s.signal}: ${item.parsed.y}${u ? ' ' + u : ''}${dirTag}` : '';
                   },
                   afterBody: (items) => {
                     const f = (items[0]?.raw as any)?.frame as FrameRef | undefined;
@@ -579,10 +603,16 @@
 
       let xMax = -Infinity;
       for (let j = 0; j < panel.keys.length; j++) {
+        const series = plotStore.allSeries.find(x => x.key === panel.keys[j]);
         const samples = plotStore.getSamples(panel.keys[j]);
         const ds = chart.data.datasets[j];
         if (!ds) continue;
-        const points = samples.map(s => ({ x: s.time - signalsOrigin, y: s.value, frame: s.frame, absTime: s.frame?.timestamp ?? s.time }));
+        const points = samples.map(s => ({
+          x: s.time - signalsOrigin,
+          y: series ? convertY(series, s.value) : s.value,
+          frame: s.frame,
+          absTime: s.frame?.timestamp ?? s.time,
+        }));
         ds.data = points;
         (ds as any).pointRadius = points.length <= 100 ? 3 : 0;
         if (points.length > 0 && points[points.length - 1].x > xMax) xMax = points[points.length - 1].x;
@@ -887,6 +917,16 @@
         renderCurrentView();
         updateRawLog();
       });
+    }
+  });
+
+  // Re-render when the user changes a unit preference (e.g. on the messages page).
+  // Reading unitPrefs.prefs makes this effect reactive to the store.
+  $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    unitPrefs.prefs;
+    if (plotStore.activeViews.has('signals') && chartInstances.size > 0) {
+      renderCharts();
     }
   });
 
@@ -1222,7 +1262,7 @@
                           class:chip-active={plotStore.selected.has(s.key)}
                           onclick={() => plotStore.toggleSignal(s.key)}
                         >
-                          {s.signal}{s.unit ? ` (${s.unit})` : ''}
+                          {s.signal}{seriesDisplayUnit(s) ? ` (${seriesDisplayUnit(s)})` : ''}
                           <span class="chip-count">{plotStore.mode === 'live' ? (plotStore.liveSampleCounts[s.key] ?? 0) : s.samples.length}</span>
                         </button>
                       {/each}
@@ -1253,7 +1293,7 @@
                         >&#x2630;</span>
                         {#each seriesList as series, j}
                           <span class="chart-signal-tag" style="--tag-color: {CHART_COLORS[j % CHART_COLORS.length]}">
-                            <span style="opacity: 0.6;">{series.group} /</span> {series.signal}{series.unit ? ` (${series.unit})` : ''}
+                            <span style="opacity: 0.6;">{series.group} /</span> {series.signal}{seriesDisplayUnit(series) ? ` (${seriesDisplayUnit(series)})` : ''}
                             {#if panel.keys.length > 1}
                               <button class="chart-signal-tag-remove" onclick={() => plotStore.splitFromPanel(panel.id, series.key)} title={t('plot.split_title')}>x</button>
                             {/if}
@@ -1267,7 +1307,7 @@
                               <div class="chart-add-dropdown">
                                 {#each available as s}
                                   <button class="chart-add-dropdown-item" onclick={() => { plotStore.addToPanel(panel.id, s.key); addDropdownOpen = null; }}>
-                                    {s.signal}{s.unit ? ` (${s.unit})` : ''}
+                                    {s.signal}{seriesDisplayUnit(s) ? ` (${seriesDisplayUnit(s)})` : ''}
                                     <span style="color: var(--text-dim); font-size: 11px; margin-left: 4px;">{s.group}</span>
                                   </button>
                                 {/each}

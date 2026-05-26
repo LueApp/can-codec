@@ -246,22 +246,24 @@ export function groupArraySignalDefs(signals: Signal[]): { key: string; base: st
 // Display helpers
 // ---------------------------------------------------------------------------
 
-export function displayValue(s: DecodedSignal): string {
+export function displayValue(s: DecodedSignal, override?: { value?: number; unit?: string }): string {
   if (s.bitfield_flags !== null) {
     const active = Object.entries(s.bitfield_flags).filter(([, v]) => v).map(([n]) => n);
     return active.length > 0 ? active.join(', ') : '(none)';
   }
   if (s.enum_name !== null) return s.enum_name;
-  if (typeof s.physical_value === 'number' && Number.isFinite(s.physical_value)) {
-    if (s.physical_value === Math.floor(s.physical_value) && Math.abs(s.physical_value) < 1e15) {
-      const v = String(Math.floor(s.physical_value));
-      return s.unit ? `${v} ${s.unit}` : v;
+  const unit = override?.unit ?? s.unit;
+  const value = override?.value ?? s.physical_value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === Math.floor(value) && Math.abs(value) < 1e15) {
+      const v = String(Math.floor(value));
+      return unit ? `${v} ${unit}` : v;
     }
-    const v = Number(s.physical_value.toPrecision(4)).toString();
-    return s.unit ? `${v} ${s.unit}` : v;
+    const v = Number(value.toPrecision(4)).toString();
+    return unit ? `${v} ${unit}` : v;
   }
-  const v = String(s.physical_value);
-  return s.unit ? `${v} ${s.unit}` : v;
+  const v = String(value);
+  return unit ? `${v} ${unit}` : v;
 }
 
 // ---------------------------------------------------------------------------
