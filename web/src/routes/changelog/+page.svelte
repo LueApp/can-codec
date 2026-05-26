@@ -4,9 +4,26 @@
 
   const versions = [
     {
+      version: '1.4.2',
+      date: '2026-05-26',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'feat', text: 'Messages: per-signal unit picker on the signal table — when a unit has compatible alternates (rad/s ↔ rpm ↔ deg/s, rad ↔ deg ↔ rev, K ↔ °C ↔ °F, m/s ↔ km/h ↔ mph, m ↔ mm ↔ cm ↔ km ↔ in ↔ ft), choose the display unit and have it propagate to Decode (values + JSON copy), Plot (axis labels, legend, tooltips, chart values, reactive re-render) and Encode (input labels + placeholders; values are converted back to YAML-native unit before encoding). Preferences persist per signal in localStorage' },
+          { type: 'fix', text: 'Codec: disambiguate messages sharing the same base ID and DLC by matching `constant: true` signal bits — e.g. vesc.yaml MITControl / PositionControl / SpeedControl / CurrentControl / DutyControl / QueryCommand all at base 0x000 with DLC=8 now decode to the right variant instead of always falling back to the first-defined message. Both Python and TS codecs updated' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'feat', text: 'Messages：信号表新增每信号单位选择器——当单位有可换算的替代单位时（rad/s ↔ rpm ↔ deg/s、rad ↔ deg ↔ rev、K ↔ °C ↔ °F、m/s ↔ km/h ↔ mph、m ↔ mm ↔ cm ↔ km ↔ in ↔ ft），可选择显示单位，并自动应用到 Decode（信号值 + JSON 复制）、Plot（坐标轴、图例、tooltip、图表值，切换后即时重绘）以及 Encode（输入框 label 与占位符；提交时自动换算回 YAML 原生单位）。偏好按信号写入 localStorage 持久化' },
+          { type: 'fix', text: 'Codec：相同 base ID + DLC 的消息现在通过匹配 `constant: true` 信号的比特位进行区分——例如 vesc.yaml 中 MITControl / PositionControl / SpeedControl / CurrentControl / DutyControl / QueryCommand 全部位于 base 0x000、DLC=8，先前总是回退到首个定义的消息，现已正确解码为各自变体。Python 与 TS 端 codec 同步更新' },
+        ],
+      },
+    },
+    {
       version: '1.4.1',
       date: '2026-05-19',
-      tag: 'latest',
+      tag: null,
       en: {
         changes: [
           { type: 'feat', text: 'Plot: "Load File" button in paste mode — pick a candump .log or ZLG USBCAN(FD) .csv export from disk; CSV is auto-detected by header and converted in-browser to cansend-format lines, then run through the existing decode path' },
