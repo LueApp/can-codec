@@ -453,6 +453,42 @@ def _compose_bitfield(flags: dict[str, bool], signal: Signal) -> int:
     return value
 
 
+def _constant_raw(sig: Signal) -> int | None:
+    """Expected raw value of a `constant: true` signal, or None if it has no default."""
+    if not sig.constant or sig.default is None:
+        return None
+    val = sig.default
+    if sig.bitfield_map and isinstance(val, dict):
+        return _compose_bitfield(val, sig)
+    if sig.enum_map and isinstance(val, str):
+        return _reverse_enum(val, sig)
+    return _physical_to_raw(float(val), sig)
+
+
+def _match_constants(msg_def: Message, data: bytes) -> tuple[bool, int]:
+    """
+    Compare a frame's bytes against all `constant: true` signals of a message.
+
+    Returns (all_ok, num_matched). all_ok is False on the first mismatch or
+    if a constant signal extends past the frame.
+    """
+    matched = 0
+    for sig in msg_def.signals:
+        expected = _constant_raw(sig)
+        if expected is None:
+            continue
+        if (sig.start_bit + sig.bit_length - 1) // 8 >= len(data):
+            return False, 0
+        if sig.byte_order == "big_endian":
+            actual = _extract_bits_be(data, sig.start_bit, sig.bit_length)
+        else:
+            actual = _extract_bits_le(data, sig.start_bit, sig.bit_length)
+        if actual != expected:
+            return False, matched
+        matched += 1
+    return True, matched
+
+
 # ---------------------------------------------------------------------------
 # Public API: decode / encode
 # ---------------------------------------------------------------------------
@@ -758,10 +794,13 @@ class Codec:
                 if msg.name not in self._by_name:
                     self._by_name[msg.name] = (dev, msg)
 
-    def _find_message_by_id(self, msg_id: int, dlc: int | None = None) -> tuple[DeviceConfig, Message, int] | None:
+    def _find_message_by_id(self, msg_id: int, dlc: int | None = None,
+                            data: bytes | None = None) -> tuple[DeviceConfig, Message, int] | None:
         """
         Find message definition for a CAN ID.
         When dlc is provided, prefers messages whose DLC matches the frame length.
+        When data is provided and multiple DLC matches remain, prefers messages
+        whose `constant: true` signals match the actual frame bytes.
         Returns (device, message, node_id) or None.
         """
         # First try exact match
@@ -779,11 +818,24 @@ class Codec:
         if not candidates:
             return None
 
-        # Prefer matching DLC when available
+        # Narrow by DLC first
         if dlc is not None:
+            dlc_matches = [c for c in candidates if c[1].dlc == dlc]
+            if dlc_matches:
+                candidates = dlc_matches
+
+        # If still ambiguous and we have the data, disambiguate by constants:
+        #   - reject any candidate whose `constant: true` signals don't match the bytes
+        #   - among the rest, prefer the one with the most matched constants
+        if data is not None and len(candidates) > 1:
+            scored = []
             for c in candidates:
-                if c[1].dlc == dlc:
-                    return c
+                ok, matched = _match_constants(c[1], data)
+                if ok:
+                    scored.append((matched, c))
+            if scored:
+                scored.sort(key=lambda x: -x[0])
+                return scored[0][1]
 
         return candidates[0]
 
@@ -809,7 +861,7 @@ class Codec:
 
     def decode(self, msg_id: int, data: bytes) -> DecodedMessage | None:
         """Decode a CAN frame by ID. Returns None if ID is unknown."""
-        result = self._find_message_by_id(msg_id, dlc=len(data))
+        result = self._find_message_by_id(msg_id, dlc=len(data), data=data)
         if result is None:
             return None
         _, msg_def, node_id = result
