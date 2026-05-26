@@ -6,7 +6,7 @@
       "timestamp": "2026-05-06T07:34:00Z",
       "error_message": "CAN frame '0xFF [03] 28 00 00' decoded as SwitchMode instead of WriteRegUint8",
       "file": "example_damiao.yaml, canfd_codec/codec.py",
-      "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not — making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
+      "root_cause": "SwitchMode had broadcast_node_id: 0x7F (giving it ID 0xFF), but WriteRegUint8 did not \u2014 making SwitchMode the only candidate for 0xFF regardless of DLC. Codec also didn't guard against calling decode_broadcast when data was too short for concatenated payload.",
       "fix": "1) Added broadcast_node_id: 0x7F to WriteRegUint8 in example_damiao.yaml so it appears as a candidate for 0xFF. DLC preference (3==3) then correctly selects it over SwitchMode (dlc=4). 2) In Codec.decode(), added size check before calling decode_broadcast: only use concatenated decode when len(data)==dlc*node_count, otherwise fall through to single-frame decode.",
       "tags": [
         "decode",
@@ -88,8 +88,8 @@
       "timestamp": "2026-05-06T07:53:59.368Z",
       "error_message": "CSS fix: background, color",
       "file": "web/src/app.css",
-      "root_cause": "background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
-      "fix": "Changed background: rgba(210, 153, 34, 0.15) → transparent; color: var(--orange) → var(--text-dim)",
+      "root_cause": "background: rgba(210, 153, 34, 0.15) \u2192 transparent; color: var(--orange) \u2192 var(--text-dim)",
+      "fix": "Changed background: rgba(210, 153, 34, 0.15) \u2192 transparent; color: var(--orange) \u2192 var(--text-dim)",
       "tags": [
         "auto-detected",
         "style-fix",
@@ -105,7 +105,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codec-store.svelte.ts",
       "root_cause": "8 lines replaced/restructured",
-      "fix": "Rewrote 19→22 lines (8 removed)",
+      "fix": "Rewrote 19\u219222 lines (8 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -169,7 +169,7 @@
       "error_message": "Wrong operator: ?? should be !==",
       "file": "web/src/lib/codec-store.svelte.ts",
       "root_cause": "Used \"??\" instead of \"!==\"",
-      "fix": "Changed operator ?? → !==",
+      "fix": "Changed operator ?? \u2192 !==",
       "tags": [
         "auto-detected",
         "operator-fix",
@@ -200,7 +200,7 @@
       "timestamp": "2026-05-06T19:25:00Z",
       "error_message": "WriteRegUint8 register_id filter chips not working (TypeError on disabledEnumValues)",
       "file": "web/src/lib/codec-store.svelte.ts",
-      "root_cause": "After renaming disabledMuxValues→disabledEnumValues, old localStorage data for WriteRegUint8 still had the old field name. _ensureFilter found the existing entry (skipping initialization) but the entry lacked disabledEnumValues, causing undefined property access.",
+      "root_cause": "After renaming disabledMuxValues\u2192disabledEnumValues, old localStorage data for WriteRegUint8 still had the old field name. _ensureFilter found the existing entry (skipping initialization) but the entry lacked disabledEnumValues, causing undefined property access.",
       "fix": "Added _normalizeFilter() that ensures disabledNodes, disabledSignals, disabledEnumValues all exist on any filter object loaded from storage. Applied in _ensureFilter, getMessageFilter, and _rebuildFilterMap.",
       "tags": [
         "filter",
@@ -236,7 +236,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codec.ts",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 9→15 lines (3 removed)",
+      "fix": "Rewrote 9\u219215 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -249,9 +249,9 @@
     {
       "id": "bug-016",
       "timestamp": "2026-05-06T19:50:00Z",
-      "error_message": "RegResponseByte register_id filter not working — all RegResponse* frames decoded as RegResponseFloat32",
+      "error_message": "RegResponseByte register_id filter not working \u2014 all RegResponse* frames decoded as RegResponseFloat32",
       "file": "web/src/lib/codec.ts",
-      "root_cause": "findMessageById returned the first multi-node message matching the CAN ID, without considering DLC. RegResponseFloat32, RegResponseByte, RegResponseWord etc. all share base ID 0x100 — the first registered one always won, so register_id enum filter on RegResponseByte had no effect.",
+      "root_cause": "findMessageById returned the first multi-node message matching the CAN ID, without considering DLC. RegResponseFloat32, RegResponseByte, RegResponseWord etc. all share base ID 0x100 \u2014 the first registered one always won, so register_id enum filter on RegResponseByte had no effect.",
       "fix": "Updated findMessageById to accept optional dlc parameter. Collects all candidates and prefers the one with matching DLC, matching the Python codec's _find_message_by_id behavior. decode() now passes data.length as dlc.",
       "tags": [
         "decode",
@@ -269,7 +269,7 @@
     {
       "id": "bug-017",
       "timestamp": "2026-05-06T20:10:00Z",
-      "error_message": "RegResponseByte filter still not working after DLC fix — node 0 frames always decoded as first registered RegResponse variant",
+      "error_message": "RegResponseByte filter still not working after DLC fix \u2014 node 0 frames always decoded as first registered RegResponse variant",
       "file": "web/src/lib/codec.ts",
       "root_cause": "rebuildLookups() added multi-node messages to byId with their base ID. findMessageById hit the byId fast-path for node-0 frames (base ID = 0x100) and returned immediately WITHOUT checking DLC. The DLC disambiguation in the multiNodeMessages loop was never reached for base-ID frames.",
       "fix": "Changed rebuildLookups to only add single-node messages (node_count <= 1) to byId. Multi-node messages are only tracked in multiNodeMessages, ensuring ALL lookups go through the DLC-aware candidate selection.",
@@ -342,7 +342,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "2 lines replaced/restructured",
-      "fix": "Rewrote 36→49 lines (2 removed)",
+      "fix": "Rewrote 36\u219249 lines (2 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -390,7 +390,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "6 lines replaced/restructured",
-      "fix": "Rewrote 10→4 lines (6 removed)",
+      "fix": "Rewrote 10\u21924 lines (6 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -406,7 +406,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 8→8 lines (3 removed)",
+      "fix": "Rewrote 8\u21928 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -454,7 +454,7 @@
       "error_message": "Significant refactor of ",
       "file": "canfd_codec/mavlink_loader.py",
       "root_cause": "14 lines replaced/restructured",
-      "fix": "Rewrote 43→57 lines (14 removed)",
+      "fix": "Rewrote 43\u219257 lines (14 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -470,7 +470,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/config-loader.ts",
       "root_cause": "12 lines replaced/restructured",
-      "fix": "Rewrote 32→46 lines (12 removed)",
+      "fix": "Rewrote 32\u219246 lines (12 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -486,7 +486,7 @@
       "error_message": "Significant refactor of ",
       "file": "canfd_codec/monitor.py",
       "root_cause": "6 lines replaced/restructured",
-      "fix": "Rewrote 29→46 lines (6 removed) | Also: decoded = self.codec.decode(msg.arbitration_id, by; self._latest[msg.arbitration_id] = decoded",
+      "fix": "Rewrote 29\u219246 lines (6 removed) | Also: decoded = self.codec.decode(msg.arbitration_id, by; self._latest[msg.arbitration_id] = decoded",
       "tags": [
         "auto-detected",
         "refactor",
@@ -567,7 +567,7 @@
       "timestamp": "2026-05-16T03:50:00Z",
       "error_message": "/decode page still garbled multi-frame MAVLink after reassembler fix",
       "file": "web/src/routes/decode/+page.svelte",
-      "root_cause": "The /decode page had its OWN grouping logic separate from plot-store: it grouped ALL consecutive same-canId MAVLink frames into one buffer, then called smartDecodeMultiFrame on the concatenated bytes — lumping multiple back-to-back messages on the same canId into one giant pseudo-frame.",
+      "root_cause": "The /decode page had its OWN grouping logic separate from plot-store: it grouped ALL consecutive same-canId MAVLink frames into one buffer, then called smartDecodeMultiFrame on the concatenated bytes \u2014 lumping multiple back-to-back messages on the same canId into one giant pseudo-frame.",
       "fix": "Rewrote decode() to feed frames through MavlinkReassembler with length-based completion, same as the plot-store paste analyzer. Tracks per-canId raw line lists to preserve the source-line label for each reassembled group.",
       "tags": [
         "mavlink",
@@ -603,7 +603,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "11 lines replaced/restructured",
-      "fix": "Rewrote 18→7 lines (11 removed) | Also: for (const [, chart] of chartInstances) chart.dest; if (timelineChart) { timelineChart.destroy(); time | Also: function resetAllZoom() {; for (const [, chart] of chartInstances) chart.rese | Also: <div style=\"display: flex; justify-content: space-; <div style=\"display: flex; gap: 8px;\"> | Also: <li><strong>Zoom</strong> — scroll wheel, pinch, o; <li><strong>Timeline markers A/B</strong> — click  | Also: <li><strong>缩放</strong>——滚轮缩放、双指缩放或框选缩放；双击复位</li>; <li><strong>时间线标记 A/B</strong>——在时序图上点击设置标记并测量 Δt<",
+      "fix": "Rewrote 18\u21927 lines (11 removed) | Also: for (const [, chart] of chartInstances) chart.dest; if (timelineChart) { timelineChart.destroy(); time | Also: function resetAllZoom() {; for (const [, chart] of chartInstances) chart.rese | Also: <div style=\"display: flex; justify-content: space-; <div style=\"display: flex; gap: 8px;\"> | Also: <li><strong>Zoom</strong> \u2014 scroll wheel, pinch, o; <li><strong>Timeline markers A/B</strong> \u2014 click  | Also: <li><strong>\u7f29\u653e</strong>\u2014\u2014\u6eda\u8f6e\u7f29\u653e\u3001\u53cc\u6307\u7f29\u653e\u6216\u6846\u9009\u7f29\u653e\uff1b\u53cc\u51fb\u590d\u4f4d</li>; <li><strong>\u65f6\u95f4\u7ebf\u6807\u8bb0 A/B</strong>\u2014\u2014\u5728\u65f6\u5e8f\u56fe\u4e0a\u70b9\u51fb\u8bbe\u7f6e\u6807\u8bb0\u5e76\u6d4b\u91cf \u0394t<",
       "tags": [
         "auto-detected",
         "refactor",
@@ -618,8 +618,8 @@
       "timestamp": "2026-05-16T05:24:35.296Z",
       "error_message": "CSS fix: white-space",
       "file": "web/src/app.css",
-      "root_cause": "white-space: pre → nowrap",
-      "fix": "Changed white-space: pre → nowrap",
+      "root_cause": "white-space: pre \u2192 nowrap",
+      "fix": "Changed white-space: pre \u2192 nowrap",
       "tags": [
         "auto-detected",
         "style-fix",
@@ -635,7 +635,7 @@
       "error_message": "Plot page zoom 'gets stuck in a wrong place or tries many times for a suitable view'",
       "file": "web/src/routes/plot/+page.svelte, web/src/lib/plot-store.svelte.ts",
       "root_cause": "updateLiveSignalCharts / updateLiveTimeline / updateLiveIntervalCharts unconditionally overwrite xScale.min/max with the current data range on every live tick (~50ms), blowing away any manual zoom before the user can examine the result. Compounded by mode:'xy' wheel zoom (both axes at once), no pan gesture configured in the plugin, and no rolling-window concept for live capture.",
-      "fix": "Added followLive + userZoomed + followWindowSeconds + showGestureHint state to plot-store (localStorage-persisted). updateLive* now only set xScale.min/max in follow mode (sliding [xMax-window, xMax]); when userZoomed they leave the plugin's zoom transform alone. Redesigned zoomOptions: plugin wheel disabled, custom canvas wheel handler maps Scroll=x, Shift+Scroll=y, Ctrl/Meta+Scroll=xy with focalPoint at cursor; left-drag=pan x; Shift+drag=box zoom; double-click=resetZoom+clearUserZoom. Added Fit X / Fit Y / Fit toolbar buttons via plugin-zoom 2.x resetZoom(transition, mode). Follow-live toggle + window-seconds input visible in live mode; toggling on calls resetZoom('none') so rolling-window math takes over cleanly. Added gesture cheat-sheet strip (dismissible via ×, restorable via ? button). Existing click-to-copy-frame onClick handler unchanged — pan threshold:4 lets quick clicks pass through.",
+      "fix": "Added followLive + userZoomed + followWindowSeconds + showGestureHint state to plot-store (localStorage-persisted). updateLive* now only set xScale.min/max in follow mode (sliding [xMax-window, xMax]); when userZoomed they leave the plugin's zoom transform alone. Redesigned zoomOptions: plugin wheel disabled, custom canvas wheel handler maps Scroll=x, Shift+Scroll=y, Ctrl/Meta+Scroll=xy with focalPoint at cursor; left-drag=pan x; Shift+drag=box zoom; double-click=resetZoom+clearUserZoom. Added Fit X / Fit Y / Fit toolbar buttons via plugin-zoom 2.x resetZoom(transition, mode). Follow-live toggle + window-seconds input visible in live mode; toggling on calls resetZoom('none') so rolling-window math takes over cleanly. Added gesture cheat-sheet strip (dismissible via \u00d7, restorable via ? button). Existing click-to-copy-frame onClick handler unchanged \u2014 pan threshold:4 lets quick clicks pass through.",
       "tags": [
         "ux",
         "plot",
@@ -668,10 +668,10 @@
     {
       "id": "bug-041",
       "timestamp": "2026-05-16T14:00:00.000Z",
-      "error_message": "User: 'when pasting candump message with timestamps, the signal strangely show timestamp zero' — chart tooltips and timeline UI lose the wall-clock timestamp from pasted candump lines and show 0/normalized time only.",
+      "error_message": "User: 'when pasting candump message with timestamps, the signal strangely show timestamp zero' \u2014 chart tooltips and timeline UI lose the wall-clock timestamp from pasted candump lines and show 0/normalized time only.",
       "file": "web/src/routes/plot/+page.svelte",
-      "root_cause": "Each chart dataset built `absTime: s.time` (or e.time / d.time), but s.time/e.time/d.time are the NORMALIZED chart time (raw_ts - firstTs / liveStartTime) — already zeroed at the first frame. The real wall-clock timestamp lives on s.frame.timestamp. So the 'abs ...' shown in tooltips was just the same number as the chart x; never the actual pasted timestamp. Compounded by tooltip title only conditionally rendering '(abs ...)' (when timelineOrigin shifted or applyTimingToAllViews set), so most users never saw it. The timeline click handler also read pt.absTime expecting normalized time — that worked accidentally by the bug.",
-      "fix": "Repointed absTime in all six dataset constructions (3x render + 3x updateLive) to `frame?.timestamp ?? s.time` so it carries the true wall clock from FrameRef.timestamp. Tooltip titles now ALWAYS show `t = X.XXXs  (abs Y.YYYs)` when abs differs from x by ≥0.5ms (covers paste with absolute timestamps and live mode); single-line `t = X.XXXs` when they coincide. Timeline onClick now derives normalized time from `pt.x + plotStore.timelineOrigin` (the correct relationship), so changing absTime semantics doesn't break t=0/Δt marker placement; the toast shows wall-clock when setting t=0 so the user sees the real timestamp they clicked.",
+      "root_cause": "Each chart dataset built `absTime: s.time` (or e.time / d.time), but s.time/e.time/d.time are the NORMALIZED chart time (raw_ts - firstTs / liveStartTime) \u2014 already zeroed at the first frame. The real wall-clock timestamp lives on s.frame.timestamp. So the 'abs ...' shown in tooltips was just the same number as the chart x; never the actual pasted timestamp. Compounded by tooltip title only conditionally rendering '(abs ...)' (when timelineOrigin shifted or applyTimingToAllViews set), so most users never saw it. The timeline click handler also read pt.absTime expecting normalized time \u2014 that worked accidentally by the bug.",
+      "fix": "Repointed absTime in all six dataset constructions (3x render + 3x updateLive) to `frame?.timestamp ?? s.time` so it carries the true wall clock from FrameRef.timestamp. Tooltip titles now ALWAYS show `t = X.XXXs  (abs Y.YYYs)` when abs differs from x by \u22650.5ms (covers paste with absolute timestamps and live mode); single-line `t = X.XXXs` when they coincide. Timeline onClick now derives normalized time from `pt.x + plotStore.timelineOrigin` (the correct relationship), so changing absTime semantics doesn't break t=0/\u0394t marker placement; the toast shows wall-clock when setting t=0 so the user sees the real timestamp they clicked.",
       "tags": [
         "ux",
         "plot",
@@ -689,9 +689,9 @@
     {
       "id": "bug-042",
       "timestamp": "2026-05-16T14:25:00.000Z",
-      "error_message": "User: 'all signals fall on the timestamps zero in the plot' — after the absTime fix, signals visually cluster at x=0 in paste mode.",
+      "error_message": "User: 'all signals fall on the timestamps zero in the plot' \u2014 after the absTime fix, signals visually cluster at x=0 in paste mode.",
       "file": "web/src/routes/plot/+page.svelte",
-      "root_cause": "Two latent bugs in the updateLive* path. (1) updateLiveSignalCharts read samples from plotStore.liveSampleStore, which is empty in paste mode (paste samples live in allSeries[].samples accessed via getSamples()). When paste-mode actions like handleTimelineClick / resetTimelineOrigin / toggleApplyTimingToAllViews / (new) toggleFollowLive triggered requestRender(false), this function would set ds.data = [] and blank the chart. (2) The new `follow = followLive && !userZoomed` gate let paste-mode renders apply a live sliding window because followLive defaults to true — clamping xScale to [xMax-window, xMax] regardless of mode, which can make finite paste data appear shoved against one edge of the chart.",
+      "root_cause": "Two latent bugs in the updateLive* path. (1) updateLiveSignalCharts read samples from plotStore.liveSampleStore, which is empty in paste mode (paste samples live in allSeries[].samples accessed via getSamples()). When paste-mode actions like handleTimelineClick / resetTimelineOrigin / toggleApplyTimingToAllViews / (new) toggleFollowLive triggered requestRender(false), this function would set ds.data = [] and blank the chart. (2) The new `follow = followLive && !userZoomed` gate let paste-mode renders apply a live sliding window because followLive defaults to true \u2014 clamping xScale to [xMax-window, xMax] regardless of mode, which can make finite paste data appear shoved against one edge of the chart.",
       "fix": "Changed updateLiveSignalCharts to use plotStore.getSamples(key) (which already handles both paste and live modes). Gated the follow window with `plotStore.mode === 'live'` in all three updateLive functions so the sliding-window behavior only applies during live capture; paste mode now lets Chart.js auto-fit the X axis to its data.",
       "tags": [
         "ux",
@@ -714,7 +714,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codec.ts",
       "root_cause": "18 lines replaced/restructured",
-      "fix": "Rewrote 43→54 lines (18 removed)",
+      "fix": "Rewrote 43\u219254 lines (18 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -727,9 +727,9 @@
     {
       "id": "bug-044",
       "timestamp": "2026-05-16T14:45:00.000Z",
-      "error_message": "User: 'all signals fall on the timestamps zero in the plot' — when pasting candump with `TX B -` / `RX B -` direction/flag tokens between iface and CAN ID, parseCandump silently drops the timestamp and analyze() falls into ts=0 for every frame.",
+      "error_message": "User: 'all signals fall on the timestamps zero in the plot' \u2014 when pasting candump with `TX B -` / `RX B -` direction/flag tokens between iface and CAN ID, parseCandump silently drops the timestamp and analyze() falls into ts=0 for every frame.",
       "file": "web/src/lib/codec.ts",
-      "root_cause": "Both parseCandump regexes anchored the optional `(timestamp) ` capture group as a single atomic prefix immediately preceded by interface + canId + dlc. The user's format inserts `TX B -` between the interface and the CAN ID (`(1774374538.692191) can0 TX B - 00010101 [35] ...`), which prevents the regex from succeeding in one go. JS regex unanchored match() then backtracks and starts matching from the canId position — the timestamp is gone, but the parser returns success with `timestamp: undefined`. Compounded for MAVLink-over-CAN: ts gets coerced to 0 when feeding the reassembler (`frame.timestamp ?? 0`), then every reassembled buffer has timestamps:[0, 0, ...], firstTs becomes 0, every normalized chart-x is 0 — all signals stack at the origin.",
+      "root_cause": "Both parseCandump regexes anchored the optional `(timestamp) ` capture group as a single atomic prefix immediately preceded by interface + canId + dlc. The user's format inserts `TX B -` between the interface and the CAN ID (`(1774374538.692191) can0 TX B - 00010101 [35] ...`), which prevents the regex from succeeding in one go. JS regex unanchored match() then backtracks and starts matching from the canId position \u2014 the timestamp is gone, but the parser returns success with `timestamp: undefined`. Compounded for MAVLink-over-CAN: ts gets coerced to 0 when feeding the reassembler (`frame.timestamp ?? 0`), then every reassembled buffer has timestamps:[0, 0, ...], firstTs becomes 0, every normalized chart-x is 0 \u2014 all signals stack at the origin.",
       "fix": "Restructured parseCandump in two phases: (1) pre-extract a leading `(\\d+(?:\\.\\d+)?)` timestamp via a small dedicated regex, then strip it; (2) run the body matchers on what's left. Added a `(?:\\S+\\s+){0,4}` slot in the candump body regex to absorb up to four direction/flag tokens like `TX B -` between iface and CAN ID. The cansend regex stays strict (no extra tokens between iface and ID#data). All existing formats (cansend, standard candump, candump-l) still parse identically; the user's TX/RX direction format now correctly extracts timestamp.",
       "tags": [
         "plot",
@@ -768,7 +768,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/docs/+page.svelte",
       "root_cause": "9 lines replaced/restructured",
-      "fix": "Rewrote 13→3 lines (9 removed)",
+      "fix": "Rewrote 13\u21923 lines (9 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -799,8 +799,8 @@
       "timestamp": "2026-05-16T08:09:40.751Z",
       "error_message": "CSS fix: max-width, gap",
       "file": "web/src/app.css",
-      "root_cause": "max-width: 1100px → 1280px; gap: 32px → 20px",
-      "fix": "Changed max-width: 1100px → 1280px; gap: 32px → 20px",
+      "root_cause": "max-width: 1100px \u2192 1280px; gap: 32px \u2192 20px",
+      "fix": "Changed max-width: 1100px \u2192 1280px; gap: 32px \u2192 20px",
       "tags": [
         "auto-detected",
         "style-fix",
@@ -832,7 +832,7 @@
       "error_message": "Significant refactor of ",
       "file": "canfd_codec/serve.py",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 14→25 lines (3 removed)",
+      "fix": "Rewrote 14\u219225 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -848,7 +848,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/plot/+page.svelte",
       "root_cause": "2 lines replaced/restructured",
-      "fix": "Rewrote 16→21 lines (2 removed) | Also: ts, aid, data, is_fd = p; json.dumps({\"type\":\"frame\",\"arbitration_id\":aid,\"d",
+      "fix": "Rewrote 16\u219221 lines (2 removed) | Also: ts, aid, data, is_fd = p; json.dumps({\"type\":\"frame\",\"arbitration_id\":aid,\"d",
       "tags": [
         "auto-detected",
         "refactor",
@@ -896,7 +896,7 @@
       "error_message": "Significant refactor of ",
       "file": "../../../../tmp/ws_smoketest.py",
       "root_cause": "8 lines replaced/restructured",
-      "fix": "Rewrote 15→28 lines (8 removed) | Also: srv.stop(); time.sleep(0.5)",
+      "fix": "Rewrote 15\u219228 lines (8 removed) | Also: srv.stop(); time.sleep(0.5)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -909,7 +909,7 @@
     {
       "id": "bug-055",
       "timestamp": "2026-05-16T17:00:00.000Z",
-      "error_message": "NameError: name 'dlc' is not defined (latent — would have triggered on first frame in candump reader thread)",
+      "error_message": "NameError: name 'dlc' is not defined (latent \u2014 would have triggered on first frame in candump reader thread)",
       "file": "canfd_codec/serve.py",
       "root_cause": "_parse_candump_line() returned (timestamp, arb_id, data_hex, is_fd) but computed `dlc` only as a local; the candump reader unpacked the 4-tuple yet still referenced `dlc` when assembling the broadcast JSON. The path was unexercised because no smoke test had ever sent a frame through serve.py via the candump backend.",
       "fix": "Changed _parse_candump_line() to return (timestamp, arb_id, data_hex, dlc, is_fd) and updated the unpack/JSON-assembly to include dlc. Mirrored in the embedded SERVER_SCRIPT inside web/src/routes/plot/+page.svelte. Discovered while wiring inbound `{type:send}` handler for the new Encode-page send/SOP feature.",
@@ -929,7 +929,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/plot-store.svelte.ts",
       "root_cause": "2 lines replaced/restructured",
-      "fix": "Rewrote 28→35 lines (2 removed)",
+      "fix": "Rewrote 28\u219235 lines (2 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -944,7 +944,7 @@
       "timestamp": "2026-05-16T18:30:00.000Z",
       "error_message": "Plot page shows status=connected but no raw CAN frames appear in the raw-frame log or chart",
       "file": "web/src/lib/plot-store.svelte.ts, web/src/routes/plot/+page.svelte",
-      "root_cause": "After refactoring plot-store to use the shared busStore, plot's handleLiveFrame callback was only being subscribed inside plotStore.connectLive() — which only ran when the user explicitly clicked the Connect button on the plot page. If another page (e.g. /encode) had already connected the bus, the Connect button was hidden (status='connected'), and plot never subscribed, so frames flowed past silently. The bus connection was shared, but the frame callback was not.",
+      "root_cause": "After refactoring plot-store to use the shared busStore, plot's handleLiveFrame callback was only being subscribed inside plotStore.connectLive() \u2014 which only ran when the user explicitly clicked the Connect button on the plot page. If another page (e.g. /encode) had already connected the bus, the Connect button was hidden (status='connected'), and plot never subscribed, so frames flowed past silently. The bus connection was shared, but the frame callback was not.",
       "fix": "Made subscribeLiveFrames() public + idempotent. Call it from (1) plotStore.switchMode when transitioning to 'live', and (2) the plot page's onMount when mode is already 'live'. unsubscribeLiveFrames() remains called on switchMode out of live and disconnectLive.",
       "tags": [
         "plot",
@@ -962,7 +962,7 @@
       "timestamp": "2026-05-16T12:06:33.690Z",
       "error_message": "Missing error handling in unknown",
       "file": "web/src/lib/sequence-store.svelte.ts",
-      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "root_cause": "Code path had no error handling \u2014 exceptions would propagate uncaught",
       "fix": "Added try/catch block",
       "tags": [
         "auto-detected",
@@ -1043,7 +1043,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/encode/+page.svelte",
       "root_cause": "4 lines replaced/restructured",
-      "fix": "Rewrote 16→25 lines (4 removed) | Also: cursor: grab;; padding: 0 4px;",
+      "fix": "Rewrote 16\u219225 lines (4 removed) | Also: cursor: grab;; padding: 0 4px;",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1091,7 +1091,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/encode/+page.svelte",
       "root_cause": "2 lines replaced/restructured",
-      "fix": "Rewrote 9→31 lines (2 removed)",
+      "fix": "Rewrote 9\u219231 lines (2 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1122,7 +1122,7 @@
       "timestamp": "2026-05-17T07:56:21.551Z",
       "error_message": "Missing error handling in unknown",
       "file": "web/src/lib/sequence-store.svelte.ts",
-      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "root_cause": "Code path had no error handling \u2014 exceptions would propagate uncaught",
       "fix": "Added try/catch block",
       "tags": [
         "auto-detected",
@@ -1139,7 +1139,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/sequence-store.svelte.ts",
       "root_cause": "5 lines replaced/restructured",
-      "fix": "Rewrote 25→33 lines (5 removed)",
+      "fix": "Rewrote 25\u219233 lines (5 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1218,7 +1218,7 @@
       "timestamp": "2026-05-17T08:18:36.946Z",
       "error_message": "Missing error handling in sendNow",
       "file": "web/src/routes/encode/+page.svelte",
-      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "root_cause": "Code path had no error handling \u2014 exceptions would propagate uncaught",
       "fix": "Added try/catch block",
       "tags": [
         "auto-detected",
@@ -1251,7 +1251,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/sequence-store.svelte.ts",
       "root_cause": "6 lines replaced/restructured",
-      "fix": "Rewrote 16→23 lines (6 removed)",
+      "fix": "Rewrote 16\u219223 lines (6 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1315,7 +1315,7 @@
       "error_message": "Wrong reference: sendCount should be txFrameCount",
       "file": "web/src/lib/websocket-client.svelte.ts",
       "root_cause": "Used \"sendCount\" instead of \"txFrameCount\"",
-      "fix": "Changed sendCount → txFrameCount",
+      "fix": "Changed sendCount \u2192 txFrameCount",
       "tags": [
         "auto-detected",
         "wrong-reference",
@@ -1347,7 +1347,7 @@
       "error_message": "Type error",
       "file": "web/src/lib/sequence-store.svelte.ts",
       "root_cause": "Missing or incorrect type annotation",
-      "fix": "Added type assertion/annotation | Also: this.runningCellId = null;; // Vars are NOT cleared here — they persist across cell runs",
+      "fix": "Added type assertion/annotation | Also: this.runningCellId = null;; // Vars are NOT cleared here \u2014 they persist across cell runs",
       "tags": [
         "auto-detected",
         "type-fix",
@@ -1395,7 +1395,7 @@
       "error_message": "Wrong operator: === should be &&",
       "file": "web/src/routes/program/+page.svelte",
       "root_cause": "Used \"===\" instead of \"&&\"",
-      "fix": "Changed operator === → &&",
+      "fix": "Changed operator === \u2192 &&",
       "tags": [
         "auto-detected",
         "operator-fix",
@@ -1427,7 +1427,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/sequence-store.svelte.ts",
       "root_cause": "2 lines replaced/restructured",
-      "fix": "Rewrote 10→39 lines (2 removed)",
+      "fix": "Rewrote 10\u219239 lines (2 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1442,7 +1442,7 @@
       "timestamp": "2026-05-17T14:16:33.525Z",
       "error_message": "Missing error handling in unknown",
       "file": "web/src/lib/sequence-store.svelte.ts",
-      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "root_cause": "Code path had no error handling \u2014 exceptions would propagate uncaught",
       "fix": "Added try/catch block",
       "tags": [
         "auto-detected",
@@ -1538,7 +1538,7 @@
       "timestamp": "2026-05-17T14:53:57.201Z",
       "error_message": "Missing error handling in unknown",
       "file": "web/src/lib/sequence-store.svelte.ts",
-      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "root_cause": "Code path had no error handling \u2014 exceptions would propagate uncaught",
       "fix": "Added try/catch block",
       "tags": [
         "auto-detected",
@@ -1555,7 +1555,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/program/+page.svelte",
       "root_cause": "3 lines replaced/restructured",
-      "fix": "Rewrote 10→14 lines (3 removed)",
+      "fix": "Rewrote 10\u219214 lines (3 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1586,8 +1586,8 @@
       "timestamp": "2026-05-17T15:02:53.933Z",
       "error_message": "Incorrect value in code",
       "file": "web/src/routes/docs/+page.svelte",
-      "root_cause": "Had 'Plot（绘图）'",
-      "fix": "Changed to 'Program（程序）'",
+      "root_cause": "Had 'Plot\uff08\u7ed8\u56fe\uff09'",
+      "fix": "Changed to 'Program\uff08\u7a0b\u5e8f\uff09'",
       "tags": [
         "auto-detected",
         "wrong-value",
@@ -1703,7 +1703,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/lib/codegen/common.ts",
       "root_cause": "7 lines replaced/restructured",
-      "fix": "Rewrote 18→9 lines (7 removed)",
+      "fix": "Rewrote 18\u21929 lines (7 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1719,7 +1719,7 @@
       "error_message": "Wrong operator: >= should be ||",
       "file": "web/src/lib/codegen/common.ts",
       "root_cause": "Used \">=\" instead of \"||\"",
-      "fix": "Changed operator >= → ||",
+      "fix": "Changed operator >= \u2192 ||",
       "tags": [
         "auto-detected",
         "operator-fix",
@@ -1895,7 +1895,7 @@
       "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
       "file": "web/src/lib/codegen/python.ts",
       "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
-      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "fix": "Changed signalMaxRawHex \u2192 signalMaxRawDec",
       "tags": [
         "auto-detected",
         "wrong-reference",
@@ -1911,7 +1911,7 @@
       "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
       "file": "web/src/lib/codegen/c.ts",
       "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
-      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "fix": "Changed signalMaxRawHex \u2192 signalMaxRawDec",
       "tags": [
         "auto-detected",
         "wrong-reference",
@@ -1927,7 +1927,7 @@
       "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
       "file": "web/src/lib/codegen/cpp.ts",
       "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
-      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "fix": "Changed signalMaxRawHex \u2192 signalMaxRawDec",
       "tags": [
         "auto-detected",
         "wrong-reference",
@@ -1943,7 +1943,7 @@
       "error_message": "Wrong reference: signalMaxRawHex should be signalMaxRawDec",
       "file": "web/src/lib/codegen/rust.ts",
       "root_cause": "Used \"signalMaxRawHex\" instead of \"signalMaxRawDec\"",
-      "fix": "Changed signalMaxRawHex → signalMaxRawDec",
+      "fix": "Changed signalMaxRawHex \u2192 signalMaxRawDec",
       "tags": [
         "auto-detected",
         "wrong-reference",
@@ -1975,7 +1975,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/docs/+page.svelte",
       "root_cause": "4 lines replaced/restructured",
-      "fix": "Rewrote 23→71 lines (4 removed)",
+      "fix": "Rewrote 23\u219271 lines (4 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -1991,7 +1991,7 @@
       "error_message": "Significant refactor of ",
       "file": "web/src/routes/docs/+page.svelte",
       "root_cause": "4 lines replaced/restructured",
-      "fix": "Rewrote 23→71 lines (4 removed)",
+      "fix": "Rewrote 23\u219271 lines (4 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -2022,7 +2022,7 @@
       "timestamp": "2026-05-19T10:01:48.663Z",
       "error_message": "Missing await",
       "file": "web/src/lib/plot-store.svelte.ts",
-      "root_cause": "Async call without await — returned Promise instead of value",
+      "root_cause": "Async call without await \u2014 returned Promise instead of value",
       "fix": "Added await to async call",
       "tags": [
         "auto-detected",
@@ -2048,6 +2048,75 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-19T10:02:10.233Z"
+    },
+    {
+      "id": "bug-126",
+      "timestamp": "2026-05-26T04:12:38.009Z",
+      "error_message": "Significant refactor of ",
+      "file": "canfd_codec/codec.py",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 28\u219244 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T04:12:38.009Z"
+    },
+    {
+      "id": "bug-127",
+      "timestamp": "2026-05-26T04:13:10.654Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "No early return/throw for edge case: bit !== undefined && active",
+      "fix": "Added guard clause: if (bit !== undefined && active)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T04:13:10.654Z"
+    },
+    {
+      "id": "bug-128",
+      "timestamp": "2026-05-26T04:13:25.824Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T04:13:25.824Z"
+    },
+    {
+      "id": "bug-129",
+      "timestamp": "2026-05-26T12:15:00Z",
+      "error_message": "Frames at CAN ID 0x001 mis-decoded as MITControl/SpeedControl when both dm.yaml and vesc.yaml loaded; should be PositionControl/MITFeedback per first-byte mode/feedback_type",
+      "file": "canfd_codec/codec.py, web/src/lib/codec.ts",
+      "root_cause": "Codec.findMessageById tie-broke same-ID multi-node candidates by DLC only. When two messages share the same ID+DLC (e.g. vesc MITControl/PositionControl/ServoFeedback at 0x001-0x003 with DLC=8), the first one defined in YAML always won, regardless of the constant `mode` byte that would actually distinguish them.",
+      "fix": "Added _constant_raw() + _match_constants() (Python) and constantRaw() + matchConstants() (TS). _find_message_by_id now also takes the frame bytes and, when DLC matches are still ambiguous, rejects candidates whose `constant: true` signals don't match the frame, then prefers the candidate with the most matched constants.",
+      "tags": [
+        "decode",
+        "id-matching",
+        "dlc-mismatch",
+        "constant",
+        "vesc",
+        "dm"
+      ],
+      "related_bugs": [
+        "bug-001"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T12:15:00Z"
     }
   ]
 }

@@ -162,6 +162,40 @@ function composeBitfield(flags: Record<string, boolean>, signal: Signal): number
   return value;
 }
 
+/** Expected raw value of a `constant: true` signal, or null if it has no default. */
+function constantRaw(sig: Signal): number | null {
+  if (!sig.constant || sig.default_value === null) return null;
+  const val = sig.default_value;
+  if (Object.keys(sig.enum_map).length > 0 && typeof val === 'string') {
+    return reverseEnum(val, sig);
+  }
+  const num = typeof val === 'number' ? val : Number(val);
+  if (!Number.isFinite(num)) return null;
+  return physicalToRaw(num, sig);
+}
+
+/**
+ * Check a frame's bytes against all `constant: true` signals of a message.
+ * Returns { ok, matched }. ok is false on the first mismatch or when a
+ * constant signal extends past the frame.
+ */
+function matchConstants(msgDef: Message, data: Uint8Array): { ok: boolean; matched: number } {
+  let matched = 0;
+  for (const sig of msgDef.signals) {
+    const expected = constantRaw(sig);
+    if (expected === null) continue;
+    if (Math.floor((sig.start_bit + sig.bit_length - 1) / 8) >= data.length) {
+      return { ok: false, matched: 0 };
+    }
+    const actual = sig.byte_order === 'big_endian'
+      ? extractBitsBE(data, sig.start_bit, sig.bit_length)
+      : extractBitsLE(data, sig.start_bit, sig.bit_length);
+    if (actual !== expected) return { ok: false, matched };
+    matched++;
+  }
+  return { ok: true, matched };
+}
+
 // ---------------------------------------------------------------------------
 // Array signal grouping helpers
 // ---------------------------------------------------------------------------
@@ -212,22 +246,24 @@ export function groupArraySignalDefs(signals: Signal[]): { key: string; base: st
 // Display helpers
 // ---------------------------------------------------------------------------
 
-export function displayValue(s: DecodedSignal): string {
+export function displayValue(s: DecodedSignal, override?: { value?: number; unit?: string }): string {
   if (s.bitfield_flags !== null) {
     const active = Object.entries(s.bitfield_flags).filter(([, v]) => v).map(([n]) => n);
     return active.length > 0 ? active.join(', ') : '(none)';
   }
   if (s.enum_name !== null) return s.enum_name;
-  if (typeof s.physical_value === 'number' && Number.isFinite(s.physical_value)) {
-    if (s.physical_value === Math.floor(s.physical_value) && Math.abs(s.physical_value) < 1e15) {
-      const v = String(Math.floor(s.physical_value));
-      return s.unit ? `${v} ${s.unit}` : v;
+  const unit = override?.unit ?? s.unit;
+  const value = override?.value ?? s.physical_value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === Math.floor(value) && Math.abs(value) < 1e15) {
+      const v = String(Math.floor(value));
+      return unit ? `${v} ${unit}` : v;
     }
-    const v = Number(s.physical_value.toPrecision(4)).toString();
-    return s.unit ? `${v} ${s.unit}` : v;
+    const v = Number(value.toPrecision(4)).toString();
+    return unit ? `${v} ${unit}` : v;
   }
-  const v = String(s.physical_value);
-  return s.unit ? `${v} ${s.unit}` : v;
+  const v = String(value);
+  return unit ? `${v} ${unit}` : v;
 }
 
 // ---------------------------------------------------------------------------
@@ -654,18 +690,34 @@ export class Codec {
     }
   }
 
-  private findMessageById(msgId: number, dlc?: number): { device: DeviceConfig; message: Message; nodeId: number } | null {
+  private findMessageById(
+    msgId: number, dlc?: number, data?: Uint8Array
+  ): { device: DeviceConfig; message: Message; nodeId: number } | null {
     const entry = this.byId.get(msgId);
     if (entry) return { ...entry, nodeId: 0 };
-    const candidates: { device: DeviceConfig; message: Message; nodeId: number }[] = [];
+    let candidates: { device: DeviceConfig; message: Message; nodeId: number }[] = [];
     for (const { device, message } of this.multiNodeMessages) {
       const nodeId = getNodeForId(message, msgId);
       if (nodeId !== null) candidates.push({ device, message, nodeId });
     }
     if (candidates.length === 0) return null;
     if (dlc !== undefined) {
-      const dlcMatch = candidates.find(c => c.message.dlc === dlc);
-      if (dlcMatch) return dlcMatch;
+      const dlcMatches = candidates.filter(c => c.message.dlc === dlc);
+      if (dlcMatches.length > 0) candidates = dlcMatches;
+    }
+    // If multiple messages share the same ID + DLC, use `constant: true`
+    // signals as discriminators: reject any candidate whose constants don't
+    // match the frame bytes, then prefer the one with the most matches.
+    if (data !== undefined && candidates.length > 1) {
+      const scored: { matched: number; cand: typeof candidates[0] }[] = [];
+      for (const c of candidates) {
+        const { ok, matched } = matchConstants(c.message, data);
+        if (ok) scored.push({ matched, cand: c });
+      }
+      if (scored.length > 0) {
+        scored.sort((a, b) => b.matched - a.matched);
+        return scored[0].cand;
+      }
     }
     return candidates[0];
   }
@@ -688,7 +740,7 @@ export class Codec {
   }
 
   decode(msgId: number, data: Uint8Array, dlc?: number): DecodedMessage | null {
-    const result = this.findMessageById(msgId, dlc ?? data.length);
+    const result = this.findMessageById(msgId, dlc ?? data.length, data);
     if (!result) return null;
     // Broadcast frame detection
     if (result.message.broadcast_node_id !== null && result.nodeId === result.message.broadcast_node_id) {

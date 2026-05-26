@@ -47,6 +47,7 @@ const en = {
   'messages.col_enum_bitfield': 'Enum/Bitfield',
   'messages.enable_to_view': 'Enable this message to view signal details',
   'messages.no_match': 'No messages match your search',
+  'messages.unit_select_title': 'Pick the unit to display this signal in (applies to decode / plot / encode)',
 
   // ----- Decode page -----
   'decode.title': 'Decode',
@@ -418,6 +419,7 @@ const zh: Record<keyof typeof en, string> = {
   'messages.col_enum_bitfield': '枚举/位域',
   'messages.enable_to_view': '启用该消息以查看信号详情',
   'messages.no_match': '没有匹配的消息',
+  'messages.unit_select_title': '选择该信号的显示单位（应用于解码 / 绘图 / 编码）',
 
   // ----- Decode page -----
   'decode.title': '解码',

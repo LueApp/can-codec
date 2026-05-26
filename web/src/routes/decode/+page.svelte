@@ -2,7 +2,20 @@
   import { codecStore } from '$lib/codec-store.svelte';
   import { displayValue, parseCandump, groupArraySignals, MavlinkReassembler } from '$lib/codec';
   import { t } from '$lib/i18n.svelte';
-  import type { DecodedMessage, MavlinkInfo } from '$lib/types';
+  import { unitPrefs } from '$lib/unit-pref-store.svelte';
+  import { convert } from '$lib/unit-conversion';
+  import type { DecodedMessage, DecodedSignal, MavlinkInfo } from '$lib/types';
+
+  function fmtSig(msgName: string, s: DecodedSignal): string {
+    if (!s.unit || typeof s.physical_value !== 'number') return displayValue(s);
+    const target = unitPrefs.resolve(msgName, s.name, s.unit);
+    if (target === s.unit) return displayValue(s);
+    return displayValue(s, { value: convert(s.physical_value, s.unit, target), unit: target });
+  }
+
+  function displayUnit(msgName: string, s: { name: string; unit: string }): string {
+    return s.unit ? unitPrefs.resolve(msgName, s.name, s.unit) : '';
+  }
 
   interface DecodeResult {
     line: string;
@@ -152,13 +165,13 @@
       const nodes: Record<string, Record<string, string>> = {};
       for (const sub of d.sub_messages) {
         const obj: Record<string, string> = {};
-        for (const s of sub.signals) obj[s.name] = displayValue(s);
+        for (const s of sub.signals) obj[s.name] = fmtSig(d.name, s);
         nodes[`node_${sub.node_id}`] = obj;
       }
       return { name: d.name, broadcast: true, nodes };
     }
     const obj: Record<string, string> = {};
-    for (const s of d.signals) obj[s.name] = displayValue(s);
+    for (const s of d.signals) obj[s.name] = fmtSig(d.name, s);
     return { name: d.name, signals: obj };
   }
 
@@ -268,9 +281,9 @@
                 <tbody>
                   {#each res.sub_messages[0].signals as sig, si}
                     <tr>
-                      <td style="padding: 3px 10px 3px 0; color: var(--accent); white-space: nowrap;">{sig.name}{#if sig.unit} <span style="color:var(--text-dim)">({sig.unit})</span>{/if}</td>
+                      <td style="padding: 3px 10px 3px 0; color: var(--accent); white-space: nowrap;">{sig.name}{#if sig.unit} <span style="color:var(--text-dim)">({displayUnit(res.name, sig)})</span>{/if}</td>
                       {#each res.sub_messages as sub}
-                        <td style="padding: 3px 8px; color: var(--green); text-align: right; white-space: nowrap;">{displayValue(sub.signals[si])}</td>
+                        <td style="padding: 3px 8px; color: var(--green); text-align: right; white-space: nowrap;">{fmtSig(res.name, sub.signals[si])}</td>
                       {/each}
                     </tr>
                   {/each}
@@ -281,7 +294,7 @@
             {#each groupArraySignals(res.signals).filter(g => g.items.length === 1) as group}
               <div class="signal-row">
                 <span class="signal-name">{group.base}</span>
-                <span class="signal-value">{displayValue(group.items[0])}</span>
+                <span class="signal-value">{fmtSig(res.name, group.items[0])}</span>
               </div>
             {/each}
 
@@ -301,7 +314,7 @@
                       <tr>
                         <td style="padding: 3px 10px 3px 0; color: var(--accent); white-space: nowrap;">{group.base}</td>
                         {#each group.items as item}
-                          <td style="padding: 3px 8px; color: var(--green); text-align: right; white-space: nowrap;">{displayValue(item)}</td>
+                          <td style="padding: 3px 8px; color: var(--green); text-align: right; white-space: nowrap;">{fmtSig(res.name, item)}</td>
                         {/each}
                       </tr>
                     {/each}

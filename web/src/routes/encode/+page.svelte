@@ -5,6 +5,36 @@
   import { sequenceStore, type SendStmt } from '$lib/sequence-store.svelte';
   import { downloadServerScript } from '$lib/server-script';
   import { t } from '$lib/i18n.svelte';
+  import { unitPrefs } from '$lib/unit-pref-store.svelte';
+  import { convert, canConvert } from '$lib/unit-conversion';
+
+  // The unit shown to the user for a given signal. Equals signal.unit unless
+  // the user picked something else on the messages page.
+  function displayUnitForSig(msgName: string, sig: { name: string; unit: string }): string {
+    return sig.unit ? unitPrefs.resolve(msgName, sig.name, sig.unit) : sig.unit;
+  }
+
+  // Convert a user-entered numeric value from the displayed unit back to the
+  // YAML-native unit. Strings (enum names) and non-convertible values pass through.
+  function nativeNumber(msgName: string, sig: { name: string; unit: string }, raw: string | number): string | number {
+    if (typeof raw === 'string') return raw;
+    if (!sig.unit) return raw;
+    const display = unitPrefs.resolve(msgName, sig.name, sig.unit);
+    if (display === sig.unit) return raw;
+    if (!canConvert(display, sig.unit)) return raw;
+    return convert(raw, display, sig.unit);
+  }
+
+  // Default value of a signal, expressed in the chosen display unit (for placeholder text).
+  function displayDefault(msgName: string, sig: { name: string; unit: string; default_value: number | string | null }): string | null {
+    if (sig.default_value === null) return null;
+    if (typeof sig.default_value !== 'number' || !sig.unit) return String(sig.default_value);
+    const display = unitPrefs.resolve(msgName, sig.name, sig.unit);
+    if (display === sig.unit) return String(sig.default_value);
+    if (!canConvert(sig.unit, display)) return String(sig.default_value);
+    const converted = convert(sig.default_value, sig.unit, display);
+    return Number(converted.toPrecision(6)).toString();
+  }
 
   let selectedDevice = $state('');
   let selectedMsg = $state('');
@@ -89,11 +119,15 @@
           const val = parts[i] ?? '';
           if (val === '') continue;
           const num = Number(val);
-          values[group.items[i].name] = isNaN(num) ? val : num;
+          const sig = group.items[i];
+          const parsed: string | number = isNaN(num) ? val : num;
+          values[sig.name] = nativeNumber(selectedMsg, sig, parsed);
         }
       } else {
         const num = Number(v);
-        values[k] = isNaN(num) ? v : num;
+        const sig = group?.items[0];
+        const parsed: string | number = isNaN(num) ? v : num;
+        values[k] = sig ? nativeNumber(selectedMsg, sig, parsed) : parsed;
       }
     }
     return values;
@@ -394,9 +428,11 @@
           </div>
           <div class="signal-inputs">
             {#each signalGroups as group}
+              {@const dispU = displayUnitForSig(selectedMsg, group.items[0])}
+              {@const defStr = displayDefault(selectedMsg, group.items[0])}
               <div class="form-group" style="margin-bottom: 0;">
                 <label for="bsig-{activeNode}-{group.key}">
-                  {group.base}{#if group.items[0].unit}<span style="color:var(--text-dim);font-weight:400"> ({group.items[0].unit})</span>{/if}
+                  {group.base}{#if dispU}<span style="color:var(--text-dim);font-weight:400"> ({dispU})</span>{/if}
                 </label>
                 {#if group.items.length === 1 && Object.keys(group.items[0].enum_map).length > 0}
                   <select id="bsig-{activeNode}-{group.key}" bind:value={broadcastValues[activeNode][group.key]}>
@@ -405,7 +441,7 @@
                   </select>
                 {:else}
                   <input id="bsig-{activeNode}-{group.key}" bind:value={broadcastValues[activeNode][group.key]}
-                    placeholder={group.items[0].default_value !== null ? `${t('encode.default_prefix')} ${group.items[0].default_value}` : ''}
+                    placeholder={defStr !== null ? `${t('encode.default_prefix')} ${defStr}` : ''}
                     onkeydown={(e) => e.key === 'Enter' && doEncode()} />
                 {/if}
                 {#if group.items[0].description}<div style="font-size:11px;color:var(--text-dim);margin-top:3px">{group.items[0].description}</div>{/if}
@@ -418,9 +454,11 @@
           <span style="margin-bottom: 12px; display: block; font-size: 13px; font-weight: 500; color: var(--text-dim);">{t('encode.signal_values')}</span>
           <div class="signal-inputs">
             {#each signalGroups as group}
+              {@const dispU = displayUnitForSig(selectedMsg, group.items[0])}
+              {@const defStr = displayDefault(selectedMsg, group.items[0])}
               <div class="form-group" style="margin-bottom: 0;">
                 <label for="sig-{group.key}">
-                  {group.base}{#if group.items[0].unit}<span style="color:var(--text-dim);font-weight:400"> ({group.items[0].unit})</span>{/if}
+                  {group.base}{#if dispU}<span style="color:var(--text-dim);font-weight:400"> ({dispU})</span>{/if}
                   {#if group.items.length > 1}<span style="color:var(--text-dim);font-weight:400;font-size:11px"> [{group.items.length}]</span>{/if}
                 </label>
                 {#if group.items.length === 1 && Object.keys(group.items[0].enum_map).length > 0}
@@ -430,7 +468,7 @@
                   </select>
                 {:else}
                   <input id="sig-{group.key}" bind:value={signalValues[group.key]}
-                    placeholder={group.items.length > 1 ? `[${group.items.map((_, i) => i).join(', ')}]` : (group.items[0].default_value !== null ? `${t('encode.default_prefix')} ${group.items[0].default_value}` : '')}
+                    placeholder={group.items.length > 1 ? `[${group.items.map((_, i) => i).join(', ')}]` : (defStr !== null ? `${t('encode.default_prefix')} ${defStr}` : '')}
                     onkeydown={(e) => e.key === 'Enter' && doEncode()} />
                 {/if}
                 {#if group.items[0].description}<div style="font-size:11px;color:var(--text-dim);margin-top:3px">{group.items[0].description}</div>{/if}

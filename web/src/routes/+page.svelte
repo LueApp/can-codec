@@ -2,6 +2,8 @@
   import { codecStore } from '$lib/codec-store.svelte';
   import { CONFIG_TEMPLATES } from '$lib/templates';
   import { t } from '$lib/i18n.svelte';
+  import { getCompatibleUnits } from '$lib/unit-conversion';
+  import { unitPrefs } from '$lib/unit-pref-store.svelte';
 
   let search = $state('');
   let selectedDevice = $state('');
@@ -246,7 +248,26 @@
                               <td style="font-family: var(--font-mono);">[{sig.start_bit}:{sig.start_bit + sig.bit_length - 1}]</td>
                               <td>{sig.value_type}</td>
                               <td style="font-family: var(--font-mono);">{sig.scale !== 1 || sig.offset !== 0 ? `×${sig.scale} +${sig.offset}` : '—'}</td>
-                              <td>{sig.unit || '—'}</td>
+                              <td>
+                                {#if sig.unit}
+                                  {@const opts = getCompatibleUnits(sig.unit)}
+                                  {#if opts.length > 1}
+                                    {@const current = unitPrefs.resolve(msg.name, sig.name, sig.unit)}
+                                    <select
+                                      class="unit-select"
+                                      value={current}
+                                      onclick={(e) => e.stopPropagation()}
+                                      onchange={(e) => unitPrefs.set(msg.name, sig.name, sig.unit, (e.currentTarget as HTMLSelectElement).value)}
+                                      title={t('messages.unit_select_title')}>
+                                      {#each opts as u}
+                                        <option value={u}>{u}</option>
+                                      {/each}
+                                    </select>
+                                  {:else}
+                                    {sig.unit}
+                                  {/if}
+                                {:else}—{/if}
+                              </td>
                               <td style="color: var(--text-dim);">
                                 {#if Object.keys(sig.enum_map).length > 0}
                                   {Object.entries(sig.enum_map).map(([k,v]) => `${k}=${v}`).join(', ')}
