@@ -167,6 +167,15 @@ const en = {
   'program.read_timeout_label': 'timeout',
   'program.bindings_title': 'Live bindings',
   'program.bindings_waiting': 'waiting for frame…',
+  'program.custom_option': '-- custom (raw frame) --',
+  'program.custom_id_label': 'CAN ID (hex)',
+  'program.custom_data_label': 'Data bytes (hex)',
+  'program.custom_fd_label': 'CAN FD',
+  'program.custom_id_placeholder': '123 or 1FFFFFFF',
+  'program.custom_data_placeholder': '01 02 03 04 ...',
+  'program.custom_invalid_id': 'invalid CAN ID',
+  'program.custom_id_too_large': 'CAN ID exceeds 29 bits',
+  'program.custom_data_too_long': 'data exceeds 64 bytes (CAN FD max)',
 
   // Setup + script download (shared with /plot)
   'encode.setup_help_toggle': 'Server setup',
@@ -539,6 +548,15 @@ const zh: Record<keyof typeof en, string> = {
   'program.read_timeout_label': '超时',
   'program.bindings_title': '实时绑定',
   'program.bindings_waiting': '等待帧…',
+  'program.custom_option': '-- 自定义（原始帧）--',
+  'program.custom_id_label': 'CAN ID（十六进制）',
+  'program.custom_data_label': '数据字节（十六进制）',
+  'program.custom_fd_label': 'CAN FD',
+  'program.custom_id_placeholder': '123 或 1FFFFFFF',
+  'program.custom_data_placeholder': '01 02 03 04 ...',
+  'program.custom_invalid_id': 'CAN ID 无效',
+  'program.custom_id_too_large': 'CAN ID 超过 29 位',
+  'program.custom_data_too_long': '数据超过 64 字节（CAN FD 上限）',
 
   // Setup + script download (shared with /plot)
   'encode.setup_help_toggle': '服务端配置',
