@@ -761,9 +761,9 @@
       d.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
 
     const selectedKeys = plotStore.selected;
-    const selectedIntervalKeys = plotStore.intervalSelected;
     const seriesList = csvExportAll ? plotStore.allSeries : plotStore.allSeries.filter(s => selectedKeys.has(s.key));
-    const timingLabels = csvExportAll ? plotStore.messageTimingLabels : plotStore.messageTimingLabels.filter(k => selectedIntervalKeys.has(k));
+    const selectedGroups = new Set(seriesList.map(s => s.group));
+    const timingLabels = csvExportAll ? plotStore.messageTimingLabels : plotStore.messageTimingLabels.filter(k => selectedGroups.has(k));
 
     const rows: string[] = [
       'kind,t_rel,t_abs,group,signal,value,unit,interval_ms,frame_id,frame_data,direction',
