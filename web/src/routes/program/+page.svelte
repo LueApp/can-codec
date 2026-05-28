@@ -106,6 +106,23 @@
   }
 
   // ---- Message picker (inline) ----
+  /** Sentinel value used by the <select> when the user wants a raw-frame send
+   *  (no msgName, free-form CAN ID + payload). Not a real message name. */
+  const CUSTOM_MSG_SENTINEL = '__custom__';
+
+  /** True if the send statement is in custom (raw frame) mode: no msgName but
+   *  a raw payload object. The editor renders different controls in this mode. */
+  function isCustomSend(stmt: SendStmt): boolean {
+    return !stmt.msgName && !!stmt.raw;
+  }
+
+  /** Value to show as the dropdown's selected option. Maps custom mode to the
+   *  sentinel; otherwise mirrors stmt.msgName. */
+  function pickerValue(stmt: SendStmt): string {
+    if (isCustomSend(stmt)) return CUSTOM_MSG_SENTINEL;
+    return stmt.msgName ?? '';
+  }
+
   /** Look up which device group a message name belongs to (and whether it's MAVLink). */
   function findGroupFor(msgName: string): { device: string; mavlink: boolean } | null {
     for (const g of deviceGroups) {
@@ -114,10 +131,26 @@
     return null;
   }
 
-  /** Switch a send statement's msgName, recompute isMavlink, reset values to defaults. */
+  /** Switch a send statement's msgName, recompute isMavlink, reset values to defaults.
+   *  The `__custom__` sentinel switches the editor to raw-frame mode and seeds an
+   *  empty payload. */
   function pickMessage(stmt: SendStmt, newMsgName: string) {
+    if (newMsgName === CUSTOM_MSG_SENTINEL) {
+      sequenceStore.updateStmt(stmt.id, {
+        msgName: '',
+        isMavlink: false,
+        isBroadcast: false,
+        values: {},
+        perNodeValues: undefined,
+        label: '',
+        raw: stmt.raw ?? { canId: 0, data: [], isFd: false },
+      } as Partial<SendStmt>);
+      return;
+    }
     if (newMsgName === '') {
-      sequenceStore.updateStmt(stmt.id, { msgName: '', isMavlink: false, values: {} } as Partial<SendStmt>);
+      sequenceStore.updateStmt(stmt.id, {
+        msgName: '', isMavlink: false, values: {}, raw: undefined,
+      } as Partial<SendStmt>);
       return;
     }
     const msg = codecStore.codec.getMessageByName(newMsgName);
@@ -134,7 +167,80 @@
       isMavlink: info?.mavlink ?? false,
       label: newMsgName,
       values: defaults,
+      raw: undefined,
     } as Partial<SendStmt>);
+  }
+
+  // ---- Raw-frame editor helpers ----
+  /** Parse a hex string into a CAN ID. Accepts "123", "0x123", whitespace ignored.
+   *  Returns null when the input has non-hex characters or is empty. */
+  function parseCanIdHex(raw: string): number | null {
+    const cleaned = raw.trim().replace(/^0x/i, '').replace(/\s+/g, '');
+    if (cleaned === '' || !/^[0-9a-fA-F]+$/.test(cleaned)) return null;
+    const n = parseInt(cleaned, 16);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  /** Parse a hex payload string into bytes. Accepts spaces, dashes, "0x" prefixes
+   *  between bytes. Trailing single-nibble characters round down (drop). */
+  function parseDataHex(raw: string): number[] {
+    const cleaned = raw.replace(/0x/gi, '').replace(/[^0-9a-fA-F]/g, '');
+    const evenLen = cleaned.length - (cleaned.length % 2);
+    const out: number[] = [];
+    for (let i = 0; i < evenLen; i += 2) out.push(parseInt(cleaned.slice(i, i + 2), 16));
+    return out;
+  }
+
+  /** Validation summary for the raw editor; used to disable inputs and show a hint. */
+  function customError(stmt: SendStmt): string | null {
+    if (!stmt.raw) return null;
+    if (stmt.raw.canId < 0) return t('program.custom_invalid_id');
+    if (stmt.raw.canId > 0x1FFFFFFF) return t('program.custom_id_too_large');
+    if (stmt.raw.data.length > 64) return t('program.custom_data_too_long');
+    return null;
+  }
+
+  /** Read the live raw block for a stmt id from the store. Used by the setters
+   *  below so they merge against the latest state instead of a stale closure
+   *  (which loses updates when the user edits two fields in rapid succession). */
+  function liveRaw(stmtId: string): { canId: number; data: number[]; isFd: boolean } {
+    const found = findStmtById(sequenceStore.ast, stmtId);
+    if (found && found.type === 'send' && found.raw) return found.raw;
+    return { canId: 0, data: [], isFd: false };
+  }
+
+  function setCustomCanId(stmt: SendStmt, raw: string) {
+    const id = parseCanIdHex(raw);
+    sequenceStore.updateStmt(stmt.id, {
+      raw: { ...liveRaw(stmt.id), canId: id ?? 0 },
+    } as Partial<SendStmt>);
+  }
+
+  function setCustomData(stmt: SendStmt, raw: string) {
+    const bytes = parseDataHex(raw);
+    sequenceStore.updateStmt(stmt.id, {
+      raw: { ...liveRaw(stmt.id), data: bytes },
+    } as Partial<SendStmt>);
+  }
+
+  function setCustomFd(stmt: SendStmt, isFd: boolean) {
+    sequenceStore.updateStmt(stmt.id, {
+      raw: { ...liveRaw(stmt.id), isFd },
+    } as Partial<SendStmt>);
+  }
+
+  /** Pretty-print the raw bytes as space-separated uppercase hex for the input field.
+   *  Round-trips through parseDataHex without information loss. */
+  function rawDataDisplay(stmt: SendStmt): string {
+    if (!stmt.raw) return '';
+    return stmt.raw.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+  }
+
+  /** Pretty-print the CAN ID as uppercase hex (3 chars for standard, 8 for extended). */
+  function rawIdDisplay(stmt: SendStmt): string {
+    if (!stmt.raw) return '';
+    const width = stmt.raw.canId > 0x7FF ? 8 : 3;
+    return stmt.raw.canId.toString(16).toUpperCase().padStart(width, '0');
   }
 
   // ---- Import / export ----
@@ -913,13 +1019,16 @@
   {@const preview = previewLine(stmt)}
   {@const bcSupported = !!(msg && msg.broadcast_node_id !== null && msg.node_count > 1 && !stmt.isMavlink)}
   {@const editorValues = sendValuesFor(stmt)}
+  {@const customMode = isCustomSend(stmt)}
+  {@const customErr = customMode ? customError(stmt) : null}
   <div class="send-editor">
     <div class="send-editor-meta">
       <span class="send-editor-label">message</span>
-      <select class="send-editor-input" value={stmt.msgName ?? ''}
+      <select class="send-editor-input" value={pickerValue(stmt)}
         onchange={(e) => pickMessage(stmt, (e.target as HTMLSelectElement).value)}
         disabled={sequenceStore.running} style="min-width:200px">
         <option value="">{t('program.pick_message')}</option>
+        <option value={CUSTOM_MSG_SENTINEL}>{t('program.custom_option')}</option>
         {#each deviceGroups as group}
           <optgroup label={group.device}>
             {#each group.messages as name}<option value={name}>{name}</option>{/each}
@@ -1002,8 +1111,46 @@
       </div>
     {/if}
 
-    {#if msg}
-      <div class="send-editor-hint">{t('encode.var_hint')}</div>
+    {#if customMode && stmt.raw}
+      <div class="send-editor-grid">
+        <div class="send-editor-cell">
+          <span class="send-editor-cell-label">{t('program.custom_id_label')}</span>
+          <input class="send-editor-input"
+            value={rawIdDisplay(stmt)}
+            placeholder={t('program.custom_id_placeholder')}
+            onchange={(e) => setCustomCanId(stmt, (e.target as HTMLInputElement).value)}
+            disabled={sequenceStore.running} />
+        </div>
+        <div class="send-editor-cell" style="grid-column: span 2">
+          <span class="send-editor-cell-label">
+            {t('program.custom_data_label')}
+            <span style="color:var(--text-dim);font-weight:400">({stmt.raw.data.length}B)</span>
+          </span>
+          <input class="send-editor-input"
+            value={rawDataDisplay(stmt)}
+            placeholder={t('program.custom_data_placeholder')}
+            onchange={(e) => setCustomData(stmt, (e.target as HTMLInputElement).value)}
+            disabled={sequenceStore.running} />
+        </div>
+        <div class="send-editor-cell">
+          <span class="send-editor-cell-label">&nbsp;</span>
+          <label class="send-editor-bc-toggle" style="color:var(--text);padding:4px 0">
+            <input type="checkbox" checked={stmt.raw.isFd}
+              onchange={(e) => setCustomFd(stmt, (e.target as HTMLInputElement).checked)}
+              disabled={sequenceStore.running} />
+            {t('program.custom_fd_label')}
+          </label>
+        </div>
+      </div>
+      {#if customErr}
+        <div style="font-size:12px;color:var(--red)">⚠ {customErr}</div>
+      {/if}
+    {/if}
+
+    {#if msg || customMode}
+      {#if msg}
+        <div class="send-editor-hint">{t('encode.var_hint')}</div>
+      {/if}
 
       <div class="send-editor-preview">
         {#if preview.error}

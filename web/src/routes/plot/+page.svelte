@@ -39,6 +39,8 @@
   let addDropdownOpen = $state<string | null>(null);
   let copyToast = $state('');
   let copyToastTimer: ReturnType<typeof setTimeout> | undefined;
+  let csvFormat = $state<'long' | 'wide-node' | 'wide-signal'>('long');
+  let csvExportAll = $state(true);
 
   function showCopyToast(msg: string) {
     copyToast = msg;
@@ -748,6 +750,153 @@
     if (Number.isFinite(v) && v > 0) plotStore.setFollowWindowSeconds(v);
   }
 
+  function saveCsv() {
+    const csvEsc = (s: string | number): string => {
+      const str = String(s ?? '');
+      return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const idHex = (id: number) =>
+      '0x' + id.toString(16).toUpperCase().padStart(id > 0x7FF ? 8 : 3, '0');
+    const dataHex = (d: number[]) =>
+      d.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+
+    const selectedKeys = plotStore.selected;
+    const seriesList = csvExportAll ? plotStore.allSeries : plotStore.allSeries.filter(s => selectedKeys.has(s.key));
+    const selectedGroups = new Set(seriesList.map(s => s.group));
+    const timingLabels = csvExportAll ? plotStore.messageTimingLabels : plotStore.messageTimingLabels.filter(k => selectedGroups.has(k));
+
+    const rows: string[] = [
+      'kind,t_rel,t_abs,group,signal,value,unit,interval_ms,frame_id,frame_data,direction',
+    ];
+
+    for (const series of seriesList) {
+      const samples = plotStore.getSamples(series.key);
+      const unit = seriesDisplayUnit(series);
+      for (const s of samples) {
+        rows.push([
+          'signal',
+          s.time,
+          s.frame?.timestamp ?? s.time,
+          csvEsc(series.group),
+          csvEsc(series.signal),
+          convertY(series, s.value),
+          csvEsc(unit),
+          '',
+          s.frame ? idHex(s.frame.id) : '',
+          s.frame ? csvEsc(dataHex(s.frame.data)) : '',
+          s.frame?.direction ?? '',
+        ].join(','));
+      }
+    }
+
+    for (const label of timingLabels) {
+      for (const e of plotStore.messageTimingStore.get(label) ?? []) {
+        rows.push([
+          'timing',
+          e.time,
+          e.frame?.timestamp ?? e.time,
+          csvEsc(label),
+          '', '', '', '',
+          idHex(e.frame.id),
+          csvEsc(dataHex(e.frame.data)),
+          e.frame.direction ?? '',
+        ].join(','));
+      }
+    }
+
+    for (const label of timingLabels) {
+      for (const d of plotStore.getIntervalData(label)) {
+        rows.push([
+          'interval',
+          d.time,
+          d.frame?.timestamp ?? d.time,
+          csvEsc(label),
+          '', '', '',
+          d.dt,
+          idHex(d.frame.id),
+          csvEsc(dataHex(d.frame.data)),
+          d.frame.direction ?? '',
+        ].join(','));
+      }
+    }
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.download = `plot_data_${ts}.csv`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function saveCsvWide(order: 'node-first' | 'signal-first') {
+    const csvEsc = (s: string | number): string => {
+      const str = String(s ?? '');
+      return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const nodeNum = (g: string) => Number(g.match(/\bN(\d+)\b/)?.[1] ?? Infinity);
+
+    const series = csvExportAll ? [...plotStore.allSeries] : [...plotStore.allSeries].filter(s => plotStore.selected.has(s.key));
+    if (order === 'signal-first') {
+      series.sort((a, b) => {
+        if (a.signal !== b.signal) return a.signal.localeCompare(b.signal);
+        const d = nodeNum(a.group) - nodeNum(b.group);
+        return d !== 0 ? d : a.group.localeCompare(b.group);
+      });
+    } else {
+      series.sort((a, b) => {
+        const d = nodeNum(a.group) - nodeNum(b.group);
+        if (d !== 0) return d;
+        if (a.group !== b.group) return a.group.localeCompare(b.group);
+        return a.signal.localeCompare(b.signal);
+      });
+    }
+
+    const used = new Set<string>();
+    const cols = series.map(s => {
+      const node = s.group.match(/\bN\d+\b/)?.[0];
+      const groupPart = node ?? s.group;
+      let base = order === 'signal-first' ? `${s.signal}:${groupPart}` : `${groupPart}:${s.signal}`;
+      const unit = seriesDisplayUnit(s);
+      let header = unit ? `${base} (${unit})` : base;
+      if (used.has(header)) {
+        base = order === 'signal-first' ? `${s.signal}:${s.group}` : `${s.group}:${s.signal}`;
+        header = unit ? `${base} (${unit})` : base;
+        let n = 2;
+        while (used.has(header)) {
+          header = unit ? `${base} #${n} (${unit})` : `${base} #${n}`;
+          n++;
+        }
+      }
+      used.add(header);
+      const samples = plotStore.getSamples(s.key);
+      return { header, values: samples.map(sa => convertY(s, sa.value)) };
+    });
+
+    const maxRows = Math.max(0, ...cols.map(c => c.values.length));
+    const lines = [['index', ...cols.map(c => csvEsc(c.header))].join(',')];
+    for (let i = 0; i < maxRows; i++) {
+      const row: string[] = [String(i)];
+      for (const c of cols) row.push(i < c.values.length ? String(c.values[i]) : '');
+      lines.push(row.join(','));
+    }
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const tag = order === 'signal-first' ? 'signal' : 'node';
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.download = `plot_signals_wide_${tag}_${ts}.csv`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function saveCsvWithFormat() {
+    if (csvFormat === 'long') saveCsv();
+    else if (csvFormat === 'wide-node') saveCsvWide('node-first');
+    else saveCsvWide('signal-first');
+  }
+
   function savePng() {
     if (plotStore.activeViews.has('timeline')) {
       const canvas = document.getElementById('timeline-chart') as HTMLCanvasElement | null;
@@ -1035,10 +1184,21 @@
               {t('plot.recording_prefix')} {plotStore.dumpFrameCount} {t('plot.recording_suffix')}
             </button>
           {:else}
-            <button class="btn-sm" onclick={() => plotStore.startDumpToFile()}>{t('plot.record_to_file')}</button>
+            <button class="btn-sm" onclick={() => plotStore.startDumpToFile()} title={t('plot.record_to_file_title')}>{t('plot.record_to_file')}</button>
           {/if}
           <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
             <input type="checkbox" bind:checked={plotStore.dumpMatchedOnly} style="accent-color: var(--accent);" /> {t('plot.matched_only')}
+          </label>
+          {#if plotStore.csvDumpActive}
+            <button style="background: var(--red); font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" onclick={() => plotStore.stopCsvDump()}>
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: dump-pulse 1s infinite;"></span>
+              {t('plot.csv_recording_prefix')} {plotStore.csvDumpRowCount} {t('plot.csv_recording_suffix')}
+            </button>
+          {:else}
+            <button class="btn-sm" onclick={() => plotStore.startCsvDump()} title={t('plot.record_csv_title')}>{t('plot.record_csv')}</button>
+          {/if}
+          <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+            <input type="checkbox" bind:checked={plotStore.csvDumpSelectedOnly} style="accent-color: var(--accent);" /> {t('plot.csv_selected_only')}
           </label>
         {/if}
 
@@ -1177,11 +1337,21 @@
       <button class="mode-tab" class:mode-tab-active={plotStore.activeViews.has('interval')} onclick={() => plotStore.toggleView('interval')}>
         {t('plot.interval')}
       </button>
-      <div style="margin-left: auto; display: flex; gap: 8px;">
+      <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
         {#if !plotStore.showGestureHint}
           <button class="btn-sm" onclick={() => plotStore.showGestureHint = true} title={t('plot.gesture_show_title')}>?</button>
         {/if}
         <button class="btn-sm" onclick={() => plotStore.clearData()} style="color: var(--red, #f85149);">{t('plot.clear_btn')}</button>
+        <button class="btn-sm" onclick={savePng}>{t('plot.save_png')}</button>
+        <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+          <input type="checkbox" bind:checked={csvExportAll} style="accent-color: var(--accent);" /> {t('plot.csv_export_all')}
+        </label>
+        <select class="unit-select" bind:value={csvFormat} title={t('plot.csv_format_title')}>
+          <option value="long">{t('plot.csv_format_long')}</option>
+          <option value="wide-node">{t('plot.csv_format_wide_node')}</option>
+          <option value="wide-signal">{t('plot.csv_format_wide_signal')}</option>
+        </select>
+        <button class="btn-sm" onclick={saveCsvWithFormat} title={t('plot.save_csv_title')}>{t('plot.save_csv')}</button>
         <button class="btn-sm" onclick={exportLayout}>{t('plot.layout_export')}</button>
         <button class="btn-sm" onclick={importLayout}>{t('plot.layout_import_btn')}</button>
         {#if plotStore.pendingLayoutConfig}
@@ -1247,7 +1417,6 @@
                         </label>
                       {/if}
                     {/if}
-                    <button class="btn-sm" onclick={savePng}>{t('plot.save_png')}</button>
                   {/if}
                 </div>
               </div>
@@ -1370,7 +1539,6 @@
                         </label>
                       {/if}
                     {/if}
-                    <button class="btn-sm" onclick={savePng}>{t('plot.save_png')}</button>
                   {/if}
                 </div>
               </div>
@@ -1443,7 +1611,6 @@
                         </label>
                       {/if}
                     {/if}
-                    <button class="btn-sm" onclick={savePng}>{t('plot.save_png')}</button>
                   {/if}
                 </div>
               </div>
