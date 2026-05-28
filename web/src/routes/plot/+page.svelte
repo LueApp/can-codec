@@ -1189,6 +1189,17 @@
           <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
             <input type="checkbox" bind:checked={plotStore.dumpMatchedOnly} style="accent-color: var(--accent);" /> {t('plot.matched_only')}
           </label>
+          {#if plotStore.csvDumpActive}
+            <button style="background: var(--red); font-size: 12px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" onclick={() => plotStore.stopCsvDump()}>
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: dump-pulse 1s infinite;"></span>
+              {t('plot.csv_recording_prefix')} {plotStore.csvDumpRowCount} {t('plot.csv_recording_suffix')}
+            </button>
+          {:else}
+            <button class="btn-sm" onclick={() => plotStore.startCsvDump()}>{t('plot.record_csv')}</button>
+          {/if}
+          <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+            <input type="checkbox" bind:checked={plotStore.csvDumpSelectedOnly} style="accent-color: var(--accent);" /> {t('plot.csv_selected_only')}
+          </label>
         {/if}
 
         {#if codecStore.configs.length === 0}

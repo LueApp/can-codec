@@ -74,6 +74,9 @@ class PlotStore {
   dumpActive = $state(false);
   dumpMatchedOnly = $state(false);
   matchedFrameCount = $state(0);
+  csvDumpActive = $state(false);
+  csvDumpRowCount = $state(0);
+  csvDumpSelectedOnly = $state(false);
   bufferMode = $state<BufferMode>('samples');
   bufferSamples = $state(5000);
   bufferSeconds = $state(60);
@@ -113,6 +116,7 @@ class PlotStore {
   chartUpdatePending = false;
   rawLogVersion = 0;
   dumpWriter: FileSystemWritableFileStream | null = null;
+  csvDumpWriter: FileSystemWritableFileStream | null = null;
 
   // --- Render callback ---
   private _renderCallback: ((fullRebuild: boolean) => void) | null = null;
@@ -317,6 +321,7 @@ class PlotStore {
   disconnectLive() {
     this.paused = false;
     this.stopDumpToFile();
+    this.stopCsvDump();
     this.unsubscribeLiveFrames();
     busStore.disconnect();
     this.clearMavlinkBuffers();
@@ -356,6 +361,40 @@ class PlotStore {
     this.dumpWriter = null;
     this.dumpActive = false;
     await w.close();
+  }
+
+  async startCsvDump() {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName: `plot_live_${ts}.csv`,
+      types: [{ description: 'CSV files', accept: { 'text/csv': ['.csv'] } }],
+    });
+    this.csvDumpWriter = await handle.createWritable();
+    await this.csvDumpWriter!.write('﻿t_rel,t_abs,group,signal,value,unit,frame_id,frame_data,direction\n');
+    this.csvDumpRowCount = 0;
+    this.csvDumpActive = true;
+  }
+
+  async stopCsvDump() {
+    if (!this.csvDumpWriter) return;
+    const w = this.csvDumpWriter;
+    this.csvDumpWriter = null;
+    this.csvDumpActive = false;
+    await w.close();
+  }
+
+  writeCsvSample(groupLabel: string, signalName: string, value: number, unit: string, time: number, frame: FrameRef) {
+    if (!this.csvDumpWriter) return;
+    if (this.csvDumpSelectedOnly) {
+      const key = `${groupLabel} / ${signalName}`;
+      if (!this.selected.has(key)) return;
+    }
+    const csvEsc = (s: string) => /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    const idHex = '0x' + frame.id.toString(16).toUpperCase().padStart(frame.id > 0x7FF ? 8 : 3, '0');
+    const dataHex = frame.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+    const row = `${time},${frame.timestamp},${csvEsc(groupLabel)},${csvEsc(signalName)},${value},${csvEsc(unit)},${idHex},${csvEsc(dataHex)},${frame.direction ?? ''}\n`;
+    this.csvDumpWriter.write(row);
+    this.csvDumpRowCount++;
   }
 
   // --- Format helpers ---
@@ -516,6 +555,8 @@ class PlotStore {
         newSeriesAdded = true;
       }
       samples.push({ time, value: val, frame });
+
+      if (this.csvDumpWriter) this.writeCsvSample(groupLabel, sig.name, val, sig.unit, time, frame);
 
       if (this.bufferMode === 'samples' && samples.length > this.bufferSamples) {
         samples.splice(0, samples.length - this.bufferSamples);
