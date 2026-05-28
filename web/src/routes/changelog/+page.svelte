@@ -4,9 +4,30 @@
 
   const versions = [
     {
+      version: '1.4.3',
+      date: '2026-05-28',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'feat', text: 'Plot: CSV export of plot data — top-level toolbar now has a format selector (long / wide node:signal / wide signal:node) plus an "All signals" checkbox; long-form puts one row per sample with kind/time/signal/value/unit/frame, wide forms pivot to one column per signal for cross-node comparison. Export controls stay visible whenever data exists, independent of chart panel selection' },
+          { type: 'feat', text: 'Plot: live CSV recording in live mode ("Record signals") — streams decoded signal samples to a .csv file as frames arrive, with a "Selected only" toggle to limit recording to signals currently in chart panels. Mirrors the existing raw-frame recorder; auto-stops on disconnect' },
+          { type: 'feat', text: 'Plot: renamed live recording buttons to "Record raw frames" and "Record signals" with tooltips, so the distinction between candump .log and decoded .csv output is obvious at a glance' },
+          { type: 'feat', text: 'Program: "custom (raw frame)" option in the Send editor — when picked, the message dropdown is replaced by a hex byte input so you can drop arbitrary CAN frames into a sequence without defining a YAML message first' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'feat', text: 'Plot：绘图数据 CSV 导出——顶部工具栏新增格式选择器（长表 / 宽表 节点:信号 / 宽表 信号:节点）与"全部信号"复选框；长表每行一个样本（kind/时间/信号/值/单位/帧），宽表按信号透视为列，便于跨节点对比。只要存在数据，导出按钮始终可见，与图表面板选择互不影响' },
+          { type: 'feat', text: 'Plot：实时模式新增"录制信号"——将解码后的信号样本流式写入 .csv，可勾选"仅已选"只录入当前图表面板中的信号。沿用原始帧录制的交互方式，断开连接时自动停止' },
+          { type: 'feat', text: 'Plot：实时录制按钮重命名为"录制原始帧"与"录制信号"并补充 tooltip，candump .log 与解码 .csv 的输出差异一目了然' },
+          { type: 'feat', text: 'Program：Send 编辑器新增"自定义（原始帧）"选项——选中后消息下拉框被十六进制字节输入框替换，无需先在 YAML 中定义消息即可将任意 CAN 帧加入序列' },
+        ],
+      },
+    },
+    {
       version: '1.4.2',
       date: '2026-05-26',
-      tag: 'latest',
+      tag: null,
       en: {
         changes: [
           { type: 'feat', text: 'Messages: per-signal unit picker on the signal table — when a unit has compatible alternates (rad/s ↔ rpm ↔ deg/s, rad ↔ deg ↔ rev, K ↔ °C ↔ °F, m/s ↔ km/h ↔ mph, m ↔ mm ↔ cm ↔ km ↔ in ↔ ft), choose the display unit and have it propagate to Decode (values + JSON copy), Plot (axis labels, legend, tooltips, chart values, reactive re-render) and Encode (input labels + placeholders; values are converted back to YAML-native unit before encoding). Preferences persist per signal in localStorage' },
