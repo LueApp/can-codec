@@ -1184,7 +1184,7 @@
               {t('plot.recording_prefix')} {plotStore.dumpFrameCount} {t('plot.recording_suffix')}
             </button>
           {:else}
-            <button class="btn-sm" onclick={() => plotStore.startDumpToFile()}>{t('plot.record_to_file')}</button>
+            <button class="btn-sm" onclick={() => plotStore.startDumpToFile()} title={t('plot.record_to_file_title')}>{t('plot.record_to_file')}</button>
           {/if}
           <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
             <input type="checkbox" bind:checked={plotStore.dumpMatchedOnly} style="accent-color: var(--accent);" /> {t('plot.matched_only')}
@@ -1195,7 +1195,7 @@
               {t('plot.csv_recording_prefix')} {plotStore.csvDumpRowCount} {t('plot.csv_recording_suffix')}
             </button>
           {:else}
-            <button class="btn-sm" onclick={() => plotStore.startCsvDump()}>{t('plot.record_csv')}</button>
+            <button class="btn-sm" onclick={() => plotStore.startCsvDump()} title={t('plot.record_csv_title')}>{t('plot.record_csv')}</button>
           {/if}
           <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
             <input type="checkbox" bind:checked={plotStore.csvDumpSelectedOnly} style="accent-color: var(--accent);" /> {t('plot.csv_selected_only')}
