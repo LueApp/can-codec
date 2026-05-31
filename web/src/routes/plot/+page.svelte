@@ -42,6 +42,142 @@
   let csvFormat = $state<'long' | 'wide-node' | 'wide-signal'>('long');
   let csvExportAll = $state(true);
 
+  // ---- Formula editor state ----
+  let showFormulas = $state(true);
+  let formulaEditingId = $state<string | null>(null);  // 'new' for add, '<id>' for edit
+  let formulaName = $state('');
+  let formulaExpr = $state('');
+  let formulaUnit = $state('');
+  let formulaVars = $state<Record<string, string>>({});
+  let formulaPerNode = $state(false);
+  let formulaError = $state('');
+
+  const formulaIdents = $derived.by(() => {
+    const out = new Set<string>();
+    const re = /[a-zA-Z_][a-zA-Z0-9_]*/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(formulaExpr)) !== null) out.add(m[0]);
+    return Array.from(out).sort();
+  });
+
+  // Variable source dropdown options.
+  //
+  // Normal mode: any signal in allSeries except the formula being edited
+  // (direct self-reference). Indirect cycles are blocked at save time.
+  //
+  // Per-node mode: collapse multi-node keys to a "N*" template so one option
+  // represents N1, N2, …. e.g. `"MotorFeedback / N1 / position"` and
+  // `"MotorFeedback / N2 / position"` both fold into
+  // `"MotorFeedback / N* / position"` shown as `MotorFeedback / N* / position (7 nodes)`.
+  type FormulaSrcOption = { key: string; label: string };
+
+  const formulaSourceOptions = $derived.by<FormulaSrcOption[]>(() => {
+    const editingDef = (formulaEditingId && formulaEditingId !== 'new')
+      ? plotStore.derivedSignals.find(d => d.id === formulaEditingId)
+      : null;
+    const skipKeys = new Set<string>();
+    if (editingDef) {
+      if (editingDef.perNode) {
+        for (const n of plotStore.perNodeSeriesNames(editingDef)) skipKeys.add(`Formulas / ${n}`);
+      } else {
+        skipKeys.add(plotStore.derivedKey(editingDef));
+      }
+    }
+    const sources = plotStore.allSeries.filter(s => !skipKeys.has(s.key));
+    if (!formulaPerNode) {
+      return sources.map(s => ({ key: s.key, label: s.key + (s.unit ? ` (${s.unit})` : '') }));
+    }
+    // Per-node mode: group by N*-templated key. Multi-node source signals
+    // collapse; single-node sources remain as literal keys (useful for
+    // static "scale by constant signal" bindings inside a per-node formula).
+    const grouped = new Map<string, { unit: string; nodes: Set<number> }>();
+    const literal: FormulaSrcOption[] = [];
+    for (const s of sources) {
+      const m = s.key.match(/^(.*) \/ N(\d+) \/ (.*)$/);
+      if (m) {
+        const tpl = `${m[1]} / N* / ${m[3]}`;
+        const existing = grouped.get(tpl);
+        if (existing) existing.nodes.add(parseInt(m[2], 10));
+        else grouped.set(tpl, { unit: s.unit, nodes: new Set([parseInt(m[2], 10)]) });
+      } else {
+        literal.push({ key: s.key, label: s.key + (s.unit ? ` (${s.unit})` : '') + ' (static)' });
+      }
+    }
+    const tplOpts: FormulaSrcOption[] = [];
+    for (const [tpl, { unit, nodes }] of grouped) {
+      const nodeList = [...nodes].sort((a, b) => a - b);
+      tplOpts.push({
+        key: tpl,
+        label: tpl + (unit ? ` (${unit})` : '') + ` — ${nodeList.length} nodes: N${nodeList.join(',N')}`,
+      });
+    }
+    tplOpts.sort((a, b) => a.key.localeCompare(b.key));
+    return [...tplOpts, ...literal];
+  });
+
+  const formulaPerNodePreview = $derived.by(() => {
+    if (!formulaPerNode || formulaIdents.length === 0) return [];
+    return plotStore.perNodeSeriesNames({
+      id: 'preview',
+      name: formulaName || 'fX',
+      expr: formulaExpr,
+      unit: formulaUnit,
+      vars: { ...formulaVars },
+      perNode: true,
+    });
+  });
+
+  function openFormulaAdd() {
+    formulaEditingId = 'new';
+    formulaName = '';
+    formulaExpr = '';
+    formulaUnit = '';
+    formulaVars = {};
+    formulaPerNode = false;
+    formulaError = '';
+  }
+
+  function openFormulaEdit(id: string) {
+    const def = plotStore.derivedSignals.find(d => d.id === id);
+    if (!def) return;
+    formulaEditingId = id;
+    formulaName = def.name;
+    formulaExpr = def.expr;
+    formulaUnit = def.unit;
+    formulaVars = { ...def.vars };
+    formulaPerNode = def.perNode ?? false;
+    formulaError = '';
+  }
+
+  function closeFormulaEditor() {
+    formulaEditingId = null;
+    formulaError = '';
+  }
+
+  function saveFormula() {
+    const payload = {
+      name: formulaName,
+      expr: formulaExpr,
+      unit: formulaUnit,
+      vars: { ...formulaVars },
+      perNode: formulaPerNode,
+    };
+    const res = formulaEditingId === 'new'
+      ? plotStore.addDerivedSignal(payload)
+      : plotStore.updateDerivedSignal(formulaEditingId!, payload);
+    if (res.ok) {
+      closeFormulaEditor();
+    } else {
+      formulaError = res.error;
+    }
+  }
+
+  function deleteFormula(id: string) {
+    if (typeof confirm === 'function' && !confirm(t('plot.formula_delete_confirm'))) return;
+    plotStore.removeDerivedSignal(id);
+    if (formulaEditingId === id) closeFormulaEditor();
+  }
+
   function showCopyToast(msg: string) {
     copyToast = msg;
     if (copyToastTimer) clearTimeout(copyToastTimer);
@@ -1045,6 +1181,7 @@
   }
 
   onMount(() => {
+    plotStore.loadDerivedSignalsFromStorage();
     plotStore.registerRenderCallback((fullRebuild) => {
       if (fullRebuild) {
         renderCurrentView();
@@ -1432,12 +1569,135 @@
                           onclick={() => plotStore.toggleSignal(s.key)}
                         >
                           {s.signal}{seriesDisplayUnit(s) ? ` (${seriesDisplayUnit(s)})` : ''}
-                          <span class="chip-count">{plotStore.mode === 'live' ? (plotStore.liveSampleCounts[s.key] ?? 0) : s.samples.length}</span>
+                          <span class="chip-count">{plotStore.getSampleCount(s.key)}</span>
                         </button>
                       {/each}
                     </div>
                   </div>
                 {/each}
+              </div>
+
+              <!-- Formulas (derived signals) -->
+              <div class="formulas-section">
+                <div class="formulas-header">
+                  <button class="setup-toggle" onclick={() => showFormulas = !showFormulas} title={t('plot.formulas_title')}>
+                    {showFormulas ? '▾' : '▸'} {t('plot.formulas')}
+                    <span style="color: var(--text-dim); font-size: 12px; margin-left: 6px;">{plotStore.derivedSignals.length}</span>
+                  </button>
+                  {#if showFormulas && formulaEditingId === null}
+                    <button class="btn-sm" onclick={openFormulaAdd}>{t('plot.formula_add')}</button>
+                  {/if}
+                </div>
+
+                {#if showFormulas}
+                  {#if plotStore.derivedSignals.length === 0 && formulaEditingId === null}
+                    <div class="formula-empty">{t('plot.formula_none')}</div>
+                  {/if}
+
+                  {#if plotStore.derivedSignals.length > 0}
+                    <div class="formula-list">
+                      {#each plotStore.derivedSignals as def (def.id)}
+                        <div class="formula-row">
+                          <div class="formula-row-main">
+                            <span class="formula-row-name">{def.name}{def.perNode ? '_N*' : ''}</span>
+                            <span class="formula-row-expr">= {def.expr}</span>
+                            {#if def.unit}<span class="formula-row-unit">[{def.unit}]</span>{/if}
+                            {#if def.perNode}
+                              {@const names = plotStore.perNodeSeriesNames(def)}
+                              <span class="formula-var-tag" style="color: var(--accent);">
+                                {t('plot.formula_pernode_badge')} ({names.length})
+                              </span>
+                            {/if}
+                            {#if Object.keys(def.vars).length > 0}
+                              <span class="formula-row-vars">
+                                {#each Object.entries(def.vars) as [v, sk]}
+                                  <span class="formula-var-tag" class:formula-var-unbound={!sk}>{v}: {sk || '(unbound)'}</span>
+                                {/each}
+                              </span>
+                            {/if}
+                          </div>
+                          <div class="formula-row-actions">
+                            <button class="btn-sm" onclick={() => openFormulaEdit(def.id)}>{t('plot.formula_edit')}</button>
+                            <button class="btn-sm" style="color: var(--red, #f85149);" onclick={() => deleteFormula(def.id)}>{t('plot.formula_delete')}</button>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  {#if formulaEditingId !== null}
+                    <div class="formula-editor">
+                      <div class="formula-editor-grid">
+                        <label class="formula-field">
+                          <span class="formula-field-label">{t('plot.formula_name')}</span>
+                          <input type="text" bind:value={formulaName} placeholder={t('plot.formula_name_ph')} />
+                        </label>
+                        <label class="formula-field">
+                          <span class="formula-field-label">{t('plot.formula_expr')}</span>
+                          <input type="text" bind:value={formulaExpr} placeholder={t('plot.formula_expr_ph')} style="font-family: var(--font-mono);" />
+                        </label>
+                        <label class="formula-field" style="max-width: 140px;">
+                          <span class="formula-field-label">{t('plot.formula_unit')}</span>
+                          <input type="text" bind:value={formulaUnit} placeholder={t('plot.formula_unit_ph')} />
+                        </label>
+                      </div>
+
+                      <label class="formula-pernode-toggle" title={t('plot.formula_pernode_title')}>
+                        <input type="checkbox" bind:checked={formulaPerNode} style="accent-color: var(--accent);" />
+                        {t('plot.formula_pernode')}
+                      </label>
+
+                      <div class="formula-help">{t('plot.formula_help')}</div>
+                      {#if formulaPerNode}
+                        <div class="formula-help" style="color: var(--accent);">{t('plot.formula_pernode_help')}</div>
+                      {/if}
+
+                      {#if formulaIdents.length === 0 && formulaExpr.trim() !== ''}
+                        <div class="formula-warning">{t('plot.formula_no_vars_warning')}</div>
+                      {/if}
+
+                      {#if formulaIdents.length > 0}
+                        <div class="formula-var-binds">
+                          <div class="signal-group-label">{t('plot.formula_vars')}</div>
+                          {#each formulaIdents as v}
+                            <div class="formula-var-bind">
+                              <span class="formula-var-name">{v}</span>
+                              <span class="formula-var-arrow">→</span>
+                              <select bind:value={formulaVars[v]}>
+                                <option value="">{t('plot.formula_var_pick')}</option>
+                                {#each formulaSourceOptions as opt}
+                                  <option value={opt.key}>{opt.label}</option>
+                                {/each}
+                              </select>
+                              {#if !formulaVars[v]}
+                                <span class="formula-warning-inline">{t('plot.formula_unbound_warning')}</span>
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+
+                      {#if formulaPerNode && formulaIdents.length > 0}
+                        {#if formulaPerNodePreview.length > 0}
+                          <div class="formula-help" style="color: var(--accent);">
+                            {t('plot.formula_pernode_preview_prefix')} {formulaPerNodePreview.length}: {formulaPerNodePreview.slice(0, 8).join(', ')}{formulaPerNodePreview.length > 8 ? '…' : ''}
+                          </div>
+                        {:else}
+                          <div class="formula-warning">{t('plot.formula_pernode_preview_none')}</div>
+                        {/if}
+                      {/if}
+
+                      {#if formulaError}
+                        <div class="formula-error">{formulaError}</div>
+                      {/if}
+
+                      <div class="formula-editor-actions">
+                        <button class="primary" onclick={saveFormula}>{t('plot.formula_save')}</button>
+                        <button class="btn-sm" onclick={closeFormulaEditor}>{t('plot.formula_cancel')}</button>
+                      </div>
+                    </div>
+                  {/if}
+                {/if}
               </div>
             </div>
 

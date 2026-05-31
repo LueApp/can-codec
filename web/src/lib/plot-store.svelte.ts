@@ -1,13 +1,20 @@
 import { codecStore } from './codec-store.svelte';
 import { parseCandump, MavlinkReassembler, type MavlinkBuf } from './codec';
 import { busStore } from './bus-store.svelte';
+import { evalExpr } from './sequence-store.svelte';
 import type { RawFrame } from './websocket-client.svelte';
 import type { DecodedMessage, DecodedSignal, Message, MavlinkInfo } from './types';
 import type {
   FrameRef, SignalSample, SignalSeries, ChartPanel, MessageTimingEntry,
-  InputMode, ChartView, BufferMode, PlotLayoutConfig,
+  InputMode, ChartView, BufferMode, PlotLayoutConfig, DerivedSignal,
 } from './plot-types';
 import yaml from 'js-yaml';
+
+// Group label used for all derived (formula) signals. Sorted to the end of
+// the signal list so source signals stay grouped at the top.
+export const DERIVED_GROUP = 'Formulas';
+
+const DERIVED_STORAGE_KEY = 'cancodec_derived_signals_v1';
 
 const CHART_UPDATE_INTERVAL = 50;
 
@@ -81,6 +88,7 @@ class PlotStore {
   bufferSamples = $state(5000);
   bufferSeconds = $state(60);
   pendingLayoutConfig = $state<PlotLayoutConfig | null>(null);
+  derivedSignals = $state<DerivedSignal[]>([]);
   timelineMode = $state<'normal' | 'set-origin' | 'measure'>('normal');
   timelineOrigin = $state(0);
   timelineMarkers = $state<{ time: number; label: string }[]>([]);
@@ -106,6 +114,7 @@ class PlotStore {
 
   // --- Non-reactive state (performance) ---
   nextPanelId = 0;
+  private _nextDerivedId = 0;
   liveFrameUnsubscribe: (() => void) | null = null;
   liveSampleStore = new Map<string, SignalSample[]>();
   messageTimingStore = new Map<string, MessageTimingEntry[]>();
@@ -165,7 +174,21 @@ class PlotStore {
   // --- Data reset ---
   resetData() {
     this.allSeries = [];
-    this.chartPanels = [];
+    // Preserve chart panels that reference derived (formula) signals — those
+    // survive across data resets because the formula definitions do. Include
+    // per-node expanded keys, though after the reset the expansion may shrink
+    // (no source signals means no nodes discoverable).
+    const derivedKeys = new Set<string>();
+    for (const d of this.derivedSignals) {
+      if (d.perNode) {
+        for (const n of this.perNodeSeriesNames(d)) derivedKeys.add(`${DERIVED_GROUP} / ${n}`);
+      } else {
+        derivedKeys.add(this.derivedKey(d));
+      }
+    }
+    this.chartPanels = this.chartPanels
+      .map(p => ({ ...p, keys: p.keys.filter(k => derivedKeys.has(k)) }))
+      .filter(p => p.keys.length > 0);
     this.intervalPanels = [];
     this.nextPanelId = 0;
     this.status = '';
@@ -180,6 +203,8 @@ class PlotStore {
     this.timelineMode = 'normal';
     this.timelineOrigin = 0;
     this.timelineMarkers = [];
+    // Keep user-defined formulas across resets — re-add their virtual entries.
+    this._syncDerivedToAllSeries();
   }
 
   // --- Timeline timing measurement ---
@@ -551,7 +576,8 @@ class PlotStore {
         samples = [];
         this.liveSampleStore.set(key, samples);
         const meta: SignalSeries = { key, group: groupLabel, signal: sig.name, unit: sig.unit, samples: [] };
-        this.allSeries = [...this.allSeries, meta].sort((a, b) => a.key.localeCompare(b.key));
+        this.allSeries = [...this.allSeries, meta];
+        this._sortAllSeries();
         newSeriesAdded = true;
       }
       samples.push({ time, value: val, frame });
@@ -832,7 +858,51 @@ class PlotStore {
 
   // --- Query helpers ---
   getSamples(key: string): SignalSample[] {
-    return this.mode === 'live' ? (this.liveSampleStore.get(key) ?? []) : (this.allSeries.find(s => s.key === key)?.samples ?? []);
+    return this._resolveSamples(key, new Set<string>());
+  }
+
+  /** Resolve samples for any key. Sources read from store; derived signals
+   *  recurse via computeDerivedSamples. `visiting` tracks the in-progress
+   *  derived-id stack so cycles bail out with empty samples instead of
+   *  infinite recursion. */
+  private _resolveSamples(key: string, visiting: Set<string>): SignalSample[] {
+    // 1. Non-perNode derived: direct match by full key.
+    const direct = this.derivedSignals.find(d => !d.perNode && this.derivedKey(d) === key);
+    if (direct) {
+      if (visiting.has(direct.id)) return [];
+      return this.computeDerivedSamples(direct, visiting);
+    }
+    // 2. Per-node derived: parse the node out of "Formulas / <name>_N<n>".
+    const perNode = this._matchPerNodeKey(key);
+    if (perNode) {
+      const visitKey = `${perNode.def.id}@${perNode.node}`;
+      if (visiting.has(visitKey)) return [];
+      const next = new Set(visiting);
+      next.add(visitKey);
+      const realVars: Record<string, string> = {};
+      for (const [v, tpl] of Object.entries(perNode.def.vars)) {
+        realVars[v] = tpl.includes('N*') ? tpl.replace(/N\*/g, `N${perNode.node}`) : tpl;
+      }
+      return this._computeSamples(perNode.def.expr, realVars, next);
+    }
+    // 3. Source.
+    return this._getSourceSamples(key);
+  }
+
+  private _getSourceSamples(key: string): SignalSample[] {
+    if (this.mode === 'live') return this.liveSampleStore.get(key) ?? [];
+    const s = this.allSeries.find(s => s.key === key);
+    return s && s.group !== DERIVED_GROUP ? s.samples : [];
+  }
+
+  /** Sample count for any series key (source or derived). Used by signal chips. */
+  getSampleCount(key: string): number {
+    if (this.derivedSignals.find(d => this.derivedKey(d) === key && !d.perNode)
+        || this._matchPerNodeKey(key)) {
+      return this.getSamples(key).length;
+    }
+    if (this.mode === 'live') return this.liveSampleCounts[key] ?? 0;
+    return this.allSeries.find(s => s.key === key)?.samples.length ?? 0;
   }
 
   getGroups(): { group: string; signals: SignalSeries[] }[] {
@@ -853,13 +923,7 @@ class PlotStore {
   }
 
   getPanelSampleCount(panel: ChartPanel): number {
-    if (this.mode === 'live') {
-      return panel.keys.reduce((sum, k) => sum + (this.liveSampleCounts[k] ?? 0), 0);
-    }
-    return panel.keys.reduce((sum, k) => {
-      const s = this.allSeries.find(se => se.key === k);
-      return sum + (s?.samples.length ?? 0);
-    }, 0);
+    return panel.keys.reduce((sum, k) => sum + this.getSampleCount(k), 0);
   }
 
   getAvailableForIntervalPanel(panelId: string): string[] {
@@ -886,6 +950,16 @@ class PlotStore {
   updateLiveCounts() {
     const counts: Record<string, number> = {};
     for (const [key, samples] of this.liveSampleStore) counts[key] = samples.length;
+    for (const d of this.derivedSignals) {
+      if (d.perNode) {
+        for (const name of this.perNodeSeriesNames(d)) {
+          const k = `${DERIVED_GROUP} / ${name}`;
+          counts[k] = this.getSamples(k).length;
+        }
+      } else {
+        counts[this.derivedKey(d)] = this.computeDerivedSamples(d).length;
+      }
+    }
     this.liveSampleCounts = counts;
     this.status = `${this.allSeries.length} signals`;
   }
@@ -1026,8 +1100,14 @@ class PlotStore {
     this.messageTimingLabels = Array.from(this.messageTimingStore.keys()).sort();
 
     this.allSeries = Array.from(seriesMap.values()).sort((a, b) => a.key.localeCompare(b.key));
-    if (this.allSeries.length <= 12) {
-      this.chartPanels = this.allSeries.map(s => ({ id: `p${this.nextPanelId++}`, keys: [s.key] }));
+    this._sortAllSeries();
+    const sourceSeriesCount = this.allSeries.filter(s => s.group !== DERIVED_GROUP).length;
+    if (sourceSeriesCount <= 12) {
+      const existingKeys = new Set(this.chartPanels.flatMap(p => p.keys));
+      const newPanels = this.allSeries
+        .filter(s => s.group !== DERIVED_GROUP && !existingKeys.has(s.key))
+        .map(s => ({ id: `p${this.nextPanelId++}`, keys: [s.key] }));
+      this.chartPanels = [...this.chartPanels, ...newPanels];
     }
     if (this.messageTimingLabels.length <= 12) {
       this.intervalPanels = this.messageTimingLabels.map(k => ({ id: `ip${this.nextPanelId++}`, keys: [k] }));
@@ -1055,6 +1135,7 @@ class PlotStore {
         intervals: {
           panels: this.intervalPanels.map(p => [...p.keys]),
         },
+        formulas: this.derivedSignals.map(d => ({ ...d, vars: { ...d.vars } })),
       },
     };
     return yaml.dump(config, { lineWidth: -1 });
@@ -1078,6 +1159,32 @@ class PlotStore {
       if (p.buffer.mode) this.bufferMode = p.buffer.mode;
       if (p.buffer.samples != null) this.bufferSamples = p.buffer.samples;
       if (p.buffer.seconds != null) this.bufferSeconds = p.buffer.seconds;
+    }
+
+    if (Array.isArray(p.formulas)) {
+      const incoming: DerivedSignal[] = [];
+      const existingNames = new Set<string>();
+      for (const f of p.formulas) {
+        if (!f || typeof f.name !== 'string' || typeof f.expr !== 'string') continue;
+        if (existingNames.has(f.name)) continue;
+        if (this.validateExpr(f.expr) !== null) continue;
+        existingNames.add(f.name);
+        const id = `d${this._nextDerivedId++}`;
+        const di: DerivedSignal = {
+          id,
+          name: f.name,
+          expr: f.expr,
+          unit: typeof f.unit === 'string' ? f.unit : '',
+          vars: (f.vars && typeof f.vars === 'object') ? { ...f.vars } : {},
+        };
+        if (f.perNode) di.perNode = true;
+        incoming.push(di);
+      }
+      // Merge with existing — replace by name match.
+      const kept = this.derivedSignals.filter(d => !existingNames.has(d.name));
+      this.derivedSignals = [...kept, ...incoming];
+      this._syncDerivedToAllSeries();
+      this._persistDerivedSignals();
     }
 
     const knownSignalKeys = new Set(this.allSeries.map(s => s.key));
@@ -1163,6 +1270,359 @@ class PlotStore {
   clearData() {
     this.resetData();
     this.requestRender(true);
+  }
+
+  // --- Derived (formula) signals ---
+  derivedKey(d: DerivedSignal): string {
+    return `${DERIVED_GROUP} / ${d.name}`;
+  }
+
+  /** Identifiers used in `expr` that the user must bind to source signals.
+   *  Hex literals like 0x10 contain no leading identifier so the regex is safe. */
+  extractVarsFromExpr(expr: string): string[] {
+    const out = new Set<string>();
+    const re = /[a-zA-Z_][a-zA-Z0-9_]*/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(expr)) !== null) {
+      // Filter out hex prefix matches when they follow "0x" — the tokenizer
+      // strips them, but our naive regex would still pick up "x10" if standalone.
+      // No-op: bare "x10" is a valid identifier and the user can use it.
+      out.add(m[0]);
+    }
+    return Array.from(out);
+  }
+
+  /** Builds the SignalSeries shells for derived signals so they appear in the
+   *  picker / panels. Samples stay empty — `getSamples()` computes on demand.
+   *  Per-node formulas expand into one entry per discovered node (e.g.
+   *  delta_N1, delta_N2…). */
+  private _derivedAsSeries(): SignalSeries[] {
+    const out: SignalSeries[] = [];
+    for (const d of this.derivedSignals) {
+      if (d.perNode) {
+        for (const name of this.perNodeSeriesNames(d)) {
+          out.push({
+            key: `${DERIVED_GROUP} / ${name}`,
+            group: DERIVED_GROUP,
+            signal: name,
+            unit: d.unit,
+            samples: [],
+          });
+        }
+      } else {
+        out.push({
+          key: this.derivedKey(d),
+          group: DERIVED_GROUP,
+          signal: d.name,
+          unit: d.unit,
+          samples: [],
+        });
+      }
+    }
+    return out;
+  }
+
+  /** Rewrite allSeries so source signals come first (sorted), derived at the bottom. */
+  private _sortAllSeries() {
+    const sources = this.allSeries.filter(s => s.group !== DERIVED_GROUP);
+    sources.sort((a, b) => a.key.localeCompare(b.key));
+    this.allSeries = [...sources, ...this._derivedAsSeries()];
+  }
+
+  /** Replace derived placeholder series in allSeries with fresh ones from
+   *  this.derivedSignals. Idempotent. */
+  private _syncDerivedToAllSeries() {
+    const sources = this.allSeries.filter(s => s.group !== DERIVED_GROUP);
+    this.allSeries = [...sources, ...this._derivedAsSeries()];
+  }
+
+  private _persistDerivedSignals() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(DERIVED_STORAGE_KEY, JSON.stringify(this.derivedSignals));
+    } catch { /* quota */ }
+  }
+
+  /** Load saved derived signals on first access. Called from page onMount. */
+  loadDerivedSignalsFromStorage() {
+    if (typeof localStorage === 'undefined') return;
+    if (this.derivedSignals.length > 0) return;
+    try {
+      const raw = localStorage.getItem(DERIVED_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      const valid: DerivedSignal[] = [];
+      for (const item of parsed) {
+        if (item && typeof item === 'object'
+            && typeof (item as DerivedSignal).id === 'string'
+            && typeof (item as DerivedSignal).name === 'string'
+            && typeof (item as DerivedSignal).expr === 'string'
+            && (item as DerivedSignal).vars && typeof (item as DerivedSignal).vars === 'object') {
+          const d = item as DerivedSignal;
+          const entry: DerivedSignal = { id: d.id, name: d.name, expr: d.expr, unit: d.unit ?? '', vars: { ...d.vars } };
+          if (d.perNode) entry.perNode = true;
+          valid.push(entry);
+          const m = d.id.match(/^d(\d+)$/);
+          if (m) this._nextDerivedId = Math.max(this._nextDerivedId, Number(m[1]) + 1);
+        }
+      }
+      this.derivedSignals = valid;
+      this._syncDerivedToAllSeries();
+    } catch { /* malformed */ }
+  }
+
+  /** True if any source key in `vars` is a derived signal whose dependency
+   *  chain reaches `formulaId`. Use to reject cycle-introducing saves. */
+  private _wouldCycle(formulaId: string | null, vars: Record<string, string>): boolean {
+    for (const sourceKey of Object.values(vars)) {
+      if (!sourceKey) continue;
+      const child = this.derivedSignals.find(d => this.derivedKey(d) === sourceKey);
+      if (!child) continue;
+      if (formulaId !== null && child.id === formulaId) return true;
+      if (formulaId !== null && this._reaches(child, formulaId, new Set())) return true;
+    }
+    return false;
+  }
+
+  private _reaches(start: DerivedSignal, targetId: string, seen: Set<string>): boolean {
+    if (start.id === targetId) return true;
+    if (seen.has(start.id)) return false;
+    seen.add(start.id);
+    for (const sourceKey of Object.values(start.vars)) {
+      const child = this.derivedSignals.find(d => this.derivedKey(d) === sourceKey);
+      if (child && this._reaches(child, targetId, seen)) return true;
+    }
+    return false;
+  }
+
+  /** Probe-parses `expr` with all referenced identifiers bound to 0. Returns
+   *  the error message on failure, or null on success. */
+  validateExpr(expr: string): string | null {
+    const trimmed = expr.trim();
+    if (!trimmed) return 'expression: empty';
+    try {
+      const probe: Record<string, number> = {};
+      for (const v of this.extractVarsFromExpr(trimmed)) probe[v] = 0;
+      evalExpr(trimmed, probe);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }
+
+  addDerivedSignal(opts: { name: string; expr: string; vars: Record<string, string>; unit?: string; perNode?: boolean }): { ok: true; def: DerivedSignal } | { ok: false; error: string } {
+    const name = opts.name.trim();
+    const expr = opts.expr.trim();
+    if (!name) return { ok: false, error: 'name required' };
+    if (!expr) return { ok: false, error: 'expression required' };
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return { ok: false, error: 'name must be a valid identifier (letters, digits, underscore; not starting with a digit)' };
+    if (this.derivedSignals.some(d => d.name === name)) return { ok: false, error: 'name already used' };
+    const exprErr = this.validateExpr(expr);
+    if (exprErr) return { ok: false, error: exprErr };
+    const vars: Record<string, string> = {};
+    for (const v of this.extractVarsFromExpr(expr)) {
+      if (opts.vars[v]) vars[v] = opts.vars[v];
+    }
+    // For a brand-new formula there's no id yet, so no existing formula can
+    // depend on it — cycles are impossible at add time. Skip the check.
+    const id = `d${this._nextDerivedId++}`;
+    const def: DerivedSignal = { id, name, expr, unit: (opts.unit ?? '').trim(), vars };
+    if (opts.perNode) def.perNode = true;
+    this.derivedSignals = [...this.derivedSignals, def];
+    this._syncDerivedToAllSeries();
+    this._persistDerivedSignals();
+    // Auto-plot: one panel for the formula (or one per discovered node, for
+    // per-node formulas).
+    const keys = def.perNode
+      ? this.perNodeSeriesNames(def).map(n => `${DERIVED_GROUP} / ${n}`)
+      : [this.derivedKey(def)];
+    const newPanels = keys.map(k => ({ id: `p${this.nextPanelId++}`, keys: [k] }));
+    this.chartPanels = [...this.chartPanels, ...newPanels];
+    this.requestRender(true);
+    return { ok: true, def };
+  }
+
+  updateDerivedSignal(id: string, opts: { name?: string; expr?: string; vars?: Record<string, string>; unit?: string; perNode?: boolean }): { ok: true } | { ok: false; error: string } {
+    const idx = this.derivedSignals.findIndex(d => d.id === id);
+    if (idx < 0) return { ok: false, error: 'not found' };
+    const cur = this.derivedSignals[idx];
+    const name = (opts.name ?? cur.name).trim();
+    const expr = (opts.expr ?? cur.expr).trim();
+    const unit = (opts.unit ?? cur.unit).trim();
+    const perNode = opts.perNode ?? cur.perNode ?? false;
+    if (!name) return { ok: false, error: 'name required' };
+    if (!expr) return { ok: false, error: 'expression required' };
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return { ok: false, error: 'name must be a valid identifier (letters, digits, underscore; not starting with a digit)' };
+    if (this.derivedSignals.some(d => d.id !== id && d.name === name)) return { ok: false, error: 'name already used' };
+    const exprErr = this.validateExpr(expr);
+    if (exprErr) return { ok: false, error: exprErr };
+    const referenced = this.extractVarsFromExpr(expr);
+    const incomingVars = opts.vars ?? cur.vars;
+    const vars: Record<string, string> = {};
+    for (const v of referenced) {
+      if (incomingVars[v]) vars[v] = incomingVars[v];
+    }
+    if (this._wouldCycle(id, vars)) return { ok: false, error: 'binding would create a formula cycle' };
+    const next: DerivedSignal = { ...cur, name, expr, unit, vars };
+    if (perNode) next.perNode = true; else delete next.perNode;
+    const oldKeys = cur.perNode
+      ? this.perNodeSeriesNames(cur).map(n => `${DERIVED_GROUP} / ${n}`)
+      : [this.derivedKey(cur)];
+    const newKeys = next.perNode
+      ? this.perNodeSeriesNames(next).map(n => `${DERIVED_GROUP} / ${n}`)
+      : [this.derivedKey(next)];
+    // If the only change is the formula name (same per-node-ness and same
+    // node count), rename panel keys 1:1 to preserve user's panel layout.
+    // Otherwise drop the formula's old panels and add fresh ones.
+    if (cur.perNode === next.perNode && oldKeys.length === newKeys.length && oldKeys.length > 0) {
+      this.chartPanels = this.chartPanels.map(p => ({
+        ...p,
+        keys: p.keys.map(k => {
+          const i = oldKeys.indexOf(k);
+          return i >= 0 ? newKeys[i] : k;
+        }),
+      }));
+    } else {
+      const oldSet = new Set(oldKeys);
+      this.chartPanels = this.chartPanels
+        .map(p => ({ ...p, keys: p.keys.filter(k => !oldSet.has(k)) }))
+        .filter(p => p.keys.length > 0);
+      const addPanels = newKeys.map(k => ({ id: `p${this.nextPanelId++}`, keys: [k] }));
+      this.chartPanels = [...this.chartPanels, ...addPanels];
+    }
+    this.derivedSignals = this.derivedSignals.map(d => d.id === id ? next : d);
+    this._syncDerivedToAllSeries();
+    this._persistDerivedSignals();
+    this.requestRender(true);
+    return { ok: true };
+  }
+
+  removeDerivedSignal(id: string): boolean {
+    const idx = this.derivedSignals.findIndex(d => d.id === id);
+    if (idx < 0) return false;
+    const def = this.derivedSignals[idx];
+    const keys = new Set(
+      def.perNode
+        ? this.perNodeSeriesNames(def).map(n => `${DERIVED_GROUP} / ${n}`)
+        : [this.derivedKey(def)]
+    );
+    this.derivedSignals = this.derivedSignals.filter(d => d.id !== id);
+    this.chartPanels = this.chartPanels
+      .map(p => ({ ...p, keys: p.keys.filter(k => !keys.has(k)) }))
+      .filter(p => p.keys.length > 0);
+    this._syncDerivedToAllSeries();
+    this._persistDerivedSignals();
+    this.requestRender(true);
+    return true;
+  }
+
+  /** Compute samples for a non-perNode derived signal. (Per-node templates
+   *  produce ghost SignalSeries entries whose getSamples calls _resolveSamples
+   *  directly with substituted vars.) Cycles bail to empty. */
+  computeDerivedSamples(def: DerivedSignal, visiting?: Set<string>): SignalSample[] {
+    if (def.perNode) return [];
+    const next = new Set(visiting ?? []);
+    next.add(def.id);
+    return this._computeSamples(def.expr, def.vars, next);
+  }
+
+  /** Shared compute: evaluate `expr` over var bindings, merging sample streams
+   *  by sample-and-hold. Single-var → map; multi-var → sorted-event merge. */
+  private _computeSamples(expr: string, vars: Record<string, string>, visiting: Set<string>): SignalSample[] {
+    const varNames = Object.keys(vars);
+    if (varNames.length === 0) return [];
+    for (const v of varNames) {
+      if (!vars[v]) return [];
+    }
+    const sources: Record<string, SignalSample[]> = {};
+    for (const v of varNames) {
+      sources[v] = this._resolveSamples(vars[v], visiting);
+      if (sources[v].length === 0) return [];
+    }
+    if (varNames.length === 1) {
+      const v = varNames[0];
+      const out: SignalSample[] = [];
+      for (const s of sources[v]) {
+        const scope: Record<string, number> = { [v]: s.value };
+        try {
+          const val = evalExpr(expr, scope);
+          if (Number.isFinite(val)) out.push({ time: s.time, value: val, frame: s.frame });
+        } catch { /* skip */ }
+      }
+      return out;
+    }
+    type Event = { time: number; v: string; value: number; frame: FrameRef };
+    const events: Event[] = [];
+    for (const v of varNames) {
+      for (const s of sources[v]) {
+        events.push({ time: s.time, v, value: s.value, frame: s.frame });
+      }
+    }
+    events.sort((a, b) => a.time - b.time);
+    const cur: Record<string, number> = {};
+    const out: SignalSample[] = [];
+    let bound = 0;
+    for (const e of events) {
+      if (!(e.v in cur)) bound++;
+      cur[e.v] = e.value;
+      if (bound < varNames.length) continue;
+      try {
+        const val = evalExpr(expr, cur);
+        if (Number.isFinite(val)) out.push({ time: e.time, value: val, frame: e.frame });
+      } catch { /* skip */ }
+    }
+    return out;
+  }
+
+  /** Find all node IDs N such that every "N*"-templated binding in `def.vars`
+   *  resolves to an existing signal key. Static (non-N*) bindings are not
+   *  used for node discovery — they apply unchanged to every per-node instance. */
+  private _discoverNodesForFormula(def: DerivedSignal): number[] {
+    const templated = Object.values(def.vars).filter(tpl => tpl && tpl.includes('N*'));
+    if (templated.length === 0) return [];
+    const perVarNodes: Set<number>[] = templated.map(tpl => this._matchTemplate(tpl));
+    if (perVarNodes.some(s => s.size === 0)) return [];
+    const result = new Set(perVarNodes[0]);
+    for (let i = 1; i < perVarNodes.length; i++) {
+      for (const n of [...result]) if (!perVarNodes[i].has(n)) result.delete(n);
+    }
+    return [...result].sort((a, b) => a - b);
+  }
+
+  /** All node IDs N for which `template` (with literal "N*") matches an existing
+   *  source signal key. */
+  private _matchTemplate(template: string): Set<number> {
+    const out = new Set<number>();
+    if (!template.includes('N*')) return out;
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('^' + template.split('N*').map(escape).join('N(\\d+)') + '$');
+    for (const s of this.allSeries) {
+      if (s.group === DERIVED_GROUP) continue;
+      const m = s.key.match(re);
+      if (m) out.add(parseInt(m[1], 10));
+    }
+    return out;
+  }
+
+  /** If `key` is "Formulas / <name>_N<n>" matching a per-node template, return
+   *  the template definition and the node number. */
+  private _matchPerNodeKey(key: string): { def: DerivedSignal; node: number } | null {
+    const prefix = `${DERIVED_GROUP} / `;
+    if (!key.startsWith(prefix)) return null;
+    const tail = key.slice(prefix.length);
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const d of this.derivedSignals) {
+      if (!d.perNode) continue;
+      const m = tail.match(new RegExp(`^${escape(d.name)}_N(\\d+)$`));
+      if (m) return { def: d, node: parseInt(m[1], 10) };
+    }
+    return null;
+  }
+
+  perNodeSeriesNames(def: DerivedSignal): string[] {
+    if (!def.perNode) return [];
+    return this._discoverNodesForFormula(def).map(n => `${def.name}_N${n}`);
   }
 
   // Load a candump .log or ZLG USBCANFD .csv export, populate the textarea, and run analyze().

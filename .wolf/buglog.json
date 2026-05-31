@@ -2375,6 +2375,358 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-26T08:30:00Z"
+    },
+    {
+      "id": "bug-146",
+      "timestamp": "2026-05-27T06:50:04.762Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T06:50:04.762Z"
+    },
+    {
+      "id": "bug-147",
+      "timestamp": "2026-05-27T06:50:30.746Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T06:50:30.746Z"
+    },
+    {
+      "id": "bug-148",
+      "timestamp": "2026-05-27T06:54:33.381Z",
+      "error_message": "Null/undefined access in ",
+      "file": "../../../../tmp/verify-csv-export.mjs",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "mjs"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T06:54:33.381Z"
+    },
+    {
+      "id": "bug-149",
+      "timestamp": "2026-05-27T06:58:22.866Z",
+      "error_message": "Significant refactor of ",
+      "file": "../../../../tmp/verify-csv-export.mjs",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 9→14 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "mjs"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T06:58:22.866Z"
+    },
+    {
+      "id": "bug-150",
+      "timestamp": "2026-05-27T08:13:45.783Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T08:13:45.783Z"
+    },
+    {
+      "id": "bug-151",
+      "timestamp": "2026-05-27T08:24:23.902Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T08:24:23.902Z"
+    },
+    {
+      "id": "bug-152",
+      "timestamp": "2026-05-27T08:27:37.634Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Had \"csv-format-select\"",
+      "fix": "Changed to \"unit-select\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T08:27:37.634Z"
+    },
+    {
+      "id": "bug-153",
+      "timestamp": "2026-05-27T08:44:40.087Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 13→6 lines (7 removed) | Also: <button class=\"btn-sm\" onclick={savePng}>{t('plot.; <select class=\"unit-select\" bind:value={csvFormat}",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-27T08:45:27.454Z"
+    },
+    {
+      "id": "bug-154",
+      "timestamp": "2026-05-28T05:49:24.426Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T05:49:24.426Z"
+    },
+    {
+      "id": "bug-155",
+      "timestamp": "2026-05-28T06:00:34.153Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 8→10 lines (2 removed) | Also: 'plot.record_to_file': '录制到文件',; 'plot.record_csv': '录制 CSV',",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-28T06:00:35.020Z"
+    },
+    {
+      "id": "bug-156",
+      "timestamp": "2026-05-28T06:01:04.193Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Had 'plot.record_to_file'",
+      "fix": "Changed to 'plot.record_to_file_title'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-28T06:01:05.531Z"
+    },
+    {
+      "id": "bug-157",
+      "timestamp": "2026-05-31T07:39:36.815Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "No early return/throw for edge case: def",
+      "fix": "Added guard clause: if (def)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-31T07:42:12.898Z"
+    },
+    {
+      "id": "bug-158",
+      "timestamp": "2026-05-31T07:39:47.233Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 9→3 lines (6 removed) | Also: if (this.allSeries.length <= 12) {; this.chartPanels = this.allSeries.map(s => ({ id: ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-31T07:41:09.596Z"
+    },
+    {
+      "id": "bug-159",
+      "timestamp": "2026-05-31T07:40:32.619Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-31T07:40:32.619Z"
+    },
+    {
+      "id": "bug-160",
+      "timestamp": "2026-05-31T07:45:12.123Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: <!-- Formulas (derived signals) -->; <div class=\"formulas-section\">",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-31T07:46:20.934Z"
+    },
+    {
+      "id": "bug-161",
+      "timestamp": "2026-05-31T07:47:46.803Z",
+      "error_message": "CSS fix: background, color",
+      "file": "web/src/app.css",
+      "root_cause": "background: var(--bg-input) → rgba(248, 81, 73, 0.08); color: var(--text) → var(--red, #f85149)",
+      "fix": "Changed background: var(--bg-input) → rgba(248, 81, 73, 0.08); color: var(--text) → var(--red, #f85149)",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "css"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-31T07:47:46.803Z"
+    },
+    {
+      "id": "bug-162",
+      "timestamp": "2026-05-31T13:22:30.196Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: /** True if any source key in `vars` is a derived signal who; *  chain reaches `formulaId`. Use to reject cycle-introducin",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-31T13:22:46.557Z"
+    },
+    {
+      "id": "bug-163",
+      "timestamp": "2026-05-31T13:23:40.425Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-31T13:23:40.425Z"
+    },
+    {
+      "id": "bug-164",
+      "timestamp": "2026-05-31T13:26:25.020Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 31→48 lines (6 removed) | Also: /** Compute samples for a derived signal on demand; *  → union of timestamps with sample-and-hold on e | Also: *  picker / panels. Samples stay empty — `getSampl; return this.derivedSignals.map(d => ({ | Also: addDerivedSignal(opts: { name: string; expr: strin; // Auto-plot the new formula. | Also: updateDerivedSignal(id: string, opts: { name?: str; const oldKey = this.derivedKey(cur); | Also: // survive across data resets because the formula ; const derivedKeys = new Set(this.derivedSignals.ma | Also: incoming.push({; });",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 7,
+      "last_seen": "2026-05-31T13:30:52.728Z"
+    },
+    {
+      "id": "bug-165",
+      "timestamp": "2026-05-31T13:31:41.214Z",
+      "error_message": "Missing guard clause",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "No early return/throw for edge case: editingDef",
+      "fix": "Added guard clause: if (editingDef)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-31T13:31:41.214Z"
+    },
+    {
+      "id": "bug-166",
+      "timestamp": "2026-05-31T13:32:15.029Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-31T13:32:15.029Z"
+    },
+    {
+      "id": "bug-167",
+      "timestamp": "2026-05-31T13:33:04.265Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 54→72 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-31T13:33:04.265Z"
     }
   ]
 }

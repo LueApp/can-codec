@@ -920,3 +920,185 @@ kbd {
   background: var(--bg-input);
   color: var(--text);
 }
+
+/* Plot page: formulas (derived signals) */
+.formulas-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.formulas-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.formula-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 8px 4px;
+  font-style: italic;
+}
+.formula-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.formula-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.formula-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.formula-row-name {
+  font-weight: 600;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.formula-row-expr {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.formula-row-unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.formula-row-vars {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 4px;
+}
+.formula-var-tag {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px solid var(--border);
+}
+.formula-var-unbound {
+  color: var(--yellow, #d29922);
+  border-color: var(--yellow, #d29922);
+}
+.formula-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.formula-editor {
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.formula-editor-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.formula-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 160px;
+}
+.formula-field-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.formula-field input {
+  font-size: 13px;
+}
+.formula-help {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.formula-var-binds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+.formula-var-bind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.formula-var-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 32px;
+}
+.formula-var-arrow {
+  color: var(--text-dim);
+}
+.formula-var-bind select {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+}
+.formula-warning {
+  font-size: 12px;
+  color: var(--yellow, #d29922);
+  padding: 6px 8px;
+  background: rgba(210, 153, 34, 0.08);
+  border-left: 3px solid var(--yellow, #d29922);
+  border-radius: 3px;
+}
+.formula-warning-inline {
+  font-size: 10px;
+  color: var(--yellow, #d29922);
+}
+.formula-error {
+  font-size: 12px;
+  color: var(--red, #f85149);
+  padding: 6px 8px;
+  background: rgba(248, 81, 73, 0.08);
+  border-left: 3px solid var(--red, #f85149);
+  border-radius: 3px;
+}
+.formula-pernode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  width: max-content;
+}
+.formula-pernode-toggle input {
+  width: auto;
+}
+.formula-editor-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

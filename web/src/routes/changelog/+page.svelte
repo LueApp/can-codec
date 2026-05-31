@@ -4,9 +4,30 @@
 
   const versions = [
     {
+      version: '1.4.4',
+      date: '2026-05-31',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'feat', text: 'Plot: Formulas section — define derived signals as simple arithmetic expressions (a*0.1, a-b, (a+b)/2, …) and plot the result alongside source signals. Reuses the sequence-store evaluator; samples are computed on demand via sample-and-hold across referenced signals' },
+          { type: 'feat', text: 'Plot: chained formulas — a formula\'s variable can bind to another formula. Cycles are blocked both at save time (dependency-tree walk) and at runtime (visiting set short-circuits recursion)' },
+          { type: 'feat', text: 'Plot: per-node formula templates — mark a formula "per node" and use an "N*" placeholder in any binding; the formula auto-expands to one derived series per node where every templated binding resolves. Static (non-N*) bindings mix in as constants' },
+          { type: 'feat', text: 'Plot: formulas persist to localStorage and ride along in the exportable layout YAML; preserved across analyze() / clearData()' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'feat', text: 'Plot：新增 Formulas（公式）面板——可用简单算式（a*0.1、a-b、(a+b)/2 等）定义派生信号，与源信号一起绘制。复用 sequence-store 的算式求值器，样本按需通过 sample-and-hold 跨多个引用信号合成' },
+          { type: 'feat', text: 'Plot：公式可链式引用——公式中的变量可以绑定到另一个公式。环依赖在保存时（遍历依赖树）和运行时（visiting 集合短路）均会被拦截' },
+          { type: 'feat', text: 'Plot：公式支持 per-node 模板——勾选"按节点"后可在变量绑定中使用 "N*" 占位符，公式将自动展开为每个可解析节点的派生系列；未带 N* 的绑定作为常量参与计算' },
+          { type: 'feat', text: 'Plot：公式写入 localStorage 持久化，并随图表布局 YAML 一起导出/导入；analyze() / clearData() 期间保留' },
+        ],
+      },
+    },
+    {
       version: '1.4.3',
       date: '2026-05-28',
-      tag: 'latest',
+      tag: null,
       en: {
         changes: [
           { type: 'feat', text: 'Plot: CSV export of plot data — top-level toolbar now has a format selector (long / wide node:signal / wide signal:node) plus an "All signals" checkbox; long-form puts one row per sample with kind/time/signal/value/unit/frame, wide forms pivot to one column per signal for cross-node comparison. Export controls stay visible whenever data exists, independent of chart panel selection' },
