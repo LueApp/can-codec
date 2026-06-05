@@ -1528,7 +1528,11 @@ class PlotStore {
   }
 
   /** Shared compute: evaluate `expr` over var bindings, merging sample streams
-   *  by sample-and-hold. Single-var → map; multi-var → sorted-event merge. */
+   *  by sample-and-hold. Single-var → map; multi-var → sorted-event merge with
+   *  same-timestamp coalescing (events sharing a timestamp — e.g. signals
+   *  co-sampled in one frame — all update before a single evaluation, so we
+   *  never emit a phantom sample that mixes one var's fresh value with
+   *  another's stale previous value). */
   private _computeSamples(expr: string, vars: Record<string, string>, visiting: Set<string>): SignalSample[] {
     const varNames = Object.keys(vars);
     if (varNames.length === 0) return [];
@@ -1563,13 +1567,24 @@ class PlotStore {
     const cur: Record<string, number> = {};
     const out: SignalSample[] = [];
     let bound = 0;
-    for (const e of events) {
-      if (!(e.v in cur)) bound++;
-      cur[e.v] = e.value;
+    for (let i = 0; i < events.length; ) {
+      // Apply every event sharing this timestamp before evaluating. Signals
+      // co-sampled in a single frame carry identical timestamps; updating them
+      // together avoids a phantom sample of a(tᵢ) − b(tᵢ₋₁) and the duplicate
+      // emit that a per-event loop would otherwise produce.
+      const t = events[i].time;
+      let frame = events[i].frame;
+      while (i < events.length && events[i].time === t) {
+        const e = events[i];
+        if (!(e.v in cur)) bound++;
+        cur[e.v] = e.value;
+        frame = e.frame;
+        i++;
+      }
       if (bound < varNames.length) continue;
       try {
         const val = evalExpr(expr, cur);
-        if (Number.isFinite(val)) out.push({ time: e.time, value: val, frame: e.frame });
+        if (Number.isFinite(val)) out.push({ time: t, value: val, frame });
       } catch { /* skip */ }
     }
     return out;

@@ -2727,6 +2727,41 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-31T13:33:04.265Z"
+    },
+    {
+      "id": "bug-168",
+      "timestamp": "2026-06-03T15:11:20.376Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 14→25 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-03T15:11:20.376Z"
+    },
+    {
+      "id": "bug-169",
+      "timestamp": "2026-06-03T15:13:00.000Z",
+      "error_message": "Plot formula delta=a-b shows a huge spike (~0.192) while source signals a,b sit near -0.293 and -0.2808 (true delta ~-0.012)",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "_computeSamples multi-var merge emitted an output sample on EVERY event. When a and b are co-sampled in one frame they carry identical timestamps; the loop processed a's event first and evaluated a(ti)-b(ti-1) — a phantom mixing a's fresh value with b's stale previous value. For two signals that track each other this phantom equals roughly the inter-frame motion of the signal, far larger than the true a-b. It also double-emitted (one sample per event = 2x samples per timestamp).",
+      "fix": "Coalesce events sharing a timestamp: an inner while-loop applies all same-time updates to cur before a single evalExpr, emitting one sample per distinct timestamp. Different-rate (distinct-timestamp) sample-and-hold behaviour is preserved. Verified with /tmp/merge_phantom_test.mjs (reproduces the 0.184 spike, gone after fix) and /tmp/merge_verify.mjs (co-sampled, different-rate, 3-var cases all pass).",
+      "tags": [
+        "plot",
+        "formula",
+        "derived-signal",
+        "sample-and-hold",
+        "merge",
+        "off-by-one"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-03T15:13:00.000Z"
     }
   ]
 }
