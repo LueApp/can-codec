@@ -4,9 +4,24 @@
 
   const versions = [
     {
+      version: '1.4.5',
+      date: '2026-06-03',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'fix', text: 'Plot: fix derived-signal formulas (e.g. delta = a - b) emitting phantom spikes — the multi-variable merge evaluated the expression on every event, so two signals co-sampled in one frame (identical timestamp) produced a sample mixing one signal\'s fresh value with the other\'s stale value from the previous frame (delta ≈ inter-frame motion instead of a − b). Events sharing a timestamp are now coalesced and evaluated once, yielding one correct sample per timestamp; this also removes the duplicate per-timestamp emit. Genuine different-rate sample-and-hold is unchanged' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'fix', text: 'Plot：修复派生信号公式（如 delta = a - b）出现异常尖峰的问题——多变量合并对每个事件都求值一次，导致同一帧内同时采样（时间戳相同）的两个信号会先用 a 的新值与 b 上一帧的旧值求值（delta ≈ 帧间变化量，而非 a − b）。现在同一时间戳的事件会被合并后只求值一次，每个时间戳输出一个正确样本，同时消除了每个时间戳重复输出的问题。不同采样率信号的 sample-and-hold 行为保持不变' },
+        ],
+      },
+    },
+    {
       version: '1.4.4',
       date: '2026-05-31',
-      tag: 'latest',
+      tag: null,
       en: {
         changes: [
           { type: 'feat', text: 'Plot: Formulas section — define derived signals as simple arithmetic expressions (a*0.1, a-b, (a+b)/2, …) and plot the result alongside source signals. Reuses the sequence-store evaluator; samples are computed on demand via sample-and-hold across referenced signals' },
