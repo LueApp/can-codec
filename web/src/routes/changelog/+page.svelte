@@ -5,18 +5,16 @@
   const versions = [
     {
       version: '1.4.6',
-      date: '2026-06-05',
+      date: '2026-06-06',
       tag: 'latest',
       en: {
         changes: [
-          { type: 'fix', text: 'MAVLink CAN transport: migrate the 29-bit CAN ID to the bridge\'s new destination-based layout — bit 28 header, sender_sys (bits 27:20), sender_comp (bits 19:14, 0-63), target_sys (bits 13:6), target_comp (bits 5:0, 0-63). Replaces the old bit-16 / sys<<8 | comp scheme. Decode now shows sender + target (broadcast when target is 0.0); encode derives the target from the message\'s target_system/target_component fields, with new --target-sys/--target-comp overrides on the CLI. --sys-id/--comp-id are now the local sender' },
-          { type: 'feat', text: 'Sync user_define.xml MAVLink definitions with the updated mavlink_bridge: new TOF firmware-streaming (TOF_FW_CMD/TOF_FW_DATA + enums), IMU_CALIBRATION_CMD (+ action/result enums), RPM/power additions (RPM_ASK/RPM_RESPONSE, power field on RPM_AGGREGATED), wheel-motor status, RC_CHANNELS_SCALED_TARGET, and field-type/description updates' },
+          { type: 'fix', text: 'Plot: fix a 500 error when opening /plot directly (hard refresh or a pasted link) — the zoom/pan plugin was being loaded during server-side rendering, where its browser-only dependency has no window and crashed. It now loads in the browser only; zoom/pan is unchanged' },
         ],
       },
       zh: {
         changes: [
-          { type: 'fix', text: 'MAVLink CAN 传输：将 29 位 CAN ID 迁移到 bridge 新的目标寻址布局——bit 28 为协议头，sender_sys（bit 27:20）、sender_comp（bit 19:14，0-63）、target_sys（bit 13:6）、target_comp（bit 5:0，0-63），取代旧的 bit-16 / sys<<8 | comp 方案。解码现在显示发送方 + 目标（target 为 0.0 时显示 broadcast）；编码时目标取自消息的 target_system/target_component 字段，CLI 新增 --target-sys/--target-comp 覆盖参数。--sys-id/--comp-id 现表示本地发送方' },
-          { type: 'feat', text: '同步 user_define.xml 的 MAVLink 定义到最新 mavlink_bridge：新增 TOF 固件流（TOF_FW_CMD/TOF_FW_DATA 及枚举）、IMU_CALIBRATION_CMD（含 action/result 枚举）、RPM/功率相关（RPM_ASK/RPM_RESPONSE，RPM_AGGREGATED 新增 power 字段）、轮毂电机状态、RC_CHANNELS_SCALED_TARGET，以及字段类型/描述更新' },
+          { type: 'fix', text: 'Plot：修复直接打开 /plot（硬刷新或粘贴链接）时出现 500 错误的问题——缩放/平移插件在服务端渲染阶段被加载，而其依赖只能在浏览器中运行（没有 window），导致崩溃。现在该插件仅在浏览器端加载；缩放/平移功能不变' },
         ],
       },
     },
@@ -25,12 +23,12 @@
       date: '2026-06-03',
       en: {
         changes: [
-          { type: 'fix', text: 'Plot: fix derived-signal formulas (e.g. delta = a - b) emitting phantom spikes — the multi-variable merge evaluated the expression on every event, so two signals co-sampled in one frame (identical timestamp) produced a sample mixing one signal\'s fresh value with the other\'s stale value from the previous frame (delta ≈ inter-frame motion instead of a − b). Events sharing a timestamp are now coalesced and evaluated once, yielding one correct sample per timestamp; this also removes the duplicate per-timestamp emit. Genuine different-rate sample-and-hold is unchanged' },
+          { type: 'fix', text: 'Plot: fix derived-signal formulas (e.g. delta = a − b) showing phantom spikes — signals sampled in the same frame are now evaluated together, so each timestamp produces one correct value' },
         ],
       },
       zh: {
         changes: [
-          { type: 'fix', text: 'Plot：修复派生信号公式（如 delta = a - b）出现异常尖峰的问题——多变量合并对每个事件都求值一次，导致同一帧内同时采样（时间戳相同）的两个信号会先用 a 的新值与 b 上一帧的旧值求值（delta ≈ 帧间变化量，而非 a − b）。现在同一时间戳的事件会被合并后只求值一次，每个时间戳输出一个正确样本，同时消除了每个时间戳重复输出的问题。不同采样率信号的 sample-and-hold 行为保持不变' },
+          { type: 'fix', text: 'Plot：修复派生信号公式（如 delta = a − b）出现异常尖峰的问题——同一帧内采样的信号现在会一起求值，每个时间戳只产生一个正确的值' },
         ],
       },
     },
@@ -40,18 +38,14 @@
       tag: null,
       en: {
         changes: [
-          { type: 'feat', text: 'Plot: Formulas section — define derived signals as simple arithmetic expressions (a*0.1, a-b, (a+b)/2, …) and plot the result alongside source signals. Reuses the sequence-store evaluator; samples are computed on demand via sample-and-hold across referenced signals' },
-          { type: 'feat', text: 'Plot: chained formulas — a formula\'s variable can bind to another formula. Cycles are blocked both at save time (dependency-tree walk) and at runtime (visiting set short-circuits recursion)' },
-          { type: 'feat', text: 'Plot: per-node formula templates — mark a formula "per node" and use an "N*" placeholder in any binding; the formula auto-expands to one derived series per node where every templated binding resolves. Static (non-N*) bindings mix in as constants' },
-          { type: 'feat', text: 'Plot: formulas persist to localStorage and ride along in the exportable layout YAML; preserved across analyze() / clearData()' },
+          { type: 'feat', text: 'Plot: Formulas — define derived signals as arithmetic expressions (a*0.1, a−b, (a+b)/2, …); formulas can chain (reference other formulas) and expand per-node via an "N*" placeholder' },
+          { type: 'feat', text: 'Plot: formulas persist locally and export with the chart-layout YAML' },
         ],
       },
       zh: {
         changes: [
-          { type: 'feat', text: 'Plot：新增 Formulas（公式）面板——可用简单算式（a*0.1、a-b、(a+b)/2 等）定义派生信号，与源信号一起绘制。复用 sequence-store 的算式求值器，样本按需通过 sample-and-hold 跨多个引用信号合成' },
-          { type: 'feat', text: 'Plot：公式可链式引用——公式中的变量可以绑定到另一个公式。环依赖在保存时（遍历依赖树）和运行时（visiting 集合短路）均会被拦截' },
-          { type: 'feat', text: 'Plot：公式支持 per-node 模板——勾选"按节点"后可在变量绑定中使用 "N*" 占位符，公式将自动展开为每个可解析节点的派生系列；未带 N* 的绑定作为常量参与计算' },
-          { type: 'feat', text: 'Plot：公式写入 localStorage 持久化，并随图表布局 YAML 一起导出/导入；analyze() / clearData() 期间保留' },
+          { type: 'feat', text: 'Plot：公式——用算式（a*0.1、a−b、(a+b)/2 等）定义派生信号；公式可链式引用，并可用 "N*" 占位符按节点展开' },
+          { type: 'feat', text: 'Plot：公式本地持久化，并随图表布局 YAML 一起导出' },
         ],
       },
     },
@@ -61,18 +55,16 @@
       tag: null,
       en: {
         changes: [
-          { type: 'feat', text: 'Plot: CSV export of plot data — top-level toolbar now has a format selector (long / wide node:signal / wide signal:node) plus an "All signals" checkbox; long-form puts one row per sample with kind/time/signal/value/unit/frame, wide forms pivot to one column per signal for cross-node comparison. Export controls stay visible whenever data exists, independent of chart panel selection' },
-          { type: 'feat', text: 'Plot: live CSV recording in live mode ("Record signals") — streams decoded signal samples to a .csv file as frames arrive, with a "Selected only" toggle to limit recording to signals currently in chart panels. Mirrors the existing raw-frame recorder; auto-stops on disconnect' },
-          { type: 'feat', text: 'Plot: renamed live recording buttons to "Record raw frames" and "Record signals" with tooltips, so the distinction between candump .log and decoded .csv output is obvious at a glance' },
-          { type: 'feat', text: 'Program: "custom (raw frame)" option in the Send editor — when picked, the message dropdown is replaced by a hex byte input so you can drop arbitrary CAN frames into a sequence without defining a YAML message first' },
+          { type: 'feat', text: 'Plot: CSV export — toolbar format selector (long / wide node:signal / wide signal:node) plus an "All signals" option; export stays available whenever data exists' },
+          { type: 'feat', text: 'Plot: live signal recording — stream decoded samples to a .csv as frames arrive, with a "Selected only" toggle; recording buttons are now "Record raw frames" / "Record signals"' },
+          { type: 'feat', text: 'Program: "custom (raw frame)" Send option — enter raw hex bytes to send arbitrary CAN frames without defining a YAML message first' },
         ],
       },
       zh: {
         changes: [
-          { type: 'feat', text: 'Plot：绘图数据 CSV 导出——顶部工具栏新增格式选择器（长表 / 宽表 节点:信号 / 宽表 信号:节点）与"全部信号"复选框；长表每行一个样本（kind/时间/信号/值/单位/帧），宽表按信号透视为列，便于跨节点对比。只要存在数据，导出按钮始终可见，与图表面板选择互不影响' },
-          { type: 'feat', text: 'Plot：实时模式新增"录制信号"——将解码后的信号样本流式写入 .csv，可勾选"仅已选"只录入当前图表面板中的信号。沿用原始帧录制的交互方式，断开连接时自动停止' },
-          { type: 'feat', text: 'Plot：实时录制按钮重命名为"录制原始帧"与"录制信号"并补充 tooltip，candump .log 与解码 .csv 的输出差异一目了然' },
-          { type: 'feat', text: 'Program：Send 编辑器新增"自定义（原始帧）"选项——选中后消息下拉框被十六进制字节输入框替换，无需先在 YAML 中定义消息即可将任意 CAN 帧加入序列' },
+          { type: 'feat', text: 'Plot：CSV 导出——工具栏新增格式选择器（长表 / 宽表 节点:信号 / 宽表 信号:节点）与"全部信号"选项；只要有数据，导出始终可用' },
+          { type: 'feat', text: 'Plot：实时信号录制——将解码样本随帧流式写入 .csv，可勾选"仅已选"；录制按钮现为"录制原始帧"/"录制信号"' },
+          { type: 'feat', text: 'Program：Send 新增"自定义（原始帧）"选项——直接输入十六进制字节即可发送任意 CAN 帧，无需先在 YAML 中定义消息' },
         ],
       },
     },
@@ -82,14 +74,14 @@
       tag: null,
       en: {
         changes: [
-          { type: 'feat', text: 'Messages: per-signal unit picker on the signal table — when a unit has compatible alternates (rad/s ↔ rpm ↔ deg/s, rad ↔ deg ↔ rev, K ↔ °C ↔ °F, m/s ↔ km/h ↔ mph, m ↔ mm ↔ cm ↔ km ↔ in ↔ ft), choose the display unit and have it propagate to Decode (values + JSON copy), Plot (axis labels, legend, tooltips, chart values, reactive re-render) and Encode (input labels + placeholders; values are converted back to YAML-native unit before encoding). Preferences persist per signal in localStorage' },
-          { type: 'fix', text: 'Codec: disambiguate messages sharing the same base ID and DLC by matching `constant: true` signal bits — e.g. vesc.yaml MITControl / PositionControl / SpeedControl / CurrentControl / DutyControl / QueryCommand all at base 0x000 with DLC=8 now decode to the right variant instead of always falling back to the first-defined message. Both Python and TS codecs updated' },
+          { type: 'feat', text: 'Messages: per-signal unit picker — pick a display unit (rad/s ↔ rpm, K ↔ °C ↔ °F, m/s ↔ km/h, …) that propagates to Decode, Plot and Encode; preferences persist per signal' },
+          { type: 'fix', text: 'Codec: disambiguate messages sharing the same base ID and DLC by matching `constant: true` signal bits (e.g. the vesc.yaml messages all at base 0x000 / DLC=8). Python and TS codecs updated' },
         ],
       },
       zh: {
         changes: [
-          { type: 'feat', text: 'Messages：信号表新增每信号单位选择器——当单位有可换算的替代单位时（rad/s ↔ rpm ↔ deg/s、rad ↔ deg ↔ rev、K ↔ °C ↔ °F、m/s ↔ km/h ↔ mph、m ↔ mm ↔ cm ↔ km ↔ in ↔ ft），可选择显示单位，并自动应用到 Decode（信号值 + JSON 复制）、Plot（坐标轴、图例、tooltip、图表值，切换后即时重绘）以及 Encode（输入框 label 与占位符；提交时自动换算回 YAML 原生单位）。偏好按信号写入 localStorage 持久化' },
-          { type: 'fix', text: 'Codec：相同 base ID + DLC 的消息现在通过匹配 `constant: true` 信号的比特位进行区分——例如 vesc.yaml 中 MITControl / PositionControl / SpeedControl / CurrentControl / DutyControl / QueryCommand 全部位于 base 0x000、DLC=8，先前总是回退到首个定义的消息，现已正确解码为各自变体。Python 与 TS 端 codec 同步更新' },
+          { type: 'feat', text: 'Messages：每信号单位选择器——选择显示单位（rad/s ↔ rpm、K ↔ °C ↔ °F、m/s ↔ km/h 等），自动应用到 Decode、Plot 和 Encode；偏好按信号持久化' },
+          { type: 'fix', text: 'Codec：通过匹配 `constant: true` 信号的比特位区分相同 base ID + DLC 的消息（如 vesc.yaml 中同处 base 0x000 / DLC=8 的多个消息）。Python 与 TS codec 同步更新' },
         ],
       },
     },
@@ -114,34 +106,20 @@
       tag: null,
       en: {
         changes: [
-          { type: 'feat', text: 'Program: new page for building and running multi-step CAN command sequences with statements like send, wait, repeat, every, sweep, group, set, bind, read' },
-          { type: 'feat', text: 'Program: notebook-style cells — top-level Group blocks each get a ▶ Run button; `set` variables persist across cell runs and Run All until you click Reset vars' },
-          { type: 'feat', text: 'Program: variables and expressions usable in any Send / Bind / Read field (including nodeId), e.g. `set motor_idx = 2; bind pos ← Telemetry.position @=motor_idx`' },
-          { type: 'feat', text: 'Program: closed-loop control via Bind (continuous) and Read (one-shot blocking with timeout); a live bindings panel shows current value and last-seen age' },
-          { type: 'feat', text: 'Program: shift+click range selection — pick consecutive same-parent blocks and drag any one to move them together; ⎘ duplicates a block' },
-          { type: 'feat', text: 'Program: in-place broadcast toggle in the Send editor with per-node tabs for messages that have a broadcast id' },
-          { type: 'feat', text: 'Plot: TX frames from Program / Encode are tagged separately from RX in the status bar, raw log and chart tooltips; raw log now uses a fixed-width RX/TX column so both directions align' },
-          { type: 'feat', text: 'Plot: human-friendly zoom — scroll = time, Shift+scroll = value, Ctrl/⌘+scroll = both axes; left-drag pans, Shift+drag box-zooms, double-click fits to data; pinch zooms both on touch. New ? button reveals a gesture cheat-sheet' },
-          { type: 'feat', text: 'Plot: paste-mode timestamp parser handles candump variants with direction/flag tokens (e.g. `TX B -`) between iface and ID so timestamps survive the round-trip' },
-          { type: 'feat', text: 'Encode: shared bus connection with Plot / Program — connect once, all three pages see live frames. "Send to bus" and "+ Sequence" actions hook into the same connection' },
-          { type: 'feat', text: 'Web: site-wide EN / 中文 i18n. All seven pages read user-facing strings via a global locale store; default follows navigator.language (zh-* → 中文) and persists in localStorage. Nav has a single language toggle' },
-          { type: 'fix', text: 'Codec: encoding non-numeric values now throws with a hint about the `=` expression prefix instead of silently packing NaN' },
+          { type: 'feat', text: 'Program: new page for building and running multi-step CAN command sequences — statements (send, wait, repeat, every, sweep, group, set, bind, read), notebook-style cells with persistent variables, expressions in any field, closed-loop Bind/Read control, and per-node broadcast editing' },
+          { type: 'feat', text: 'Web: site-wide EN / 中文 i18n with a nav language toggle (defaults to the browser language)' },
+          { type: 'feat', text: 'Plot: human-friendly zoom/pan gestures — scroll, Shift/Ctrl+scroll, drag, double-click-to-fit and pinch — with a ? cheat-sheet' },
+          { type: 'feat', text: 'Plot: TX frames from Program / Encode are tagged separately from RX in the raw log and tooltips' },
+          { type: 'feat', text: 'Encode: shared bus connection across Plot / Program — connect once, all three pages see live frames' },
         ],
       },
       zh: {
         changes: [
-          { type: 'feat', text: 'Program：全新页面，用于构建并运行多步 CAN 命令序列，包含 send、wait、repeat、every、sweep、group、set、bind、read 等语句' },
-          { type: 'feat', text: 'Program：notebook 风格的 cell —— 顶层 Group 块各自带有 ▶ 运行按钮，`set` 变量跨 cell 运行和 Run All 保留，直至点击 Reset vars' },
-          { type: 'feat', text: 'Program：所有 Send / Bind / Read 字段（包括 nodeId）均可使用变量与表达式，例如 `set motor_idx = 2; bind pos ← Telemetry.position @=motor_idx`' },
-          { type: 'feat', text: 'Program：闭环控制——Bind 持续绑定，Read 单次带超时阻塞读取；实时绑定面板显示当前值与最近更新时间' },
-          { type: 'feat', text: 'Program：Shift+点击区间选择——选中同父级下的连续块，拖动其中任一块即可一起移动；⎘ 可复制块' },
-          { type: 'feat', text: 'Program：Send 编辑器内的广播开关，对配置了 broadcast id 的消息显示节点页签，可分别编辑每个节点的数值' },
-          { type: 'feat', text: 'Plot：来自 Program / Encode 的 TX 帧在状态栏、原始日志和图表 tooltip 中独立标记，原始日志使用定宽的 RX/TX 列以保证两个方向的对齐' },
-          { type: 'feat', text: 'Plot：更直观的缩放手势——滚轮缩放时间，Shift+滚轮缩放数值，Ctrl/⌘+滚轮同时缩放两轴；左键拖动平移，Shift+拖动框选缩放，双击自适应，触摸双指缩放双轴。新增 ? 按钮可显示手势速查表' },
-          { type: 'feat', text: 'Plot：粘贴模式的时间戳解析现已支持包含方向/标志 token（如 `TX B -`）的 candump 变体，时间戳不再因此丢失' },
-          { type: 'feat', text: 'Encode：与 Plot / Program 共享同一条总线连接——任一页面连接后，三处都能看到实时帧；"Send to bus" 与 "+ Sequence" 操作复用同一连接' },
-          { type: 'feat', text: 'Web：站点级 EN / 中文 i18n。全部七个页面通过统一的语言 store 读取文案，默认跟随 navigator.language（zh-* → 中文）并写入 localStorage；导航栏新增单一语言切换按钮' },
-          { type: 'fix', text: 'Codec：发送非数值时抛出错误并提示使用 `=` 表达式前缀，不再静默地发送 NaN' },
+          { type: 'feat', text: 'Program：全新页面，用于构建并运行多步 CAN 命令序列——支持 send、wait、repeat、every、sweep、group、set、bind、read 等语句、notebook 风格 cell（变量可跨运行保留）、任意字段中的变量与表达式、Bind/Read 闭环控制，以及按节点的广播编辑' },
+          { type: 'feat', text: 'Web：站点级 EN / 中文 i18n，导航栏新增语言切换（默认跟随浏览器语言）' },
+          { type: 'feat', text: 'Plot：更直观的缩放/平移手势——滚轮、Shift/Ctrl+滚轮、拖动、双击自适应、双指缩放——并提供 ? 速查表' },
+          { type: 'feat', text: 'Plot：来自 Program / Encode 的 TX 帧在原始日志和 tooltip 中与 RX 独立标记' },
+          { type: 'feat', text: 'Encode：与 Plot / Program 共享同一条总线连接——连接一次，三个页面都能看到实时帧' },
         ],
       },
     },
@@ -172,25 +150,19 @@
       tag: null,
       en: {
         changes: [
-          { type: 'feat', text: 'Web: Per-message signal filtering — expand any message row to filter by node ID, signal name, or enum value' },
-          { type: 'feat', text: 'Web: Enable/disable all configs or all messages per device in one click' },
-          { type: 'feat', text: 'Plot: "Clear" button to reset all collected data without disconnecting' },
-          { type: 'feat', text: 'Plot: State (panels, series, layout) persists when navigating away and returning' },
-          { type: 'feat', text: 'Plot: "Matched only" toggle for record-to-file — skip frames that do not decode to any known message' },
-          { type: 'feat', text: 'Plot: Pause / resume live data collection' },
-          { type: 'feat', text: 'Plot: Export/import chart panel layout as YAML' },
+          { type: 'feat', text: 'Web: per-message signal filtering — expand any message row to filter by node ID, signal name, or enum value' },
+          { type: 'feat', text: 'Web: enable/disable all configs or all messages per device in one click' },
+          { type: 'feat', text: 'Plot: live data controls — Clear, pause/resume, and panel/series/layout state that persists across navigation' },
+          { type: 'feat', text: 'Plot: export/import chart layout as YAML, plus a "Matched only" record filter that skips undecodable frames' },
           { type: 'fix', text: 'Config: resolve $parameter references in signal min/max/scale/offset fields' },
         ],
       },
       zh: {
         changes: [
           { type: 'feat', text: 'Web：逐消息信号过滤——展开任意消息行，可按节点 ID、信号名称或枚举值进行筛选' },
-          { type: 'feat', text: 'Web：一键启用/禁用所有配置文件或特定设备的所有消息' },
-          { type: 'feat', text: 'Plot：新增 "Clear" 按钮，可在不断开连接的情况下清空所有采集数据' },
-          { type: 'feat', text: 'Plot：页面切换后再返回，面板、信号系列和布局状态得以保留' },
-          { type: 'feat', text: 'Plot：录制文件时新增"仅匹配"开关，跳过无法解码的帧' },
-          { type: 'feat', text: 'Plot：支持暂停/恢复实时数据采集' },
-          { type: 'feat', text: 'Plot：图表面板布局可导出/导入为 YAML 文件' },
+          { type: 'feat', text: 'Web：一键启用/禁用所有配置文件或某设备的所有消息' },
+          { type: 'feat', text: 'Plot：实时数据控制——清空、暂停/恢复，以及跨页面切换保留的面板/信号/布局状态' },
+          { type: 'feat', text: 'Plot：图表布局导出/导入为 YAML，并新增"仅匹配"录制过滤，跳过无法解码的帧' },
           { type: 'fix', text: '配置：修复信号 min/max/scale/offset 字段中 $parameter 引用无法解析的问题' },
         ],
       },
@@ -201,27 +173,19 @@
       tag: null,
       en: {
         changes: [
-          { type: 'feat', text: 'Plot: Timeline and Interval views — per-message event timing and per-signal delta-time charts' },
-          { type: 'feat', text: 'Plot: Drag-to-reorder chart panels across views' },
+          { type: 'feat', text: 'Plot: Timeline and Interval views (per-message event timing and per-signal delta-time), with drag-to-reorder panels' },
+          { type: 'feat', text: 'Plot: raw CAN frame log with click-to-copy candump lines, and streaming to a .log file during capture' },
+          { type: 'feat', text: 'Serve: --source LAN relay and --interface USB-adapter support (SLCAN CAN FD, PCAN, …), now on a zero-dependency stdlib WebSocket + candump backend' },
           { type: 'feat', text: 'Web: candump-to-cansend converter page' },
-          { type: 'feat', text: 'Serve: --source relay mode — run a local proxy that forwards frames from a remote CAN machine over LAN' },
-          { type: 'feat', text: 'Serve: --interface flag — python-can backend support for USB adapters (SLCAN CAN FD, PCAN, etc.)' },
-          { type: 'feat', text: 'Serve: replaced python-can + websockets dependency with zero-dependency stdlib WebSocket + candump' },
-          { type: 'feat', text: 'Plot: raw CAN frame log panel with click-to-copy candump lines' },
-          { type: 'feat', text: 'Plot: stream raw frames to a .log file during live capture' },
           { type: 'feat', text: 'Web: mux_signal support to disambiguate register-based messages in the plot' },
         ],
       },
       zh: {
         changes: [
-          { type: 'feat', text: 'Plot：新增 Timeline（消息事件时序）和 Interval（信号间隔时间）视图' },
-          { type: 'feat', text: 'Plot：支持拖拽跨视图重新排列图表面板' },
+          { type: 'feat', text: 'Plot：新增 Timeline（消息事件时序）和 Interval（信号间隔时间）视图，并支持拖拽重排面板' },
+          { type: 'feat', text: 'Plot：原始 CAN 帧日志，支持点击复制 candump 行，并可在采集时流式写入 .log 文件' },
+          { type: 'feat', text: 'Serve：新增 --source 局域网中继与 --interface USB 适配器支持（SLCAN CAN FD、PCAN 等），并改用零依赖的 stdlib WebSocket + candump 后端' },
           { type: 'feat', text: 'Web：新增 candump 转 cansend 转换页面' },
-          { type: 'feat', text: 'Serve：新增 --source 中继模式——通过局域网从远端 CAN 机器转发数据帧' },
-          { type: 'feat', text: 'Serve：新增 --interface 标志——通过 python-can 支持 USB 适配器（SLCAN CAN FD、PCAN 等）' },
-          { type: 'feat', text: 'Serve：以零依赖的 stdlib WebSocket + candump 方案替换 python-can + websockets 依赖' },
-          { type: 'feat', text: 'Plot：新增原始帧日志面板，支持点击复制 candump 行' },
-          { type: 'feat', text: 'Plot：实时采集时可将原始帧流式写入 .log 文件' },
           { type: 'feat', text: 'Web：支持 mux_signal，用于在 Plot 中区分寄存器类消息' },
         ],
       },
@@ -234,7 +198,6 @@
         changes: [
           { type: 'feat', text: 'Initial release' },
           { type: 'feat', text: 'Browser-based CAN/CAN-FD encode/decode with YAML config files' },
-          { type: 'feat', text: 'MAVLink XML message definition support (encode, decode, multi-frame splitting)' },
           { type: 'feat', text: 'Live plot page with WebSocket streaming from can_ws_server.py' },
           { type: 'feat', text: 'Multi-node messages: node_count, node_id_offset, node_id_start' },
           { type: 'feat', text: 'Broadcast mode (broadcast_node_id) — single frame addresses all nodes' },
@@ -249,7 +212,6 @@
         changes: [
           { type: 'feat', text: '首次发布' },
           { type: 'feat', text: '基于浏览器的 CAN/CAN-FD 编解码，使用 YAML 配置文件' },
-          { type: 'feat', text: 'MAVLink XML 消息定义支持（编码、解码、多帧分片）' },
           { type: 'feat', text: '实时绘图页面，通过 WebSocket 从 can_ws_server.py 接收数据流' },
           { type: 'feat', text: '多节点消息支持：node_count、node_id_offset、node_id_start' },
           { type: 'feat', text: '广播模式（broadcast_node_id）——单帧同时寻址所有节点' },
