@@ -6,7 +6,10 @@
   import type { SignalSeries, ChartPanel, ChartView, FrameRef } from '$lib/plot-types';
   import yaml from 'js-yaml';
   import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, ScatterController } from 'chart.js';
-  import zoomPlugin from 'chartjs-plugin-zoom';
+  // NOTE: chartjs-plugin-zoom is NOT imported statically — it pulls in hammerjs,
+  // which references `window` at module top-level and crashes SSR (a direct
+  // visit to /plot would 500). It is lazily imported + registered in onMount
+  // (browser-only) instead. See onMount below.
   import { downloadServerScript as downloadServer } from '$lib/server-script';
   import { unitPrefs } from '$lib/unit-pref-store.svelte';
   import { convert } from '$lib/unit-conversion';
@@ -31,7 +34,8 @@
     return target === s.unit ? value : convert(value, s.unit, target);
   }
 
-  Chart.register(LineController, ScatterController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler, zoomPlugin);
+  // zoomPlugin is registered lazily in onMount (browser-only) — see the import note above.
+  Chart.register(LineController, ScatterController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler);
 
   // ---- Ephemeral UI state ----
 
@@ -1180,7 +1184,13 @@
     intervalInstances.clear();
   }
 
-  onMount(() => {
+  onMount(async () => {
+    // Lazily load chartjs-plugin-zoom (browser-only — it imports hammerjs which
+    // touches `window` and would crash SSR). Register it BEFORE any chart is
+    // built so zoom/pan options take effect on the very first render.
+    const { default: zoomPlugin } = await import('chartjs-plugin-zoom');
+    Chart.register(zoomPlugin);
+
     plotStore.loadDerivedSignalsFromStorage();
     plotStore.registerRenderCallback((fullRebuild) => {
       if (fullRebuild) {
