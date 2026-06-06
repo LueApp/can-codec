@@ -473,7 +473,7 @@ class PlotStore {
   }
 
   isMavlinkCanId(canId: number): boolean {
-    return (canId & 0x10000) !== 0;
+    return (canId & 0x10000000) !== 0;
   }
 
   // --- Raw frame log ---
@@ -632,7 +632,7 @@ class PlotStore {
     }
 
     const baseLabel = mavlink
-      ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
+      ? `${mavlink.sender_sys}.${mavlink.sender_comp} / ${decoded.name}`
       : decoded.name;
 
     let newSeriesAdded = false;
@@ -1049,7 +1049,7 @@ class PlotStore {
       }
 
       const baseLabel = mavlink
-        ? `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.name}`
+        ? `${mavlink.sender_sys}.${mavlink.sender_comp} / ${decoded.name}`
         : decoded.name;
 
       const msg = codecStore.codec.getMessageByName(decoded.name);

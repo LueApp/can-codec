@@ -256,26 +256,34 @@ canfd-codec -c ./configs encode PositionControl target_position=1.5 --node 1
 
 The codec can load MAVLink XML message definition files directly. Place `.xml` files in the config directory.
 
+The 29-bit CAN transport ID encodes both the sender and the final target node
+(destination-based routing): `(1<<28) | sender_sys<<20 | sender_comp<<14 |
+target_sys<<6 | target_comp`. Component IDs are limited to 0-63. `--sys-id`/`--comp-id`
+set the local sender; the target is taken from the message's
+`target_system`/`target_component` fields (or `--target-sys`/`--target-comp`),
+with `0,0` meaning broadcast.
+
 ```bash
 # Encode a MAVLink message with CAN transport format (29-bit extended ID)
-canfd-codec -c ./configs encode ARM_MODE_SWITCH mode=idle --mavlink --sys-id 1 --comp-id 1
-# => vcan0 00010101##1FD01000000010136F200002B81
+canfd-codec -c ./configs/mavlink/user_define.xml encode ARM_MODE_SWITCH \
+  mode=idle target_system=1 target_component=1 --mavlink --sys-id 1 --comp-id 1
+# => vcan0 10104041##1FD02000000010136F2000101118A   (0x10104041 = sender 1.1 -> target 1.1)
 
-# Encode with array syntax (expands position=[...] to position_0, position_1, etc.)
-canfd-codec -c ./configs encode ARM_CSP_CMD position=[0.5,0.5,0.5,0.5,0.5,0.5,0.5] velocity=[1.5,1.5,1.5,1.5,1.5,1.5,1.5] max_torque=[5.0,5.0,5.0,5.0,5.0,5.0,5.0] --mavlink --sys-id 1 --comp-id 1
-# Large messages are automatically split into multiple CAN FD frames (max 64 bytes each):
-# => vcan0 00010101##1FD5400000001013BF20000000000...  (frame 1: 64 bytes)
-# => vcan0 00010101##1000000000000000000000000...      (frame 2: 32 bytes)
+# Array fields expand (field=[v0,v1,...] -> field_0, field_1, ...). MAVLink frames
+# larger than 64 bytes are automatically split into multiple CAN FD frames.
 
 # Decode a MAVLink v2 frame over CAN transport
-canfd-codec -c ./configs decode 0x00010101 "FD 01 00 00 00 01 01 36 F2 00 00 2B 81" --mavlink
-# MAVLink: sys_id=1, comp_id=1, msg_id=0xF236, seq=0
-# [0x10101] ARM_MODE_SWITCH: Switch robot arm control mode
+canfd-codec -c ./configs/mavlink/user_define.xml \
+  decode 0x10104041 "FD 02 00 00 00 01 01 36 F2 00 01 01 11 8A" --mavlink
+# MAVLink: sender=1.1, target=1.1, msg_id=0xF236, seq=0
+# [0x10104041] ARM_MODE_SWITCH: Switch robot arm control mode
+#   target_system: 1
+#   target_component: 1
 #   mode: idle
 ```
 
 The `--mavlink` flag enables:
-- 29-bit extended CAN ID encoding/decoding with system/component IDs
+- 29-bit extended CAN ID encoding/decoding with sender + target system/component IDs
 - Auto-parsing of full MAVLink v2 frames (detects 0xFD magic byte)
 - Automatic multi-frame splitting for large payloads (>64 bytes)
 

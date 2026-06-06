@@ -387,7 +387,7 @@
             <label for="sys-id">{t('encode.label_sys_comp')}</label>
             <div style="display:flex; gap:8px;">
               <input id="sys-id" type="number" bind:value={sysId} min="0" max="255" placeholder="sys_id" />
-              <input type="number" bind:value={compId} min="0" max="255" placeholder="comp_id" />
+              <input type="number" bind:value={compId} min="0" max="63" placeholder="comp_id (0-63)" />
             </div>
           {:else if broadcastMode}
             <span style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">{t('encode.label_broadcast')}</span>
@@ -523,7 +523,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <strong>{selectedMsg}</strong>
         <span style="font-family:var(--font-mono);color:var(--text-dim); font-size: 13px;">
-          MAVLink v2 | sys={sysId} comp={compId} | {mavResult.frames.length} {mavResult.frames.length > 1 ? t('encode.frames_many') : t('encode.frames_one')}
+          MAVLink v2 | sender={sysId}.{compId} | {mavResult.frames.length} {mavResult.frames.length > 1 ? t('encode.frames_many') : t('encode.frames_one')}
         </span>
       </div>
       <div class="hex-display" style="font-size: 13px;">{t('encode.payload')} {hexStr(mavResult.rawPayload)}</div>

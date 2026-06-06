@@ -4,9 +4,25 @@
 
   const versions = [
     {
+      version: '1.4.6',
+      date: '2026-06-05',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'fix', text: 'MAVLink CAN transport: migrate the 29-bit CAN ID to the bridge\'s new destination-based layout — bit 28 header, sender_sys (bits 27:20), sender_comp (bits 19:14, 0-63), target_sys (bits 13:6), target_comp (bits 5:0, 0-63). Replaces the old bit-16 / sys<<8 | comp scheme. Decode now shows sender + target (broadcast when target is 0.0); encode derives the target from the message\'s target_system/target_component fields, with new --target-sys/--target-comp overrides on the CLI. --sys-id/--comp-id are now the local sender' },
+          { type: 'feat', text: 'Sync user_define.xml MAVLink definitions with the updated mavlink_bridge: new TOF firmware-streaming (TOF_FW_CMD/TOF_FW_DATA + enums), IMU_CALIBRATION_CMD (+ action/result enums), RPM/power additions (RPM_ASK/RPM_RESPONSE, power field on RPM_AGGREGATED), wheel-motor status, RC_CHANNELS_SCALED_TARGET, and field-type/description updates' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'fix', text: 'MAVLink CAN 传输：将 29 位 CAN ID 迁移到 bridge 新的目标寻址布局——bit 28 为协议头，sender_sys（bit 27:20）、sender_comp（bit 19:14，0-63）、target_sys（bit 13:6）、target_comp（bit 5:0，0-63），取代旧的 bit-16 / sys<<8 | comp 方案。解码现在显示发送方 + 目标（target 为 0.0 时显示 broadcast）；编码时目标取自消息的 target_system/target_component 字段，CLI 新增 --target-sys/--target-comp 覆盖参数。--sys-id/--comp-id 现表示本地发送方' },
+          { type: 'feat', text: '同步 user_define.xml 的 MAVLink 定义到最新 mavlink_bridge：新增 TOF 固件流（TOF_FW_CMD/TOF_FW_DATA 及枚举）、IMU_CALIBRATION_CMD（含 action/result 枚举）、RPM/功率相关（RPM_ASK/RPM_RESPONSE，RPM_AGGREGATED 新增 power 字段）、轮毂电机状态、RC_CHANNELS_SCALED_TARGET，以及字段类型/描述更新' },
+        ],
+      },
+    },
+    {
       version: '1.4.5',
       date: '2026-06-03',
-      tag: 'latest',
       en: {
         changes: [
           { type: 'fix', text: 'Plot: fix derived-signal formulas (e.g. delta = a - b) emitting phantom spikes — the multi-variable merge evaluated the expression on every event, so two signals co-sampled in one frame (identical timestamp) produced a sample mixing one signal\'s fresh value with the other\'s stale value from the previous frame (delta ≈ inter-frame motion instead of a − b). Events sharing a timestamp are now coalesced and evaluated once, yielding one correct sample per timestamp; this also removes the duplicate per-timestamp emit. Genuine different-rate sample-and-hold is unchanged' },

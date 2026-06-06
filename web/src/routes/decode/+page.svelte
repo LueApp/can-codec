@@ -78,7 +78,7 @@
   }
 
   function isMavlinkCanId(canId: number): boolean {
-    return (canId & 0x10000) !== 0;
+    return (canId & 0x10000000) !== 0;
   }
 
   function decode() {
@@ -239,7 +239,10 @@
           <div>
             {#if r.mavlink}
               <span style="font-family: var(--font-mono); color: var(--text-dim); font-size: 12px;">
-                MAVLink sys={r.mavlink.sys_id} comp={r.mavlink.comp_id}
+                MAVLink sender={r.mavlink.sender_sys}.{r.mavlink.sender_comp}
+                target={r.mavlink.target_sys === 0 && r.mavlink.target_comp === 0
+                  ? 'broadcast'
+                  : `${r.mavlink.target_sys}.${r.mavlink.target_comp}`}
                 {#if r.mavlink.msg_id !== undefined} msg_id={r.mavlink.msg_id}{/if}
                 {#if r.mavlink.seq !== undefined} seq={r.mavlink.seq}{/if}
               </span>

@@ -282,6 +282,56 @@ def load_mavlink_xml(path: str | Path) -> DeviceConfig:
 
 
 # ---------------------------------------------------------------------------
+# CAN transport: 29-bit extended ID layout (destination-based routing)
+# ---------------------------------------------------------------------------
+# Mirrors mavlink_bridge/impl/mavlink_can_transport.h. The extended CAN ID
+# encodes BOTH the sender and the final target MAVLink node:
+#
+#   bit  28      : MAVLink header flag (1 for MAVLink-over-CAN frames)
+#   bits 20-27   : sender_sys   (8 bit, 0-255)
+#   bits 14-19   : sender_comp  (6 bit, 0-63)
+#   bits  6-13   : target_sys   (8 bit, 0-255)
+#   bits  0- 5   : target_comp  (6 bit, 0-63)
+#
+# Broadcast = target_sys == 0 and target_comp == 0.
+# NOTE: component IDs are limited to 0-63 by the 6-bit fields.
+CAN_MAVLINK_HEADER = 0x1 << 28          # 0x10000000
+CAN_MAVLINK_TARGET_MASK = 0x10003FFF    # HEADER + target_sys + target_comp
+CAN_MAVLINK_BROADCAST_ID = CAN_MAVLINK_HEADER
+
+
+def mavlink_can_make_id(sender_sys: int, sender_comp: int,
+                        target_sys: int, target_comp: int) -> int:
+    """Build a 29-bit MAVLink CAN transport ID (without CAN_EFF_FLAG)."""
+    return (CAN_MAVLINK_HEADER
+            | ((sender_sys & 0xFF) << 20)
+            | ((sender_comp & 0x3F) << 14)
+            | ((target_sys & 0xFF) << 6)
+            | (target_comp & 0x3F))
+
+
+def mavlink_can_is_mavlink(can_id: int) -> bool:
+    """True if the CAN ID carries the MAVLink header flag (bit 28)."""
+    return bool(can_id & CAN_MAVLINK_HEADER)
+
+
+def mavlink_can_id_sender_sys(can_id: int) -> int:
+    return (can_id >> 20) & 0xFF
+
+
+def mavlink_can_id_sender_comp(can_id: int) -> int:
+    return (can_id >> 14) & 0x3F
+
+
+def mavlink_can_id_target_sys(can_id: int) -> int:
+    return (can_id >> 6) & 0xFF
+
+
+def mavlink_can_id_target_comp(can_id: int) -> int:
+    return can_id & 0x3F
+
+
+# ---------------------------------------------------------------------------
 # MAVLink v2 frame building / parsing (no pymavlink dependency)
 # ---------------------------------------------------------------------------
 def build_mavlink_v2_frame(
