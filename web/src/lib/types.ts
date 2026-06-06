@@ -65,8 +65,11 @@ export interface DecodedMessage {
 }
 
 export interface MavlinkInfo {
-  sys_id: number;
-  comp_id: number;
+  // Decoded from the 29-bit CAN transport ID (mavlink_can_transport.h layout).
+  sender_sys: number;
+  sender_comp: number;
+  target_sys: number;
+  target_comp: number;
   seq?: number;
   msg_id?: number;
   frame_sys_id?: number;

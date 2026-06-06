@@ -18,7 +18,11 @@ from datetime import datetime
 from typing import TextIO
 
 from .codec import Codec, DecodedMessage
-from .mavlink_loader import MavlinkReassembler, parse_mavlink_v2_header
+from .mavlink_loader import (
+    MavlinkReassembler,
+    parse_mavlink_v2_header,
+    mavlink_can_is_mavlink,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -247,8 +251,8 @@ class Monitor:
         arb_id = msg.arbitration_id
         data = bytes(msg.data)
 
-        # MAVLink CAN transport: bit 16 set on 29-bit extended ID
-        if arb_id & 0x10000:
+        # MAVLink CAN transport: header flag (bit 28) set on 29-bit extended ID
+        if mavlink_can_is_mavlink(arb_id):
             for full_frame in self._reassembler.feed(arb_id, data):
                 self._emit_mavlink_decoded(arb_id, full_frame, ts)
             return
@@ -305,7 +309,7 @@ class SummaryMonitor(Monitor):
         arb_id = msg.arbitration_id
         data = bytes(msg.data)
 
-        if arb_id & 0x10000:
+        if mavlink_can_is_mavlink(arb_id):
             for full_frame in self._reassembler.feed(arb_id, data):
                 hdr = parse_mavlink_v2_header(full_frame)
                 if hdr is None:

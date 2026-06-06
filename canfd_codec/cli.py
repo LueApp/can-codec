@@ -213,7 +213,11 @@ def _print_decoded(decoded, can_id: int, args, mavlink_info: dict | None):
         print(json.dumps(result, indent=2))
     else:
         if mavlink_info:
-            info_parts = [f"sys_id={mavlink_info['sys_id']}", f"comp_id={mavlink_info['comp_id']}"]
+            sender = f"{mavlink_info['sender_sys']}.{mavlink_info['sender_comp']}"
+            tgt_sys = mavlink_info['target_sys']
+            tgt_comp = mavlink_info['target_comp']
+            target = "broadcast" if (tgt_sys == 0 and tgt_comp == 0) else f"{tgt_sys}.{tgt_comp}"
+            info_parts = [f"sender={sender}", f"target={target}"]
             if 'msg_id' in mavlink_info:
                 info_parts.append(f"msg_id=0x{mavlink_info['msg_id']:X}")
             if 'seq' in mavlink_info:
@@ -229,11 +233,19 @@ def cmd_decode(args):
     can_id = int(args.id, 0)
     frames = [parse_hex_data(d) for d in args.data]
 
-    if args.mavlink and (can_id & 0x10000):
-        from .mavlink_loader import MavlinkReassembler, parse_mavlink_v2_header
+    from .mavlink_loader import mavlink_can_is_mavlink
 
-        can_sys_id = (can_id >> 8) & 0xFF
-        can_comp_id = can_id & 0xFF
+    if args.mavlink and mavlink_can_is_mavlink(can_id):
+        from .mavlink_loader import (
+            MavlinkReassembler, parse_mavlink_v2_header,
+            mavlink_can_id_sender_sys, mavlink_can_id_sender_comp,
+            mavlink_can_id_target_sys, mavlink_can_id_target_comp,
+        )
+
+        sender_sys = mavlink_can_id_sender_sys(can_id)
+        sender_comp = mavlink_can_id_sender_comp(can_id)
+        target_sys = mavlink_can_id_target_sys(can_id)
+        target_comp = mavlink_can_id_target_comp(can_id)
 
         reasm = MavlinkReassembler()
         completed: list[bytes] = []
@@ -250,8 +262,10 @@ def cmd_decode(args):
             if hdr is None:
                 continue
             mavlink_info = {
-                "sys_id": can_sys_id,
-                "comp_id": can_comp_id,
+                "sender_sys": sender_sys,
+                "sender_comp": sender_comp,
+                "target_sys": target_sys,
+                "target_comp": target_comp,
                 "frame_sys_id": hdr["sys_id"],
                 "frame_comp_id": hdr["comp_id"],
                 "msg_id": hdr["msg_id"],
@@ -267,8 +281,9 @@ def cmd_decode(args):
             sys.exit(1)
         return
 
-    if args.mavlink and not (can_id & 0x10000):
-        print(f"Warning: CAN ID 0x{can_id:08X} does not have MAVLink marker bit set", file=sys.stderr)
+    if args.mavlink and not mavlink_can_is_mavlink(can_id):
+        print(f"Warning: CAN ID 0x{can_id:08X} does not have MAVLink marker bit (bit 28) set",
+              file=sys.stderr)
 
     # Standard decode (one or more frames)
     for data in frames:
@@ -320,12 +335,27 @@ def cmd_encode(args):
         fd_flag = "##1" if len(data) > 8 else "#"
         print(f"{args.bus} {msg_id:03X}{fd_flag}{data_nospaces}")
     elif args.mavlink:
-        from .mavlink_loader import build_mavlink_v2_frame
+        from .mavlink_loader import build_mavlink_v2_frame, mavlink_can_make_id
 
-        # CAN ID = 0x10000 | (system_id << 8) | component_id
-        sys_id = args.sys_id if args.sys_id else 1
-        comp_id = args.comp_id if args.comp_id else 1
-        mavlink_can_id = 0x10000 | (sys_id << 8) | comp_id
+        # 29-bit ID = HEADER | sender_sys | sender_comp | target_sys | target_comp
+        # (destination-based routing, see mavlink_can_transport.h). Sender is the
+        # local node (--sys-id/--comp-id). Target defaults to the message's own
+        # target_system/target_component field values, else broadcast (0,0).
+        # argparse already defaults these to 1; honor an explicit 0 (matches web parity)
+        sender_sys = args.sys_id
+        sender_comp = args.comp_id
+
+        def _field_int(key: str) -> int | None:
+            if key not in values:
+                return None
+            try:
+                return int(values[key])
+            except (TypeError, ValueError):
+                return None
+
+        target_sys = args.target_sys if args.target_sys is not None else (_field_int("target_system") or 0)
+        target_comp = args.target_comp if args.target_comp is not None else (_field_int("target_component") or 0)
+        mavlink_can_id = mavlink_can_make_id(sender_sys, sender_comp, target_sys, target_comp)
 
         # Look up CRC_EXTRA for this message
         entry = codec._by_name.get(args.message)
@@ -341,8 +371,8 @@ def cmd_encode(args):
             msg_id=msg_id,
             payload=data,
             crc_extra=msg_def.crc_extra,
-            sys_id=sys_id,
-            comp_id=comp_id,
+            sys_id=sender_sys,
+            comp_id=sender_comp,
         )
 
         # Split into CAN FD frames (max 64 bytes each)
@@ -517,7 +547,8 @@ def main():
                             "Pass multiple values to reassemble a multi-frame MAVLink message.")
     p_dec.add_argument("--json", action="store_true", help="Output as JSON")
     p_dec.add_argument("--mavlink", action="store_true",
-                       help="MAVLink CAN transport mode: extract sys_id/comp_id from CAN ID, auto-detect message by DLC")
+                       help="MAVLink CAN transport mode: extract sender/target sys.comp from the "
+                            "29-bit CAN ID (bit-28 header) and parse the MAVLink v2 frame")
 
     # --- encode ---
     p_enc = sub.add_parser("encode", help="Encode signal values into a CAN frame")
@@ -536,9 +567,15 @@ def main():
     p_enc.add_argument("--mavlink", action="store_true",
                        help="Output in MAVLink CAN transport format (29-bit extended ID)")
     p_enc.add_argument("--sys-id", type=int, default=1,
-                       help="MAVLink System ID (default: 1)")
+                       help="Local (sender) MAVLink System ID (default: 1)")
     p_enc.add_argument("--comp-id", type=int, default=1,
-                       help="MAVLink Component ID (default: 1)")
+                       help="Local (sender) MAVLink Component ID, 0-63 (default: 1)")
+    p_enc.add_argument("--target-sys", type=int, default=None,
+                       help="Target (destination) System ID. Defaults to the message's "
+                            "target_system field, else 0 (broadcast).")
+    p_enc.add_argument("--target-comp", type=int, default=None,
+                       help="Target (destination) Component ID, 0-63. Defaults to the message's "
+                            "target_component field, else 0 (broadcast).")
     p_enc.add_argument("--bus", default="vcan0",
                        help="Bus name for cansend/mavlink output (default: vcan0)")
 

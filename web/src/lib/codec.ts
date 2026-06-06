@@ -333,6 +333,29 @@ export function parseMavlinkV2Header(data: Uint8Array): {
   };
 }
 
+// --- CAN transport: 29-bit extended ID layout (mirrors mavlink_can_transport.h) ---
+//   bit 28    : MAVLink header flag
+//   bits 20-27: sender_sys (8b)   | bits 14-19: sender_comp (6b)
+//   bits  6-13: target_sys (8b)   | bits  0- 5: target_comp (6b)
+// Broadcast = target_sys === 0 && target_comp === 0. Component IDs are 0-63.
+export const CAN_MAVLINK_HEADER = 0x1 << 28; // 0x10000000
+
+export function mavlinkCanMakeId(
+  senderSys: number, senderComp: number, targetSys: number, targetComp: number
+): number {
+  return (CAN_MAVLINK_HEADER
+    | ((senderSys & 0xFF) << 20)
+    | ((senderComp & 0x3F) << 14)
+    | ((targetSys & 0xFF) << 6)
+    | (targetComp & 0x3F)) >>> 0;
+}
+
+export const isMavlinkCanId = (canId: number): boolean => (canId & CAN_MAVLINK_HEADER) !== 0;
+export const mavlinkCanSenderSys = (id: number): number => (id >>> 20) & 0xFF;
+export const mavlinkCanSenderComp = (id: number): number => (id >>> 14) & 0x3F;
+export const mavlinkCanTargetSys = (id: number): number => (id >>> 6) & 0xFF;
+export const mavlinkCanTargetComp = (id: number): number => id & 0x3F;
+
 /** Split a MAVLink v2 frame into CAN FD frames (max 64 bytes each). */
 export function splitMavlinkFrames(
   mavlinkCanId: number, frame: Uint8Array
@@ -756,18 +779,21 @@ export class Codec {
 
   /**
    * Smart decode: auto-detects MAVLink CAN transport.
-   * If CAN ID has bit 16 set and data starts with 0xFD, treats as MAVLink.
+   * If CAN ID has the header flag (bit 28) set and data starts with 0xFD,
+   * treats as MAVLink and extracts sender/target sys.comp from the 29-bit ID.
    * Supports multi-frame reassembly: pass all frame payloads for large messages.
    */
   smartDecode(canId: number, data: Uint8Array, dlc?: number): {
     decoded: DecodedMessage; mavlink?: MavlinkInfo;
   } | null {
-    const isMavlinkTransport = (canId & 0x10000) !== 0 && data.length > 0 && data[0] === 0xFD;
+    const isMavlinkTransport = isMavlinkCanId(canId) && data.length > 0 && data[0] === 0xFD;
 
     if (isMavlinkTransport) {
       const mavlink: MavlinkInfo = {
-        sys_id: (canId >> 8) & 0xFF,
-        comp_id: canId & 0xFF,
+        sender_sys: mavlinkCanSenderSys(canId),
+        sender_comp: mavlinkCanSenderComp(canId),
+        target_sys: mavlinkCanTargetSys(canId),
+        target_comp: mavlinkCanTargetComp(canId),
       };
       const hdr = parseMavlinkV2Header(data);
       if (!hdr) return null;
@@ -832,7 +858,8 @@ export class Codec {
   encodeMavlink(
     msgName: string,
     values: Record<string, string | number | Record<string, boolean>>,
-    sysId = 1, compId = 1, seq = 0
+    sysId = 1, compId = 1, seq = 0,
+    targetSys?: number, targetComp?: number
   ): { frames: { canId: string; data: string; fdFlag: string }[]; rawPayload: Uint8Array } {
     const entry = this.byName.get(msgName);
     if (!entry) throw new Error(`Unknown message '${msgName}'.`);
@@ -840,9 +867,19 @@ export class Codec {
     const crcExtra = entry.message.crc_extra;
     if (crcExtra === undefined || crcExtra === null) throw new Error(`No CRC_EXTRA for '${msgName}'.`);
 
+    // sender = local (sysId/compId); target = destination. When not given
+    // explicitly, derive from the message's target_system/target_component
+    // field values, else broadcast (0,0). Mirrors the CLI behaviour.
+    const fieldInt = (v: unknown): number | undefined => {
+      const n = typeof v === 'string' ? parseInt(v, 10) : typeof v === 'number' ? v : NaN;
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const tSys = targetSys ?? fieldInt(values['target_system']) ?? 0;
+    const tComp = targetComp ?? fieldInt(values['target_component']) ?? 0;
+
     const payload = encode(entry.message, values);
     const frame = buildMavlinkV2Frame(entry.message.id, payload, crcExtra, sysId, compId, seq);
-    const mavCanId = 0x10000 | ((sysId & 0xFF) << 8) | (compId & 0xFF);
+    const mavCanId = mavlinkCanMakeId(sysId, compId, tSys, tComp);
     const frames = splitMavlinkFrames(mavCanId, frame);
     return { frames, rawPayload: payload };
   }

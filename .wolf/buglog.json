@@ -2762,6 +2762,238 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-03T15:13:00.000Z"
+    },
+    {
+      "id": "bug-170",
+      "timestamp": "2026-06-05T14:11:11.403Z",
+      "error_message": "Significant refactor of ",
+      "file": "canfd_codec/cli.py",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 7→15 lines (4 removed) | Also: \"sys_id\": can_sys_id,; \"comp_id\": can_comp_id, | Also: from .mavlink_loader import build_mavlink_v2_frame; # CAN ID = 0x10000 | (system_id << 8) | component_ | Also: help=\"MAVLink System ID (default: 1)\"); help=\"MAVLink Component ID (default: 1)\")",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-06-05T14:12:20.828Z"
+    },
+    {
+      "id": "bug-171",
+      "timestamp": "2026-06-05T14:11:25.183Z",
+      "error_message": "Incorrect value in code",
+      "file": "canfd_codec/cli.py",
+      "root_cause": "Had \"Warning: CAN ID 0x{can_id:08X} does not have MAVL",
+      "fix": "Changed to \"Warning: CAN ID 0x{can_id:08X} does not have MAVL",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-06-05T14:12:09.175Z"
+    },
+    {
+      "id": "bug-172",
+      "timestamp": "2026-06-05T14:15:16.286Z",
+      "error_message": "Type error",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "Missing or incorrect type annotation",
+      "fix": "Added type assertion/annotation",
+      "tags": [
+        "auto-detected",
+        "type-fix",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:15:16.286Z"
+    },
+    {
+      "id": "bug-173",
+      "timestamp": "2026-06-05T14:15:28.662Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 15→18 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:15:28.662Z"
+    },
+    {
+      "id": "bug-174",
+      "timestamp": "2026-06-05T14:15:44.336Z",
+      "error_message": "Null/undefined access in ",
+      "file": "web/src/lib/codec.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:15:44.336Z"
+    },
+    {
+      "id": "bug-175",
+      "timestamp": "2026-06-05T14:15:55.433Z",
+      "error_message": "Significant refactor of ",
+      "file": "web/src/lib/types.ts",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 8→11 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:15:55.433Z"
+    },
+    {
+      "id": "bug-176",
+      "timestamp": "2026-06-05T14:16:08.874Z",
+      "error_message": "Wrong reference: 0x10000 should be 0x10000000",
+      "file": "web/src/routes/decode/+page.svelte",
+      "root_cause": "Used \"0x10000\" instead of \"0x10000000\"",
+      "fix": "Changed 0x10000 → 0x10000000",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-06-05T14:17:59.479Z"
+    },
+    {
+      "id": "bug-177",
+      "timestamp": "2026-06-05T14:16:39.683Z",
+      "error_message": "Wrong reference: 0x10000 should be 0x10000000",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Used \"0x10000\" instead of \"0x10000000\"",
+      "fix": "Changed 0x10000 → 0x10000000",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:16:39.683Z"
+    },
+    {
+      "id": "bug-178",
+      "timestamp": "2026-06-05T14:16:48.680Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/plot-store.svelte.ts",
+      "root_cause": "Had `${mavlink.sys_id}.${mavlink.comp_id} / ${decoded.",
+      "fix": "Changed to `${mavlink.sender_sys}.${mavlink.sender_comp} / ${",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:16:48.680Z"
+    },
+    {
+      "id": "bug-179",
+      "timestamp": "2026-06-05T14:17:38.368Z",
+      "error_message": "Incorrect value in code",
+      "file": "web/src/lib/translations.ts",
+      "root_cause": "Had 'System ID / Component ID'",
+      "fix": "Changed to 'Local sys / comp (sender)'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-06-05T14:17:51.007Z"
+    },
+    {
+      "id": "bug-180",
+      "timestamp": "2026-06-05T14:20:58.323Z",
+      "error_message": "Significant refactor of ",
+      "file": "CLAUDE.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 7→13 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:20:58.323Z"
+    },
+    {
+      "id": "bug-181",
+      "timestamp": "2026-06-05T14:26:16Z",
+      "error_message": "can-codec MAVLink CAN-transport ID used the old bit-16 / (sys<<8|comp) layout; the updated mavlink_bridge moved to a bit-28 destination-based layout (sender+target), so encoded frames had wrong CAN IDs and real bus frames were not detected as MAVLink.",
+      "file": "canfd_codec/mavlink_loader.py, canfd_codec/cli.py, canfd_codec/monitor.py, web/src/lib/codec.ts, web/src/lib/types.ts, web/src/routes/decode/+page.svelte, web/src/lib/plot-store.svelte.ts, web/src/routes/encode/+page.svelte",
+      "root_cause": "The MAVLink CAN transport protocol in robot/utils/mavlink_bridge/impl/mavlink_can_transport.h changed CAN_MAVLINK_HEADER from (0x1<<16) to (0x1<<28) and added sender_sys/sender_comp/target_sys/target_comp fields (destination-based routing). can-codec still implemented the old bit-16 scheme. The bridge's docs/mavlink_can_transport.md was stale and still showed the old layout, masking the change.",
+      "fix": "Added single-source-of-truth helpers (mavlink_can_make_id / mavlink_can_is_mavlink / sender+target extractors) to mavlink_loader.py and mirrored them in codec.ts; updated every detection/extraction/construction site to bit 28 with sender+target. Synced configs/mavlink/user_define.xml from the bridge (new TOF/IMU/RPM/wheel messages). Decode shows sender+target (broadcast=0.0); encode derives target from the message's target_system/target_component fields with new --target-sys/--target-comp CLI overrides; --sys-id/--comp-id are the local sender. Verified bit-exact against the bridge formula and via CLI encode->decode roundtrip; updated CLAUDE.md, README.md and added changelog 1.4.6.",
+      "tags": [
+        "mavlink",
+        "can-transport",
+        "protocol-migration",
+        "bit-layout",
+        "mavlink_bridge",
+        "sync"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-05T14:26:16Z"
+    },
+    {
+      "id": "bug-182",
+      "timestamp": "2026-06-06T06:21:24.668Z",
+      "error_message": "Missing await",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "Async call without await — returned Promise instead of value",
+      "fix": "Added await to async call",
+      "tags": [
+        "auto-detected",
+        "async-fix",
+        "svelte"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-06T06:21:24.668Z"
+    },
+    {
+      "id": "bug-183",
+      "timestamp": "2026-06-06T00:00:00Z",
+      "error_message": "Visiting http://localhost:5174/plot directly returns 500 Internal Error. SSR log: '[vite] (ssr) Error when evaluating SSR module /src/routes/plot/+page.svelte: window is not defined' originating at hammerjs/hammer.js:2643 via chartjs-plugin-zoom.",
+      "file": "web/src/routes/plot/+page.svelte",
+      "root_cause": "The plot page statically imported `chartjs-plugin-zoom`, which require()s hammerjs. hammerjs references `window` at module top-level. On a direct page load (not SPA nav) SvelteKit server-renders the route, so Node evaluates the module with no `window` global -> ReferenceError -> HTTP 500. SPA navigation worked because the module only loads in the browser then. chart.js core import was SSR-safe; only the zoom plugin (via hammerjs) crashed.",
+      "fix": "Removed the static `import zoomPlugin from 'chartjs-plugin-zoom'` and dropped zoomPlugin from the top-level Chart.register(...). Instead lazy-load it in onMount (browser-only): `const { default: zoomPlugin } = await import('chartjs-plugin-zoom'); Chart.register(zoomPlugin);` placed first in onMount so it registers before any chart is built. Keeps the route SSR'd like every other route. Verified: curl /plot -> HTTP 200 with SSR'd content, dev log clean; headless CDP direct-nav -> hydrated, zoom chunk fetched client-side, zero console/page errors.",
+      "tags": [
+        "ssr",
+        "sveltekit",
+        "500",
+        "chartjs-plugin-zoom",
+        "hammerjs",
+        "window-is-not-defined",
+        "dynamic-import",
+        "plot"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-06T00:00:00Z"
     }
   ]
 }
