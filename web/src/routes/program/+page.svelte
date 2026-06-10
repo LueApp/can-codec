@@ -7,10 +7,12 @@
     type EveryStmt, type SweepStmt, type GroupStmt, type SetStmt,
     type BindStmt, type ReadStmt } from '$lib/sequence-store.svelte';
   import { downloadServerScript } from '$lib/server-script';
+  import Web2LocalBridgeLauncher from '$lib/Web2LocalBridgeLauncher.svelte';
   import { t } from '$lib/i18n.svelte';
 
   // ---- UI state ----
   let importError = $state<string | null>(null);
+  let showSetup = $state(false);
   let fileInput: HTMLInputElement | undefined;
   let expandedSends = $state<Record<string, boolean>>({});
   let copiedPreview = $state<Record<string, boolean>>({});
@@ -641,6 +643,26 @@
     {#if busStore.client.lastSendError && busStore.client.status === 'connected'}
       <div style="font-size:12px;color:var(--red);margin-top:6px">{busStore.client.lastSendError}</div>
     {/if}
+    <div style="margin-top:8px">
+      <button class="setup-toggle" onclick={() => showSetup = !showSetup}>
+        {showSetup ? '▾' : '▸'} {t('encode.setup_help_toggle')}
+      </button>
+      {#if showSetup}
+        <div class="setup-content" style="margin-top:6px">
+          <Web2LocalBridgeLauncher
+            connect={() => busStore.connect()}
+            disconnect={() => busStore.disconnect()}
+          />
+          <p style="font-size:13px;margin:6px 0 4px"><strong>{t('encode.setup_quick_start')}</strong></p>
+          <p style="font-size:12px;color:var(--text-dim);margin:2px 0 6px">{t('encode.setup_run_local')}</p>
+          <pre style="margin:0"><code>python3 can_ws_server.py --bus can0</code></pre>
+          <p style="font-size:12px;color:var(--text-dim);margin:6px 0">{t('encode.setup_then_connect')}</p>
+          <p style="font-size:12px;color:var(--text-dim);margin:6px 0">
+            <a href="/plot" style="color:var(--accent, #58a6ff)">{t('encode.setup_more_on_plot')}</a>
+          </p>
+        </div>
+      {/if}
+    </div>
   </div>
 
   <!-- Sequence (SOP) panel -->
