@@ -4,9 +4,23 @@
 
   const versions = [
     {
+      version: '1.4.7',
+      date: '2026-06-11',
+      tag: 'latest',
+      en: {
+        changes: [
+          { type: 'feat', text: 'Web: launch the local CAN bridge through web2local from Encode, Program and Plot, with local approval, SocketCAN/SLCAN adapter settings, bridge ports and Python environment setup' },
+        ],
+      },
+      zh: {
+        changes: [
+          { type: 'feat', text: 'Web：可在 Encode、Program 和 Plot 中通过 web2local 确认后启动本地 CAN 桥接，支持 SocketCAN/SLCAN 适配器、端口与 Python 环境配置' },
+        ],
+      },
+    },
+    {
       version: '1.4.6',
       date: '2026-06-06',
-      tag: 'latest',
       en: {
         changes: [
           { type: 'fix', text: 'Plot: fix a 500 error when opening /plot directly (hard refresh or a pasted link) — the zoom/pan plugin was being loaded during server-side rendering, where its browser-only dependency has no window and crashed. It now loads in the browser only; zoom/pan is unchanged' },

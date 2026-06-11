@@ -11,6 +11,7 @@
   // visit to /plot would 500). It is lazily imported + registered in onMount
   // (browser-only) instead. See onMount below.
   import { downloadServerScript as downloadServer } from '$lib/server-script';
+  import Web2LocalBridgeLauncher from '$lib/Web2LocalBridgeLauncher.svelte';
   import { unitPrefs } from '$lib/unit-pref-store.svelte';
   import { convert } from '$lib/unit-conversion';
 
@@ -1423,6 +1424,10 @@
         </button>
         {#if showSetup}
           <div class="setup-content">
+            <Web2LocalBridgeLauncher
+              connect={() => plotStore.connectLive()}
+              disconnect={() => plotStore.disconnectLive()}
+            />
             <p><strong>{t('plot.step_1_download')}</strong></p>
             <div style="margin: 8px 0;">
               <button class="btn-sm" onclick={() => downloadServer()}>{t('plot.download_server')}</button>

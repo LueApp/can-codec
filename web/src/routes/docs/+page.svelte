@@ -257,6 +257,7 @@
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">Step 1 — Download the server script</h3>
       <p>On the <a href="/plot">Plot</a> page, expand <strong>"Server setup guide"</strong> and click <strong>"Download can_ws_server.py"</strong>. Copy it to the machine with the CAN interface.</p>
+      <p style="margin-top: 8px;">If <a href="https://web2local-bridge.lue-app.com/" target="_blank" rel="noopener noreferrer">web2local</a> is running locally, use the <strong>Start with web2local</strong> panel on Plot, Encode, or Program to deploy and run the same script after approval. The panel can create a managed Python environment by name or explicit path, or select an existing venv/conda/pixi environment path such as <code>~/.venv</code>.</p>
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">Step 2 — Install requirements</h3>
       <pre><code class="doc-code"># SocketCAN (Linux built-in driver — most common setup)
@@ -663,6 +664,7 @@ canfd-codec -c ./configs serve --bus /dev/ttyACM0 --interface slcan --bitrate 10
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">第一步——下载服务端脚本</h3>
       <p>在 <a href="/plot">Plot</a> 页面展开 <strong>"Server setup guide"</strong>，点击 <strong>"Download can_ws_server.py"</strong>，将文件复制到有 CAN 接口的机器上。</p>
+      <p style="margin-top: 8px;">如果本机已运行 <a href="https://web2local-bridge.lue-app.com/" target="_blank" rel="noopener noreferrer">web2local</a>，也可以在 Plot、Encode 或 Program 页使用 <strong>用 web2local 启动</strong> 面板，在确认后部署并运行同一个脚本。该面板可以按名称或显式路径创建受管理的 Python 环境，也可以选择已有的 venv/conda/pixi 环境路径，例如 <code>~/.venv</code>。</p>
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">第二步——安装依赖</h3>
       <pre><code class="doc-code"># SocketCAN（Linux 内置驱动——最常见）

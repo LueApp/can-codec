@@ -420,6 +420,8 @@ if __name__ == "__main__":
     ).run())
 `;
 
+export const SERVER_SCRIPT_SHA256 = 'f17df2fca81bb454477e961d1a6e710e0b6defa4410cd32452a7eafe129e46f5';
+
 export function downloadServerScript(filename = 'can_ws_server.py'): void {
   const blob = new Blob([SERVER_SCRIPT], { type: 'text/x-python' });
   const link = document.createElement('a');
