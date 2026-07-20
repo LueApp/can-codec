@@ -2,10 +2,11 @@
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.
 > Do not edit manually unless correcting an error.
-> Last updated: 2026-05-06
+> Last updated: 2026-07-20
 
 ## User Preferences
 
+- Hosted tool pages should link back to `https://lue-app.com/` for reciprocal personal promotion. Put the backlink in the shared app shell so it remains visible across every route; for CAN Codec, use a restrained inline `Lue` creator credit with a localized tooltip/accessible label.
 - When user says "filter signals" for a message, they mean filtering by **enum values** of signals (e.g., only watch register_id=2), not toggling signal names on/off. The key use case is messages like WriteReg/ReadReg where register_id has many enum values and they want to watch only specific ones.
 - **For protocols where many CmdId values share a single CAN ID (GET/SET/ACK register protocols like encoder.yaml, airbot_hw.yaml), prefer grouping messages by *payload type* rather than per-command.** Pattern: one typed wrapper per direction × type (SetUint32, SetFloat32, SetBytes, AckUint32, AckFloat32, AckVersion, AckBytes). The cmd_id stays as an enum-mapped signal so reads show the register name; per-command quirks go in the file's header notes, not separate messages. Mirrors encoder.yaml. User explicitly pushed for this on airbot_hw.yaml (31 → 15 messages) — "I think they can be summary into less group". Only break out a specialty message when the byte layout actually differs (e.g. SetProductCraftFlag's start/length/value shifts the payload).
 - **Name RX feedback messages by their role, not by the trigger mode.** User pushed back on vesc.yaml's `MITFeedback` because, although the protocol field marks it as the type=1 (MIT) variant, it's actually what the motor sends as its standard status frame during normal operation. Renamed to `MotorFeedback` to match dm.yaml's convention. Rule of thumb: if the name only makes sense to someone who already knows the protocol's internal numbering, it's the wrong name — pick a name that describes what the message *is* to a user reading decoded frames.
@@ -56,6 +57,7 @@
 
 ## Do-Not-Repeat
 
+- [2026-07-20] **Do not stack a tiny creator backlink beneath a product name in a compact tool header.** The user found the two-line `CAN Codec` / `More by Lue` lockup ugly. Keep product and creator credit on one baseline with a subtle divider; reserve the longer localized wording for the tooltip and accessible label.
 - [2026-05-06] When renaming a field in a persisted type (e.g. localStorage), always add migration/normalization logic that handles old stored data. An entry may exist with the old field name, causing undefined access on the new name. Use a normalizer that ensures all required fields exist.
 - [2026-05-06] In Svelte 5, never mutate `$state` objects inside template expressions or `$derived`. Methods called from templates (like `getMessageFilter`) must be pure reads — return new objects with safe defaults instead of mutating the source. Mutations are only safe in event handlers (onclick etc.).
 - [2026-05-16] **When sharing a connection across pages (busStore), connection state and per-consumer subscriptions are separate concerns — don't conflate them.** Bug-057: plot only subscribed its frame callback inside `connectLive()` (the Connect button handler). When /encode connected the bus first, plot's Connect button was hidden and the callback never subscribed — frames flowed past silently. Rule: any page that consumes shared bus data must subscribe its callback on mount (and on mode change), not only on the connect button. Make the subscribe method public + idempotent so multiple call sites are safe.

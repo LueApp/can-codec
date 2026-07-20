@@ -2994,6 +2994,41 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-06T00:00:00Z"
+    },
+    {
+      "id": "bug-184",
+      "timestamp": "2026-07-20T07:25:00Z",
+      "error_message": "command timed out after 1013 milliseconds while starting the Vite dev server",
+      "file": "web/package.json (operational; no source fix)",
+      "root_cause": "The foreground dev server is intentionally long-running, but it was launched through a shell call with a one-second completion timeout.",
+      "fix": "Relaunched Vite as a background process with its output in /tmp/can-codec-vite.log, then verified the server returned HTTP 200 at http://127.0.0.1:5173/.",
+      "tags": [
+        "dev-server",
+        "vite",
+        "command-timeout",
+        "tooling"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-20T07:25:00Z"
+    },
+    {
+      "id": "bug-185",
+      "timestamp": "2026-07-20T07:34:00Z",
+      "error_message": "good. but a bit ugly.",
+      "file": "web/src/routes/+layout.svelte, web/src/app.css",
+      "root_cause": "The creator backlink was rendered as very small metadata on a second line beneath the product name, making the compact navigation brand area look cramped and unintentional.",
+      "fix": "Moved the visible creator credit onto the product-name baseline as `Lue` with a subtle vertical divider and external-link icon. Kept the longer localized text as the title and accessible label, and tightened mobile spacing.",
+      "tags": [
+        "navigation",
+        "branding",
+        "backlink",
+        "visual-design",
+        "responsive"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-20T07:34:00Z"
     }
   ]
 }

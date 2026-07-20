@@ -60,13 +60,46 @@ nav .nav-inner {
   height: 56px;
 }
 
-nav .logo {
+nav .brand-lockup {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+nav .product-name {
   font-weight: 700;
   font-size: 18px;
   color: var(--text);
+  white-space: nowrap;
+}
+
+nav .creator-link {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 3px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+nav .creator-link:hover {
+  color: var(--accent-hover);
+}
+
+nav .creator-link svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 nav .nav-links {
@@ -356,7 +389,15 @@ tr:hover td {
     grid-template-columns: 1fr;
   }
   nav .nav-inner {
-    gap: 16px;
+    gap: 12px;
+  }
+  nav .product-name {
+    font-size: 16px;
+  }
+  nav .creator-link {
+    margin-left: 6px;
+    padding-left: 6px;
+    font-size: 11px;
   }
 }
 

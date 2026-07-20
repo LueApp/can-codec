@@ -17,7 +17,22 @@
 
 <nav>
   <div class="nav-inner">
-    <span class="logo">CAN Codec</span>
+    <div class="brand-lockup">
+      <a href="/" class="product-name">CAN Codec</a>
+      <a
+        href="https://lue-app.com/"
+        class="creator-link"
+        target="_blank"
+        rel="author noopener noreferrer"
+        aria-label={t('nav.creator_site')}
+        title={t('nav.creator_site')}
+      >
+        Lue
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 17 17 7M7 7h10v10"></path>
+        </svg>
+      </a>
+    </div>
     <div class="nav-links">
       <a href="/" class:active={$page.url.pathname === '/'}>{t('nav.messages')}</a>
       <a href="/decode" class:active={$page.url.pathname === '/decode'}>{t('nav.decode')}</a>

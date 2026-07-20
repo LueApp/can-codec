@@ -16,6 +16,7 @@ const en = {
   'nav.configs_enabled': 'configs enabled',
   'nav.add_files': '+ Files',
   'nav.add_folder': '+ Folder',
+  'nav.creator_site': 'More by Lue',
 
   // ----- Messages page -----
   'messages.title': 'Messages',
@@ -497,6 +498,7 @@ const zh: Record<keyof typeof en, string> = {
   'nav.configs_enabled': '个配置启用',
   'nav.add_files': '+ 文件',
   'nav.add_folder': '+ 文件夹',
+  'nav.creator_site': 'Lue 的更多作品',
 
   // ----- Messages page -----
   'messages.title': '消息',
