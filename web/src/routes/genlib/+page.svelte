@@ -2,17 +2,38 @@
   import { codecStore } from '$lib/codec-store.svelte';
   import { t } from '$lib/i18n.svelte';
   import { generate, GEN_LANGS, suggestedFilename, labelFor, type GenLang } from '$lib/codegen';
+  import {
+    CAN_CONTROLLERS,
+    generateControllerStarter,
+    isControllerCompatible,
+    labelForController,
+    requiredLanguage,
+    suggestedControllerFilename,
+    type CanController,
+  } from '$lib/codegen/controller';
   import { toPascalCase, toSnakeCase } from '$lib/codegen/common';
+  import type { TranslationKey } from '$lib/translations';
   import type { DeviceConfig } from '$lib/types';
 
   let selectedDeviceIdx = $state(0);
   let selectedLang = $state<GenLang>('python');
+  let selectedController = $state<CanController>('socketcan-python');
+  let activeOutput = $state<'codec' | 'controller'>('codec');
   let copied = $state(false);
+
+  const controllerDescriptionKeys: Record<CanController, TranslationKey> = {
+    none: 'genlib.controller_desc_none',
+    'socketcan-python': 'genlib.controller_desc_socketcan_python',
+    'slcanfd-python': 'genlib.controller_desc_slcanfd_python',
+    'socketcan-c': 'genlib.controller_desc_socketcan_c',
+    'stm32-fdcan': 'genlib.controller_desc_stm32',
+    'esp-idf-twai': 'genlib.controller_desc_esp',
+  };
 
   const devices = $derived(codecStore.codec.devices);
   const selectedDevice = $derived<DeviceConfig | null>(devices[selectedDeviceIdx] ?? null);
 
-  const source = $derived.by(() => {
+  const codecSource = $derived.by(() => {
     if (!selectedDevice) return '';
     try {
       return generate(selectedLang, selectedDevice);
@@ -21,9 +42,43 @@
     }
   });
 
-  const filename = $derived(selectedDevice ? suggestedFilename(selectedLang, selectedDevice) : '');
+  const controllerLanguage = $derived(requiredLanguage(selectedController));
+  const controllerCompatible = $derived(selectedDevice ? isControllerCompatible(selectedController, selectedDevice) : true);
+  const codecFilename = $derived(selectedDevice ? suggestedFilename(selectedLang, selectedDevice) : '');
+  const controllerSource = $derived.by(() => {
+    if (!selectedDevice || selectedController === 'none') return '';
+    try {
+      return generateControllerStarter(selectedController, selectedDevice, codecFilename);
+    } catch (e) {
+      return `// Controller starter generation failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+  const source = $derived(activeOutput === 'controller' ? controllerSource : codecSource);
+  const filename = $derived(
+    activeOutput === 'controller' && selectedDevice && selectedController !== 'none'
+      ? suggestedControllerFilename(selectedController, selectedDevice)
+      : codecFilename,
+  );
   const lineCount = $derived(source ? source.split('\n').length : 0);
   const byteCount = $derived(new TextEncoder().encode(source).length);
+
+  $effect(() => {
+    if (!selectedDevice || selectedController === 'none') return;
+    if (!isControllerCompatible(selectedController, selectedDevice)) {
+      selectedController = 'none';
+      activeOutput = 'codec';
+      return;
+    }
+    const language = requiredLanguage(selectedController);
+    if (language) selectedLang = language;
+  });
+
+  function selectController(controller: CanController) {
+    selectedController = controller;
+    activeOutput = controller === 'none' ? 'codec' : 'controller';
+    const language = requiredLanguage(controller);
+    if (language) selectedLang = language;
+  }
 
   function copyOutput() {
     navigator.clipboard.writeText(source);
@@ -59,25 +114,25 @@
     return d ? toSnakeCase(d.name) : 'device';
   }
 
-  const usagePython = $derived(`import ${filename.replace(/\.py$/, '')}  # the generated module
+  const usagePython = $derived(`import ${codecFilename.replace(/\.py$/, '')}  # the generated module
 
 # Build a message and encode it
-msg = ${filename.replace(/\.py$/, '')}.${firstClassName(selectedDevice)}()
+msg = ${codecFilename.replace(/\.py$/, '')}.${firstClassName(selectedDevice)}()
 can_id, data = msg.encode(node_id=1)
 print(f"send 0x{can_id:X} {data.hex()}")
 
 # Decode any incoming frame
-decoded = ${filename.replace(/\.py$/, '')}.decode_frame(can_id, data)
+decoded = ${codecFilename.replace(/\.py$/, '')}.decode_frame(can_id, data)
 print(decoded)`);
 
-  const usageC = $derived(`#include "${filename}"
+  const usageC = $derived(`#include "${codecFilename}"
 
 ${devSnake(selectedDevice)}_${firstMsgSnake(selectedDevice)}_t cmd = ${devSnake(selectedDevice).toUpperCase()}_${firstMsgSnake(selectedDevice).toUpperCase()}_INIT;
 uint8_t buf[64];
 size_t n = ${devSnake(selectedDevice)}_${firstMsgSnake(selectedDevice)}_encode(&cmd, buf, sizeof(buf));
 // then send buf[0..n] on your CAN bus`);
 
-  const usageCpp = $derived(`#include "${filename}"
+  const usageCpp = $derived(`#include "${codecFilename}"
 using namespace ${devSnake(selectedDevice)};
 
 ${firstClassName(selectedDevice)} cmd{};
@@ -88,13 +143,13 @@ if (auto m = ${firstClassName(selectedDevice)}::decode(data); m) {
     // *m is the parsed struct
 }`);
 
-  const usageRust = $derived(`mod ${filename.replace(/\.rs$/, '')};
+  const usageRust = $derived(`mod ${codecFilename.replace(/\.rs$/, '')};
 
-let cmd = ${filename.replace(/\.rs$/, '')}::${firstClassName(selectedDevice)}::default();
+let cmd = ${codecFilename.replace(/\.rs$/, '')}::${firstClassName(selectedDevice)}::default();
 let data = cmd.encode();
-let id   = ${filename.replace(/\.rs$/, '')}::${firstClassName(selectedDevice)}::id_for_node(1);
+let id   = ${codecFilename.replace(/\.rs$/, '')}::${firstClassName(selectedDevice)}::id_for_node(1);
 
-if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
+if let Some(frame) = ${codecFilename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
     println!("{:?}", frame);
 }`);
 </script>
@@ -108,7 +163,7 @@ if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
   {#if devices.length === 0}
     <div class="alert info">{t('genlib.no_device_loaded')}</div>
   {:else}
-    <div class="card">
+    <div class="card setup-card">
       <div class="form-row">
         <div class="form-group" style="flex: 2 1 260px;">
           <label for="genlib-device">{t('genlib.label_device')}</label>
@@ -131,6 +186,7 @@ if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
                 type="button"
                 class="lang-tab"
                 class:active={selectedLang === lang}
+                disabled={controllerLanguage !== null && controllerLanguage !== lang}
                 onclick={() => (selectedLang = lang)}
               >
                 {labelFor(lang)}
@@ -139,11 +195,52 @@ if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
           </div>
         </div>
       </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label for="genlib-controller">{t('genlib.label_controller')}</label>
+        <select
+          id="genlib-controller"
+          value={selectedController}
+          onchange={(event) => selectController((event.currentTarget as HTMLSelectElement).value as CanController)}
+        >
+          {#each CAN_CONTROLLERS as controller}
+            <option
+              value={controller}
+              disabled={selectedDevice ? !isControllerCompatible(controller, selectedDevice) : false}
+            >
+              {labelForController(controller)}
+            </option>
+          {/each}
+        </select>
+        {#if selectedController === 'esp-idf-twai' && !controllerCompatible}
+          <p class="controller-note warning">{t('genlib.controller_twai_incompatible')}</p>
+        {:else}
+          <p class="controller-note">
+            {t(controllerDescriptionKeys[selectedController])}
+            {#if controllerLanguage}
+              {t('genlib.controller_language_note')} {labelFor(controllerLanguage)}.
+            {/if}
+          </p>
+        {/if}
+      </div>
     </div>
 
     <div class="card">
       <div class="genlib-toolbar">
         <div>
+          {#if selectedController !== 'none'}
+            <div class="output-tabs" aria-label={t('genlib.label_output')}>
+              <button
+                type="button"
+                class:active={activeOutput === 'codec'}
+                onclick={() => (activeOutput = 'codec')}
+              >{t('genlib.output_codec')}</button>
+              <button
+                type="button"
+                class:active={activeOutput === 'controller'}
+                onclick={() => (activeOutput = 'controller')}
+              >{t('genlib.output_controller')}</button>
+            </div>
+          {/if}
           <h2 style="margin-bottom: 0;">{filename}</h2>
           <span style="font-size: 13px; color: var(--text-dim);">
             {lineCount} {t('genlib.lines')} · {formatBytes(byteCount)}
@@ -158,8 +255,13 @@ if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
     </div>
 
     <div class="card">
-      <h3 style="margin-top: 0;">{t('genlib.how_to_use')}</h3>
-      {#if selectedLang === 'python'}
+      <h3 style="margin-top: 0;">{activeOutput === 'controller' ? t('genlib.controller_how_to_use') : t('genlib.how_to_use')}</h3>
+      {#if activeOutput === 'controller'}
+        <p class="controller-help">
+          {t('genlib.controller_help_prefix')} <code>{codecFilename}</code>
+          {t('genlib.controller_help_suffix')}
+        </p>
+      {:else if selectedLang === 'python'}
         <pre class="raw-frame-log usage-snippet">{usagePython}</pre>
       {:else if selectedLang === 'c'}
         <pre class="raw-frame-log usage-snippet">{usageC}</pre>
@@ -197,6 +299,17 @@ if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
     border-color: var(--accent);
     color: white;
   }
+  .setup-card {
+    padding-bottom: 8px;
+  }
+  .controller-note {
+    margin: 8px 0 0;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .controller-note.warning {
+    color: var(--yellow);
+  }
 
   .genlib-toolbar {
     display: flex;
@@ -205,6 +318,28 @@ if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
     margin-bottom: 12px;
     flex-wrap: wrap;
     gap: 8px;
+  }
+  .output-tabs {
+    display: inline-flex;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .output-tabs button {
+    border: 0;
+    border-radius: 0;
+    padding: 5px 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+    background: transparent;
+  }
+  .output-tabs button + button {
+    border-left: 1px solid var(--border);
+  }
+  .output-tabs button.active {
+    background: rgba(88, 166, 255, 0.16);
+    color: var(--text);
   }
 
   .genlib-source {
@@ -218,5 +353,9 @@ if let Some(frame) = ${filename.replace(/\.rs$/, '')}::decode_frame(id, &data) {
     overflow: auto;
     white-space: pre;
     color: var(--text);
+  }
+  .controller-help {
+    color: var(--text-dim);
+    font-size: 14px;
   }
 </style>
