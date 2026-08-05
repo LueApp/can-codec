@@ -3029,6 +3029,749 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-07-20T07:34:00Z"
+    },
+    {
+      "id": "bug-186",
+      "timestamp": "2026-07-29T00:00:00+08:00",
+      "error_message": "openwolf designqc exceeded the shell timeout after successfully capturing the GenLib desktop and mobile screenshots.",
+      "file": "web/.wolf/designqc-captures (operational; no source fix)",
+      "root_cause": "The Design QC wrapper starts and stops a Vite server and browser capture; its cleanup exceeded the command timeout despite successful captures.",
+      "fix": "Used the completed capture artifacts for design review; no application source change required.",
+      "tags": [
+        "designqc",
+        "timeout",
+        "tooling"
+      ],
+      "related_bugs": [
+        "bug-184"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-29T00:00:00+08:00"
+    },
+    {
+      "id": "bug-187",
+      "timestamp": "2026-07-29T18:05:00+08:00",
+      "error_message": "Initial controller-generator smoke test failed: emitted temporary ESM could not resolve extensionless imports, then an assertion incorrectly expected CAN_EFF_FLAG for a standard 0x487 frame.",
+      "file": "/tmp/can-codec-controller-test (test harness; no application source fix)",
+      "root_cause": "The standalone TypeScript emit retained extensionless browser-bundler imports, which Node ESM does not resolve. After patching that temporary import, the test expected an extended-ID flag for 0x480 + node 7 = 0x487, which remains within the 11-bit standard CAN range.",
+      "fix": "Patched only the temporary emitted test import and corrected the smoke fixture/assertions. The generator was then verified for SocketCAN CAN-FD, STM32 FDCAN, and compatible/incompatible ESP-IDF TWAI outputs.",
+      "tags": [
+        "test-harness",
+        "esm",
+        "controller-codegen",
+        "can-id"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-29T18:05:00+08:00"
+    },
+    {
+      "id": "bug-188",
+      "timestamp": "2026-07-29T18:08:00+08:00",
+      "error_message": "Generated SocketCAN C starter failed strict C99 compilation: struct ifreq/IFNAMSIZ were hidden and DAMIAO_MOTOR_MIT_CONTROL_NODE_ID_START did not exist.",
+      "file": "web/src/lib/codegen/controller.ts",
+      "root_cause": "The starter used an uppercase node-start symbol even though the C codec generator emits the message prefix in lowercase, and strict glibc C99 hides struct ifreq unless a default feature profile is enabled.",
+      "fix": "Use the exact lowercase generated <device>_<message>_NODE_ID_START symbol and emit _DEFAULT_SOURCE before system headers. Verified the real generated Damiao header plus SocketCAN starter with gcc -std=c99 -Wall -Wextra -Werror, and Python companion sources with py_compile.",
+      "tags": [
+        "codegen",
+        "socketcan",
+        "c99",
+        "strict-compile",
+        "ifreq",
+        "symbol-name"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-29T18:08:00+08:00"
+    },
+    {
+      "id": "bug-189",
+      "timestamp": "2026-07-30T09:40:00+08:00",
+      "error_message": "python3 -m pip download failed: No module named pip.",
+      "file": "development environment (operational; no application source fix)",
+      "root_cause": "The system Python used for source inspection does not have pip installed.",
+      "fix": "Read the current upstream python-can SLCAN implementation directly from its GitHub source to confirm CAN-FD framing and set_bitrate behavior.",
+      "tags": [
+        "tooling",
+        "pip",
+        "python-can",
+        "slcanfd"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T09:40:00+08:00"
+    },
+    {
+      "id": "bug-190",
+      "timestamp": "2026-07-30T09:40:00+08:00",
+      "error_message": "Initial mocked SLCAN-FD runtime checks failed with Python -c SyntaxError and then ModuleNotFoundError for the generated damiao module.",
+      "file": "/tmp/damiao_slcanfd.py (test harness; no application source fix)",
+      "root_cause": "The first one-line harness placed a class compound statement after a semicolon; the corrected harness then used runpy without adding /tmp to sys.path for the companion codec import.",
+      "fix": "Built mock classes with type(), added /tmp to sys.path, and reran the generated starter without physical CAN hardware.",
+      "tags": [
+        "test-harness",
+        "python",
+        "runpy",
+        "slcanfd"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-07-30T09:40:00+08:00"
+    },
+    {
+      "id": "bug-191",
+      "timestamp": "2026-07-30T09:40:00+08:00",
+      "error_message": "Generated Python controller starter raised NameError: name MitControl is not defined while selecting NODE_ID_START.",
+      "file": "web/src/lib/codegen/controller.ts",
+      "root_cause": "The starter instantiated the generated class through its module (damiao.MitControl) but referenced the class constant without the module qualifier (MitControl.NODE_ID_START). py_compile could not detect this runtime name-resolution error.",
+      "fix": "Read NODE_ID_START from the instantiated command in both Python SocketCAN and SLCAN-FD starters. Verified both generated scripts end-to-end with mocked transports.",
+      "tags": [
+        "codegen",
+        "python",
+        "socketcan",
+        "slcanfd",
+        "nameerror"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T09:40:00+08:00"
+    },
+    {
+      "id": "bug-192",
+      "timestamp": "2026-07-30T10:00:00+08:00",
+      "error_message": "Live read-only motor test could not start: /dev/ttyACM0 does not exist and ModuleNotFoundError: No module named can.",
+      "file": "/home/lue/qiuzhi/test-can-generate (environment; no source fix)",
+      "root_cause": "The SLCAN-FD adapter is not currently exposed at the configured serial path, and the system Python lacks python-can/pyserial.",
+      "fix": "Kept the monitor strictly receive-only and verified it with generated synthetic MotorStatus, MotorStatusCompact, and register-response frames. Live testing remains pending until the adapter is connected and dependencies are installed.",
+      "tags": [
+        "hardware",
+        "slcanfd",
+        "python-can",
+        "ttyACM0",
+        "live-test"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T10:00:00+08:00"
+    },
+    {
+      "id": "bug-193",
+      "timestamp": "2026-07-30T15:20:23+08:00",
+      "error_message": "The switch mode command should be also included.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_slcanfd.py",
+      "root_cause": "The initial active test path sent enable and PositionControl but omitted the required SwitchMode(POSITION_CONTROL) command.",
+      "fix": "Added SwitchMode(mode=POSITION_CONTROL, submode=1) before enable, then verified the exact switch, enable, PVT, rollback-disable, and exit-disable frame sequences with a mocked CAN adapter.",
+      "tags": [
+        "motorv2",
+        "switch-mode",
+        "position-control",
+        "pvt",
+        "slcanfd"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T15:20:23+08:00"
+    },
+    {
+      "id": "bug-194",
+      "timestamp": "2026-07-30T15:26:36+08:00",
+      "error_message": "The moving should last for a while instead of directly quit.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_slcanfd.py",
+      "root_cause": "The active path transmitted only one PositionControl PVT frame, so it did not actively refresh the requested setpoint for a defined test interval.",
+      "fix": "Stream PositionControl at a configurable rate for a configurable finite duration (defaults: 5 seconds at 20 Hz), receive feedback between sends, then disable and exit. Added safety caps of 30 seconds and 100 Hz.",
+      "tags": [
+        "motorv2",
+        "pvt",
+        "command-stream",
+        "duration",
+        "slcanfd"
+      ],
+      "related_bugs": [
+        "bug-193"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T15:26:36+08:00"
+    },
+    {
+      "id": "bug-195",
+      "timestamp": "2026-07-30T15:26:36+08:00",
+      "error_message": "The sequence should be enable and then mode switching instead of reverse.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_slcanfd.py",
+      "root_cause": "The previous correction inserted SwitchMode before enable, but this controller requires enable first and mode switching second.",
+      "fix": "Reordered the active path to enable, verify enable readback, switch to position-control mode, stream PVT, and disable. Verified that failed enable readback sends neither SwitchMode nor PVT.",
+      "tags": [
+        "motorv2",
+        "enable",
+        "switch-mode",
+        "ordering",
+        "pvt"
+      ],
+      "related_bugs": [
+        "bug-193",
+        "bug-194"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T15:26:36+08:00"
+    },
+    {
+      "id": "bug-196",
+      "timestamp": "2026-07-30T15:34:16+08:00",
+      "error_message": "TX WriteRegUint8 node=1: ID=0x81 data=28 00 01; Error: node 1 did not enable (reported value=0)",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_slcanfd.py",
+      "root_cause": "The script sent a ReadReg request and treated the first three-byte enable acknowledgment's value byte as current enable state. The hardware protocol actually returns two responses: status byte 0 with execution result (value 0 means success), then status byte 1 with brake-open result.",
+      "fix": "Removed the incorrect ReadReg verification. After enable, wait for both RegResponseByte frames, accept execution result 0x00 or 0xFF, map 0xFE/0xFD/0xFC to documented errors, require brake result 1, then send SwitchMode and sustained PVT. Missing or failed responses disable safely.",
+      "tags": [
+        "motorv2",
+        "enable-response",
+        "brake",
+        "protocol-semantics",
+        "slcanfd"
+      ],
+      "related_bugs": [
+        "bug-193",
+        "bug-195"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T15:34:16+08:00"
+    },
+    {
+      "id": "bug-197",
+      "timestamp": "2026-07-30T16:07:43+08:00",
+      "error_message": "Remove the input text for confirmation and try to control all joints together.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_slcanfd.py",
+      "root_cause": "The active workflow still required an interactive phrase and accepted only one --node target, so it could not run a coordinated seven-joint test non-interactively.",
+      "fix": "Removed input/--yes, made --nodes default to 1..7, validates each node's two-frame enable handshake, switches all selected nodes, sends one PVT per joint per timing cycle, and disables all nodes in reverse order on completion or partial failure.",
+      "tags": [
+        "motorv2",
+        "multi-node",
+        "all-joints",
+        "pvt",
+        "confirmation"
+      ],
+      "related_bugs": [
+        "bug-194",
+        "bug-196"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T16:07:43+08:00"
+    },
+    {
+      "id": "bug-198",
+      "timestamp": "2026-07-30T16:56:11+08:00",
+      "error_message": "Generated SocketCAN version needs multiple-interface selection, unlock/lock all motors, hold current positions with PVT, and read current joint effort.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "The generated starter opened only can0 and sent one default PositionControl frame; it had no receive path, multi-bus mapping, motor lifecycle, register reads, or rollback handling.",
+      "fix": "Expanded the editable companion into a can0/can1 utility for nodes 1..7 with raw CAN-FD+BRS receive/send helpers, interface selection, position register reads, command-feedback effort, validated unlock-all, lock-all, current-position PVT hold, CLI commands, and reverse-order rollback/relock.",
+      "tags": [
+        "motorv2",
+        "socketcan",
+        "multi-interface",
+        "pvt-hold",
+        "joint-effort"
+      ],
+      "related_bugs": [
+        "bug-196",
+        "bug-197"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-30T16:56:11+08:00"
+    },
+    {
+      "id": "bug-199",
+      "timestamp": "2026-07-31T13:42:50+08:00",
+      "error_message": "python3 motor_controller_v2_socketcan.py lock: Network is down on node 7, followed by Invalid argument for the remaining nodes on can0 and can1.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "Raw SocketCAN bind succeeded even though both links were down or not configured with CAN-FD MTU 72. The utility therefore attempted every motor write, producing ENETDOWN first and cascading EINVAL errors.",
+      "fix": "Preflight all selected links using sysfs IFF_UP and MTU before opening sockets; add setup and --configure-interfaces for 1M/5M CAN FD with restart-ms 100; stop after one link-level send error per interface and include an exact ip-link remedy; return exit status 1 on errors.",
+      "tags": [
+        "socketcan",
+        "network-down",
+        "can-fd",
+        "interface-setup",
+        "error-reporting"
+      ],
+      "related_bugs": [
+        "bug-198"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-31T13:42:50+08:00"
+    },
+    {
+      "id": "bug-200",
+      "timestamp": "2026-07-31T13:42:50+08:00",
+      "error_message": "Initial SocketCAN preflight mock test assertion failed while counting setup-hint commands, and a later help command masked the test process exit status.",
+      "file": "inline SocketCAN test harness (no application source defect)",
+      "root_cause": "The assertion expected one 'ip link set' occurrence per interface, but each complete remedy correctly contains three commands. Multiple newline-separated commands ran without shell fail-fast, so the final successful help command supplied exit code 0.",
+      "fix": "Expect all six ip-link command occurrences for two interfaces and rerun the Python test as the only shell command; the independent suite passed.",
+      "tags": [
+        "test-harness",
+        "assertion",
+        "exit-status",
+        "socketcan"
+      ],
+      "related_bugs": [
+        "bug-199"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-31T13:42:50+08:00"
+    },
+    {
+      "id": "bug-201",
+      "timestamp": "2026-07-31T14:14:40+08:00",
+      "error_message": "can1 node 6: timed out waiting for brake result after execution success arrived immediately; rollback then locked all previously unlocked motors.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "Although each node received a fresh timeout after its own TX, the utility serialized the whole workflow: send one enable command (then mislabeled unlock), block for both enable/brake acknowledgments, then send the next node. This made activation sequential across can0/can1 instead of commanding all selected motors promptly.",
+      "fix": "Send all selected enable writes first and record a separate deadline for each target, then use select across all interface sockets and demultiplex out-of-order acknowledgments by interface and response CAN ID. Retained the configurable 5-second default and reverse-disable rollback. Socket-pair tests prove every command is received before any acknowledgment is emitted and confirm rollback when one brake result is missing.",
+      "tags": [
+        "motorv2",
+        "socketcan",
+        "enable-timeout",
+        "brake-response",
+        "batch-enable",
+        "blocking-io"
+      ],
+      "related_bugs": [
+        "bug-196",
+        "bug-198"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-31T14:28:02+08:00"
+    },
+    {
+      "id": "bug-202",
+      "timestamp": "2026-07-31T14:51:40+08:00",
+      "error_message": "SocketCAN lock and unlock commands incorrectly wrote ENABLE_STATE register 0x28; actual physical lock control uses register 0x47.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "The first utility conflated motor lifecycle with brake state, naming ENABLE_STATE=1 unlock and ENABLE_STATE=0 lock. Motor V2 defines these as enable/disable; SWITCH_BREAKER register 0x47 independently controls the physical brake.",
+      "fix": "Added distinct enable and disable CLI/API operations for register 0x28, moved lock and unlock to SWITCH_BREAKER 0x47 using the verified mapping 0=lock and 1=release, renamed the timeout and handshake helpers around enable semantics, and kept hold on the enable/disable lifecycle. Exact CAN-FD frame tests verify 280001, 280000, 470001, and 470000 respectively.",
+      "tags": [
+        "motorv2",
+        "socketcan",
+        "enable-disable",
+        "brake-control",
+        "register-0x47",
+        "terminology"
+      ],
+      "related_bugs": [
+        "bug-198",
+        "bug-201"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-31T14:51:40+08:00"
+    },
+    {
+      "id": "bug-203",
+      "timestamp": "2026-07-31T16:51:55+08:00",
+      "error_message": "SocketCAN effort and hold were separate operations; the user needed effort telemetry while the joints were actively held.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "The hold loop only scheduled PVT frames, while effort used a separate sequential register-read command. Calling that blocking reader directly from hold would risk delaying PVT by up to one response timeout for every missing joint.",
+      "fix": "Integrated command-feedback collection into the hold scheduler: select drains MotorStatus/MotorStatusCompact frames from both buses, extracts each node's 12-bit torque using its hardware-specific physical range, and prints the latest snapshot at configurable --effort-rate without sending torque-register requests. Missing feedback displays -- while 20 Hz PVT and final disable continue.",
+      "tags": [
+        "motorv2",
+        "socketcan",
+        "pvt-hold",
+        "joint-effort",
+        "nonblocking-io",
+        "scheduler"
+      ],
+      "related_bugs": [
+        "bug-198",
+        "bug-201",
+        "bug-202"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-31T16:51:55+08:00"
+    },
+    {
+      "id": "bug-204",
+      "timestamp": "2026-07-31T17:57:39+08:00",
+      "error_message": "Joint effort must be received from each motor command-feedback message, not from a ReadReg(TORQUE=37) response.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "The first combined hold implementation treated effort as periodically polled register telemetry. Motor V2 actually returns effort in the torque field of MotorStatus/MotorStatusCompact command feedback, and the generated Python decoder also applies only the default ±12 N*m range instead of the node-group ranges.",
+      "fix": "Removed all torque-register requests and response parsing. Both standalone effort and hold now accept only 0x680 + node MotorStatus feedback with exact DLC 8 or 7, extract big-endian bits 28..39, and map the raw 12-bit value with nodes 1-2 ±40 N*m, nodes 3-4 ±70 N*m, and nodes 5-7 ±12 N*m. Socket-pair tests proved PVT-triggered feedback drives displayed effort, no ReadReg(TORQUE) is transmitted, PVT timing remains sustained, and final disable is preserved.",
+      "tags": [
+        "motorv2",
+        "socketcan",
+        "command-feedback",
+        "joint-effort",
+        "node-groups",
+        "protocol-semantics"
+      ],
+      "related_bugs": [
+        "bug-198",
+        "bug-203"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-07-31T17:57:39+08:00"
+    },
+    {
+      "id": "bug-205",
+      "timestamp": "2026-08-01T13:10:44+08:00",
+      "error_message": "The hold process should run continuously and stop only after Ctrl+C interruption or an error code detected in command feedback.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "Hold used a mandatory 10-second default deadline, and its feedback decoder returned only node and torque, discarding the MotorStatus error_code byte. The scheduler therefore stopped healthy holds automatically and could continue commanding a motor that had reported a fault.",
+      "fix": "Made hold duration unbounded by default while retaining --duration as an explicit override. Decode Byte 5 from exact-DLC MotorStatus/MotorStatusCompact feedback, format known bit flags, and raise immediately for any nonzero error on a selected joint. Both feedback errors and KeyboardInterrupt pass through the existing finally block and reverse-disable all enabled targets. Socket-pair tests verified continuous PVT followed by disable on error and on injected Ctrl+C.",
+      "tags": [
+        "motorv2",
+        "socketcan",
+        "continuous-hold",
+        "command-feedback",
+        "error-code",
+        "ctrl-c",
+        "cleanup"
+      ],
+      "related_bugs": [
+        "bug-203",
+        "bug-204"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-08-01T13:10:44+08:00"
+    },
+    {
+      "id": "bug-206",
+      "timestamp": "2026-08-01T14:50:31+08:00",
+      "error_message": "The continuous position hold is too soft and needs a higher torque limit.",
+      "file": "/home/lue/qiuzhi/test-can-generate/motor_controller_v2_socketcan.py",
+      "root_cause": "PositionControl limits holding torque through its max_current field. The utility defaulted that field to only 1 A even though its existing conservative validation ceiling was 3 A, leaving two thirds of the intended current allowance unused unless every invocation supplied --max-current manually.",
+      "fix": "Raised the default PVT max_current from 1 A to the existing 3 A safety ceiling without widening the cap. Hold startup output and --help now state the active limit. A socket-pair lifecycle test decoded the transmitted PositionControl frame as 2.999542 A after 16-bit quantization, confirmed values above 3 A remain rejected, and verified final reverse-disable cleanup.",
+      "tags": [
+        "motorv2",
+        "socketcan",
+        "position-hold",
+        "max-current",
+        "torque-limit",
+        "safety-limit"
+      ],
+      "related_bugs": [
+        "bug-203",
+        "bug-205"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-08-01T14:50:31+08:00"
+    },
+    {
+      "id": "bug-207",
+      "timestamp": "2026-08-03T17:49:00+08:00",
+      "error_message": "MAVLink genlib output omitted each message's CRC_EXTRA and advertised guessed bus, CAN-FD, and bitrate metadata from an XML definition.",
+      "file": "/home/lue/qiuzhi/can-codec/canfd_codec/codegen/python_gen.py",
+      "root_cause": "The XML loader stored crc_extra on Message, but all code generators ignored it; DeviceConfig defaults were emitted without checking the mavlink flag even though MAVLink XML has no transport settings.",
+      "fix": "Emit CRC_EXTRA as message metadata in all four CLI and Web generators, and omit transport metadata constants for MAVLink devices while preserving YAML output.",
+      "tags": [
+        "mavlink",
+        "codegen",
+        "crc-extra",
+        "device-metadata"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-03T17:49:00+08:00"
+    },
+    {
+      "id": "bug-208",
+      "timestamp": "2026-08-03T17:45:00+08:00",
+      "error_message": "Initial verification invocations failed because this environment has python3 but no python executable, direct C++ header syntax checking treats #pragma once as an error under -Werror, and the nested robot MAVLink gitlink has no fetched object.",
+      "file": ".wolf/buglog.json",
+      "root_cause": "The first verification commands assumed a python alias, checked a header as a main translation unit, and tried to inspect a nested submodule commit that is not present locally.",
+      "fix": "Use python3, compile the C++ header with the existing pragma warning suppressed, and treat the unavailable nested bridge checkout as an explicit comparison limitation.",
+      "tags": [
+        "verification",
+        "environment",
+        "submodule"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-03T17:45:00+08:00"
+    },
+    {
+      "id": "bug-209",
+      "timestamp": "2026-08-03T17:46:00+08:00",
+      "error_message": "Rust genlib output for the existing MAVLink XML does not compile when a signal is named type, because the generated identifier is a Rust keyword.",
+      "file": "/home/lue/qiuzhi/can-codec/canfd_codec/codegen/rust_gen.py",
+      "root_cause": "Rust identifier sanitization does not escape reserved keywords; this predates the CRC_EXTRA and transport metadata changes.",
+      "fix": "Added mirrored Rust-specific identifier sanitizers: ordinary keywords use raw identifiers such as r#type, while self/Self/super/crate receive an underscore prefix; generated user_define now compiles with -D warnings.",
+      "tags": [
+        "rust",
+        "codegen",
+        "mavlink",
+        "pre-existing"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:28:00+08:00"
+    },
+    {
+      "id": "bug-210",
+      "timestamp": "2026-08-03T17:58:00+08:00",
+      "error_message": "can-codec's MAVLink XML definitions lagged the robot mavlink_bridge checkout by 43 lines.",
+      "file": "/home/lue/qiuzhi/can-codec/configs/mavlink/user_define.xml",
+      "root_cause": "The local user_define.xml did not yet contain the robot bridge's newer actuator storage errors, gravity parameter definitions, RGB LED control, and ESTOP resume messages.",
+      "fix": "Checked out robot mavlink_bridge commit ee6f24e8c499061e4eb48ba35b88e78818d71e5a into a temporary worktree and synchronized the local MAVLink definitions; all files now match byte-for-byte.",
+      "tags": [
+        "mavlink",
+        "robot-sync",
+        "message-definitions"
+      ],
+      "related_bugs": [
+        "bug-207"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-08-03T17:58:00+08:00"
+    },
+    {
+      "id": "bug-211",
+      "timestamp": "2026-08-03T17:55:00+08:00",
+      "error_message": "Targeted nested submodule initialization failed because robot/utils has staged deletions and no indexed mavlink_bridge pathspec in its current worktree.",
+      "file": "/home/lue/qiuzhi/robot/utils/mavlink_bridge",
+      "root_cause": "The existing robot/utils worktree is intentionally or externally emptied with parent files staged as deleted, so git submodule update cannot resolve the nested path without restoring unrelated files.",
+      "fix": "Left the robot worktree untouched and cloned the exact gitlink commit into /tmp for read-only comparison instead.",
+      "tags": [
+        "submodule",
+        "verification",
+        "robot"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-03T17:55:00+08:00"
+    },
+    {
+      "id": "bug-212",
+      "timestamp": "2026-08-04T15:28:00+08:00",
+      "error_message": "Web 32/64-bit integer values encode as zero because can-codec/web uses JavaScript bitwise number operations.",
+      "file": "/home/lue/qiuzhi/can-codec/web/src/lib/codec.ts",
+      "root_cause": "JavaScript bitwise operators coerce operands to signed 32-bit integers, and number cannot exactly represent every 64-bit integer.",
+      "fix": "Use BigInt internally for extraction, packing, masks, enums, bitfields, constants, and float64 bit patterns; expose unsafe decoded integers as exact decimal strings and reject unsafe number inputs with string guidance.",
+      "tags": ["web", "codec", "bigint", "uint64", "int64"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T16:00:00+08:00"
+    },
+    {
+      "id": "bug-213",
+      "timestamp": "2026-08-04T15:28:00+08:00",
+      "error_message": "HEARTBEAT is missing the MAVLink protocol-owned uint8_t_mavlink_version field.",
+      "file": "/home/lue/qiuzhi/can-codec/canfd_codec/mavlink_loader.py",
+      "root_cause": "The XML loaders did not recognize MAVLink's magic uint8_t_mavlink_version type, so they skipped the field entirely.",
+      "fix": "Alias the type to wire uint8_t and emit it as a constant/default value of 3 in both Python and Web XML loaders.",
+      "tags": ["mavlink", "heartbeat", "xml", "special-type"],
+      "related_bugs": ["bug-207"],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:28:00+08:00"
+    },
+    {
+      "id": "bug-214",
+      "timestamp": "2026-08-04T15:28:00+08:00",
+      "error_message": "Python MAVLink XML loading fails for hexadecimal enum values such as 0x1000000.",
+      "file": "/home/lue/qiuzhi/can-codec/canfd_codec/mavlink_loader.py",
+      "root_cause": "Enum entries were parsed with base-10-only int(value), which rejects the hexadecimal syntax accepted by MAVLink XML.",
+      "fix": "Parse enum values with automatic base detection and retain a decimal fallback for decimal strings with leading zeroes; mirror the behavior in Web.",
+      "tags": ["mavlink", "xml", "enum", "hexadecimal"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:28:00+08:00"
+    },
+    {
+      "id": "bug-215",
+      "timestamp": "2026-08-04T15:28:00+08:00",
+      "error_message": "The first hexadecimal-enum verification script raised KeyError: MARSH_MODE.",
+      "file": "/home/lue/qiuzhi/can-codec/configs/mavlink/marsh.xml",
+      "root_cause": "The test script guessed the enum name instead of reading the XML; the actual name is MARSH_MODE_FLAGS.",
+      "fix": "Use the declared MARSH_MODE_FLAGS name in the regression and oracle checks.",
+      "tags": ["verification", "mavlink", "enum", "test-harness"],
+      "related_bugs": ["bug-214"],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:28:00+08:00"
+    },
+    {
+      "id": "bug-216",
+      "timestamp": "2026-08-04T15:40:00+08:00",
+      "error_message": "test_hexadecimal_mavlink_enum_values_load expected single_message but the loader returned marsh_mode_single_message.",
+      "file": "/home/lue/qiuzhi/can-codec/tests/test_mavlink_codegen.py",
+      "root_cause": "The test assumed the entry name began with the full enum name MARSH_MODE_FLAGS; the XML entry is MARSH_MODE_SINGLE_MESSAGE, so the loader correctly preserves that unmatched prefix.",
+      "fix": "Assert the declared loader naming behavior while continuing to verify the exact 0x1000000 and 0x2000000 integer keys.",
+      "tags": ["test", "mavlink", "enum", "expectation"],
+      "related_bugs": ["bug-214", "bug-215"],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:40:00+08:00"
+    },
+    {
+      "id": "bug-217",
+      "timestamp": "2026-08-04T15:44:00+08:00",
+      "error_message": "The robot pymavlink C oracle harness failed under -Werror=address-of-packed-member, then the absent executable could not be run.",
+      "file": "/tmp/tmp.es40UwsGXo/all/mavlink.h",
+      "root_cause": "Generated upstream MAVLink encode helpers take addresses of packed array members, which GCC warns about throughout the all dialect even though the focused HEARTBEAT/SYSTEM_TIME pack paths are valid.",
+      "fix": "Compile the read-only oracle harness with only address-of-packed-member demoted while retaining -Wall -Wextra -Werror for all other diagnostics.",
+      "tags": ["verification", "robot", "pymavlink", "gcc", "upstream-warning"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:44:00+08:00"
+    },
+    {
+      "id": "bug-218",
+      "timestamp": "2026-08-04T15:49:00+08:00",
+      "error_message": "can-codec encoded SYSTEM_TIME.time_unix_usec 0xFEDCBA9876543210 as 0xFEDCBA9876543000 instead of matching robot mavgen.",
+      "file": "/home/lue/qiuzhi/can-codec/canfd_codec/codec.py",
+      "root_cause": "The Python codec and all GenLib targets routed identity-mapped integer fields through float/double/f64 conversion, losing low bits above 2^53.",
+      "fix": "Keep scale=1/offset=0 integer signals on exact integer paths in the Python codec and all mirrored CLI/Web generators; verified exact encode/decode in Python, C99, C++17, and Rust.",
+      "tags": ["uint64", "precision", "mavlink", "system-time", "codegen"],
+      "related_bugs": ["bug-212"],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:55:00+08:00"
+    },
+    {
+      "id": "bug-219",
+      "timestamp": "2026-08-04T15:50:00+08:00",
+      "error_message": "The first exact-integer multi-file apply_patch failed because the expected web common.ts context omitted its defensive null checks.",
+      "file": "/home/lue/qiuzhi/can-codec/web/src/lib/codegen/common.ts",
+      "root_cause": "The patch used a stale abbreviated context line for isBitfield instead of the file's exact current implementation.",
+      "fix": "Inspected the exact local context and applied the Python/CLI/Web changes as smaller targeted patches.",
+      "tags": ["patch", "verification", "codegen", "context"],
+      "related_bugs": ["bug-218"],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:50:00+08:00"
+    },
+    {
+      "id": "bug-220",
+      "timestamp": "2026-08-04T15:51:00+08:00",
+      "error_message": "rg rejected a pattern containing a literal newline while locating DeviceConfig.",
+      "file": "/home/lue/qiuzhi/can-codec/canfd_codec/codec.py",
+      "root_cause": "The read-only search unnecessarily attempted a multiline alternation without enabling rg multiline mode.",
+      "fix": "Used a simple anchored class-name search instead.",
+      "tags": ["verification", "rg", "command"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:51:00+08:00"
+    },
+    {
+      "id": "bug-221",
+      "timestamp": "2026-08-04T15:58:00+08:00",
+      "error_message": "npm test failed with ERR_MODULE_NOT_FOUND when the Node-native TypeScript test imported Web generator modules that use extensionless ./common imports.",
+      "file": "/home/lue/qiuzhi/can-codec/web/tests/codec-bigint.test.ts",
+      "root_cause": "Vite resolves extensionless TypeScript module imports, but Node's direct ESM TypeScript execution does not append .ts to runtime imports.",
+      "fix": "Test the exported shared isIdentityInteger decision helper directly; validate the generator call chains through the production Vite build and compile generated CLI mirrors at runtime.",
+      "tags": ["web", "node", "esm", "typescript", "test-harness"],
+      "related_bugs": ["bug-218"],
+      "occurrences": 1,
+      "last_seen": "2026-08-04T15:58:00+08:00"
+    },
+    {
+      "id": "bug-222",
+      "timestamp": "2026-08-05T14:20:00+08:00",
+      "error_message": "RTK rejected a compound find predicate, while broad native /tmp and /opt searches emitted permission-denied errors.",
+      "file": "/home/lue/qiuzhi/can-codec/.wolf/OPENWOLF.md",
+      "root_cause": "The diagnostic searches used RTK find syntax it intentionally does not support and scanned unrelated protected service directories too broadly.",
+      "fix": "Use rtk proxy only for native predicates and prefer explicit known paths such as /opt/google/chrome/google-chrome and /tmp/can-codec-mavlink-bridge.",
+      "tags": ["verification", "rtk", "find", "workflow"],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-08-05T14:32:00+08:00"
+    },
+    {
+      "id": "bug-223",
+      "timestamp": "2026-08-05T14:27:00+08:00",
+      "error_message": "The first browser Web-GenLib harness timed out because Chrome exited without posting a result from a large data URL.",
+      "file": "/tmp/web-pusher-verify.mjs",
+      "root_cause": "The verification page and full MAVLink XML were embedded in a command-line data URL, an unreliable launch path for this Chrome wrapper.",
+      "fix": "Serve the runner page over a temporary localhost HTTP server, capture Chrome exit diagnostics, and post the generated DeviceConfig/source back to the harness.",
+      "tags": ["verification", "chrome", "web", "mavlink", "test-harness"],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-08-05T14:28:00+08:00"
+    },
+    {
+      "id": "bug-224",
+      "timestamp": "2026-08-05T14:30:00+08:00",
+      "error_message": "unittest discovery raised Start directory is not importable for toc-climb-stairs/tests.",
+      "file": "/tmp/web-pusher-verify.mjs",
+      "root_cause": "The harness supplied the non-package project root as top_level_dir for a tests directory without package importability.",
+      "fix": "Put the target tests directory on sys.path and load the directly relevant test modules/classes by name.",
+      "tags": ["verification", "python", "unittest", "test-harness"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T14:30:00+08:00"
+    },
+    {
+      "id": "bug-225",
+      "timestamp": "2026-08-05T14:32:00+08:00",
+      "error_message": "The full three-file pusher test selection exceeded both 30-second and 60-second command timeouts.",
+      "file": "/tmp/web-pusher-verify.mjs",
+      "root_cause": "About 180 motion/service tests include deliberately timed control loops and were broader than the payload replacement boundary being assessed.",
+      "fix": "Run all MAVLink transport tests plus the directly dependent slot-mapping, sender-filtering, status-decoding, and service test classes; all 64 passed in 1.354 seconds.",
+      "tags": ["verification", "timeout", "pusher", "test-scope"],
+      "related_bugs": ["bug-224"],
+      "occurrences": 2,
+      "last_seen": "2026-08-05T14:34:00+08:00"
+    },
+    {
+      "id": "bug-226",
+      "timestamp": "2026-08-05T14:33:00+08:00",
+      "error_message": "toc-climb-stairs generated LinearActuatorStatus corrupts timestamp 0xFEDCBA9876543210 to 0xFEDCBA9876543000.",
+      "file": "/home/lue/qiuzhi/toc-climb-stairs/src/toc_climb/protocols/generated/mavlink_pusher.py",
+      "root_cause": "The committed target module was generated before the exact identity-integer fix and still routes uint64 through Python float scale/offset helpers.",
+      "fix": "Verified that current browser Web GenLib matches current CLI source and encodes/decodes the timestamp exactly; regenerate the target payload module during migration.",
+      "tags": ["mavlink", "pusher", "uint64", "precision", "stale-generated"],
+      "related_bugs": ["bug-218"],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T14:33:00+08:00"
+    },
+    {
+      "id": "bug-227",
+      "timestamp": "2026-08-05T14:35:00+08:00",
+      "error_message": "toc-climb-stairs mavlink_pusher.xml LINEAR_ACTUATOR_ERROR omits robot values STORAGE_EMPTY=5 through STORAGE_WRITE=8.",
+      "file": "/home/lue/qiuzhi/toc-climb-stairs/configs/can/mavlink_pusher.xml",
+      "root_cause": "The extracted project subset predates the four storage error entries now present in robot mavlink_bridge@ee6f24e8 and the byte-identical can-codec dialect.",
+      "fix": "Regenerate the subset from the robot-identical user_define.xml before Web GenLib; message definitions, payload layout, and CRC_EXTRA values already match.",
+      "tags": ["mavlink", "robot", "pusher", "enum", "dialect-drift"],
+      "related_bugs": ["bug-210", "bug-211"],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T14:35:00+08:00"
+    },
+    {
+      "id": "bug-228",
+      "timestamp": "2026-08-05T15:49:00+08:00",
+      "error_message": "RTK pytest could not spawn pytest, and /usr/bin/python3 reported No module named pytest.",
+      "file": "/home/lue/qiuzhi/can-codec/tests/test_mavlink_codegen.py",
+      "root_cause": "The active system Python environment provides unittest but no standalone pytest executable or pytest module.",
+      "fix": "Run the repository regressions through unittest discovery and named unittest suites; 8 can-codec and 68 focused target tests passed.",
+      "tags": ["verification", "pytest", "unittest", "environment"],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-08-05T15:49:00+08:00"
+    },
+    {
+      "id": "bug-229",
+      "timestamp": "2026-08-05T15:51:00+08:00",
+      "error_message": "CLI Python GenLib emits _is_identity-hardened runtime helpers while Web Python GenLib still emits the old float-converting helpers.",
+      "file": "/home/lue/qiuzhi/can-codec/web/src/lib/codegen/python.ts",
+      "root_cause": "A later defense-in-depth change was applied only to canfd_codec/codegen/python_gen.py, not its Web mirror.",
+      "fix": "Mirrored _is_identity and all four guarded conversion helpers into Web Python GenLib; browser output is now byte-identical to CLI and the target pusher artifact, with an execution regression for exact uint64.",
+      "tags": ["web", "cli", "python", "codegen", "parity", "uint64"],
+      "related_bugs": ["bug-218", "bug-226"],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T16:45:00+08:00"
+    },
+    {
+      "id": "bug-230",
+      "timestamp": "2026-08-05T15:51:00+08:00",
+      "error_message": "mavlink_transport.py still says crc_extra is not emitted even though it now reads generated CRC_EXTRA class constants.",
+      "file": "/home/lue/qiuzhi/toc-climb-stairs/src/toc_climb/protocols/mavlink_transport.py",
+      "root_cause": "The implementation and nearby comment were updated during migration, but the module-level historical documentation was left stale.",
+      "fix": "Updated the module docstring to state that generated classes carry XML-derived CRC_EXTRA values and removed the obsolete Not emitted comment.",
+      "tags": ["documentation", "mavlink", "crc-extra", "stale-comment"],
+      "related_bugs": ["bug-207"],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T16:45:00+08:00"
+    },
+    {
+      "id": "bug-231",
+      "timestamp": "2026-08-05T16:43:00+08:00",
+      "error_message": "Web Python GenLib regression failed with TypeError: generated helper string is not a function.",
+      "file": "/home/lue/qiuzhi/can-codec/web/src/lib/codegen/python.ts",
+      "root_cause": "Markdown double-backticks copied from the CLI Python docstring were not escaped inside the TypeScript template literal, so they terminated and recomposed the runtimeHelpers expression.",
+      "fix": "Escaped every embedded backtick in the TypeScript source; the generated Python retains the intended docstring and all 10 Web tests pass.",
+      "tags": ["web", "typescript", "template-literal", "codegen", "test"],
+      "related_bugs": ["bug-229"],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T16:44:00+08:00"
     }
   ]
 }
