@@ -6,6 +6,7 @@
 
 ## User Preferences
 
+- When the user explicitly asks to update and sync remote, autonomously commit the verified in-scope changes and push them without another confirmation; keep unrelated dirty files and generated caches out of staging.
 - Generator defects must be fixed in the generator and then regenerated; never patch only committed generated artifacts because `generate_codecs.py` would overwrite the fix.
 - For the toc-climb-stairs pusher, the final MAVLink dialect and generated payload API must stay synchronized with `~/qiuzhi/robot`; do not accept a project-local XML subset that has drifted from the robot gitlink source.
 - For first hardware bring-up with generated CAN-controller code, default to read-only motor inspection: passive feedback plus narrowly scoped, non-mutating `ReadReg` requests. Do not send `SwitchMode`, control setpoints, or register writes until feedback has been observed and decoded safely.

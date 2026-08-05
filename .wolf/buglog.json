@@ -3772,6 +3772,30 @@
       "related_bugs": ["bug-229"],
       "occurrences": 1,
       "last_seen": "2026-08-05T16:44:00+08:00"
+    },
+    {
+      "id": "bug-232",
+      "timestamp": "2026-08-05T16:55:00+08:00",
+      "error_message": "fatal: /home/lue/qiuzhi/toc-climb-stairs is not a git repository.",
+      "file": "/home/lue/qiuzhi/toc-climb-stairs",
+      "root_cause": "The target project directory has no .git metadata, so its refreshed XML, generated codec, and transport documentation cannot be committed or pushed directly.",
+      "fix": "Commit and push the can-codec generator changes only; report the target repository limitation explicitly and leave its verified files in place.",
+      "tags": ["git", "sync", "toc-climb-stairs", "environment"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T16:55:00+08:00"
+    },
+    {
+      "id": "bug-233",
+      "timestamp": "2026-08-05T16:57:00+08:00",
+      "error_message": "rtk tree failed because the native tree command is not installed.",
+      "file": "/home/lue/qiuzhi/can-codec/tests",
+      "root_cause": "RTK tree delegates to the system tree executable, which is absent in this environment.",
+      "fix": "Use rtk find or rtk proxy find to enumerate the small test directories instead.",
+      "tags": ["rtk", "tree", "workflow", "environment"],
+      "related_bugs": ["bug-222"],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T16:57:00+08:00"
     }
   ]
 }
