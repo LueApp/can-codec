@@ -558,7 +558,7 @@ class PlotStore {
   }
 
   appendSignalSamples(
-    signals: { name: string; physical_value: number; unit: string; bitfield_flags: Record<string, boolean> | null }[],
+    signals: { name: string; physical_value: number | string; unit: string; bitfield_flags: Record<string, boolean> | null }[],
     groupLabel: string,
     time: number,
     frame: FrameRef

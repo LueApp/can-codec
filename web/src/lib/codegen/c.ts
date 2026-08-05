@@ -5,7 +5,7 @@
 import type { DeviceConfig, Message, Signal } from '../types';
 import {
   sanitizeC, toSnakeCase, toUpperSnake,
-  signalMaxRawDec, isEnum, isBitfield, isSigned,
+  signalMaxRawDec, isEnum, isBitfield, isSigned, isIdentityInteger,
   physicalFieldTypeC, resolveDefaultRawHex, resolveDefaultPhysical,
   userSignals, totalPayloadBytes, fmtFloat, pyReprAny,
 } from './common';
@@ -161,6 +161,7 @@ function physToRawCall(sig: Signal, variable: string): string {
   }
   if (sig.value_type === 'float32') return `(uint64_t)_ccgen_f32_to_u32((float)(${variable}))`;
   if (sig.value_type === 'float64') return `_ccgen_f64_to_u64((double)(${variable}))`;
+  if (isIdentityInteger(sig)) return `((uint64_t)(${variable}) & ${signalMaxRawDec(sig)}ull)`;
   const fn = isSigned(sig) ? '_ccgen_phys_to_raw_signed' : '_ccgen_phys_to_raw_unsigned';
   return `${fn}((double)(${variable}), ${fmtFloat(sig.scale)}, ${fmtFloat(sig.offset)}, ${sig.bit_length})`;
 }
@@ -170,6 +171,7 @@ function rawToPhysCall(sig: Signal, rawVar: string): string {
   if (isBitfield(sig) || isEnum(sig)) return rawVar;
   if (sig.value_type === 'float32') return `_ccgen_u32_to_f32((uint32_t)(${rawVar}))`;
   if (sig.value_type === 'float64') return `_ccgen_u64_to_f64(${rawVar})`;
+  if (isIdentityInteger(sig)) return isSigned(sig) ? `_ccgen_sign_extend(${rawVar}, ${sig.bit_length})` : rawVar;
   if (isSigned(sig)) {
     return `_ccgen_raw_to_phys_signed(${rawVar}, ${fmtFloat(sig.scale)}, ${fmtFloat(sig.offset)}, ${sig.bit_length})`;
   }
@@ -193,6 +195,9 @@ function emitStruct(device: DeviceConfig, msg: Message, lines: string[]) {
   lines.push(`#define ${prefix}_NODE_COUNT   ${msg.node_count}`);
   lines.push(`#define ${prefix}_NODE_ID_OFFSET ${msg.node_id_offset}`);
   lines.push(`#define ${prefix}_NODE_ID_START ${msg.node_id_start}`);
+  if (msg.crc_extra !== undefined) {
+    lines.push(`#define ${prefix.toUpperCase()}_CRC_EXTRA ${msg.crc_extra}u`);
+  }
   if (hasBroadcast) {
     lines.push(`#define ${prefix}_BROADCAST_NODE_ID 0x${(msg.broadcast_node_id as number).toString(16).toUpperCase()}u`);
   }
@@ -353,12 +358,14 @@ export function generateC(device: DeviceConfig): string {
   L.push('#endif');
   L.push('');
   L.push(`#define ${prefix.toUpperCase()}_DEVICE_NAME    "${device.name}"`);
-  L.push(`#define ${prefix.toUpperCase()}_DEVICE_FD      ${device.fd ? 1 : 0}`);
-  if (device.bitrate !== undefined) {
-    L.push(`#define ${prefix.toUpperCase()}_DEVICE_BITRATE ${device.bitrate}u`);
-  }
-  if (device.fd && device.data_bitrate !== undefined) {
-    L.push(`#define ${prefix.toUpperCase()}_DATA_BITRATE   ${device.data_bitrate}u`);
+  if (!device.mavlink) {
+    L.push(`#define ${prefix.toUpperCase()}_DEVICE_FD      ${device.fd ? 1 : 0}`);
+    if (device.bitrate !== undefined) {
+      L.push(`#define ${prefix.toUpperCase()}_DEVICE_BITRATE ${device.bitrate}u`);
+    }
+    if (device.fd && device.data_bitrate !== undefined) {
+      L.push(`#define ${prefix.toUpperCase()}_DATA_BITRATE   ${device.data_bitrate}u`);
+    }
   }
   L.push('');
   L.push(runtimeHelpers());

@@ -3,7 +3,7 @@
 from ..codec import DeviceConfig, Message, Signal
 from .common import (
     sanitize_c_id, to_pascal_case, to_snake_case, to_upper_snake,
-    signal_max_raw, is_float, is_signed, is_enum, is_bitfield,
+    signal_max_raw, is_float, is_signed, is_enum, is_bitfield, is_identity_integer,
     physical_field_type_py, resolve_default_raw, resolve_default_physical,
     user_signals, total_payload_bytes,
 )
@@ -66,14 +66,30 @@ def _pack_be(data, start, length, value):
             data[bi] &= ~(1 << (7 - (bp % 8)))
 
 
+def _is_identity(scale, offset):
+    """scale=1 且 offset=0 —— 此时不该引入浮点运算。
+
+    ``int((v - 0) / 1.0)`` 会把 v 先转成 float64，而 float64 只有 53 位
+    有效位。uint64 字段（比如 STATUS 的 timestamp）因此丢低位：
+    ``0xFEDCBA9876543210`` 变成 ``0xFEDCBA9876543000``。
+    """
+    return scale == 1 and offset == 0
+
+
 def _p2r_unsigned(v, scale, offset, length):
-    raw = int((v - offset) / scale) if scale != 0 else 0
+    if _is_identity(scale, offset):
+        raw = int(v)                      # 整数路径，不经 float
+    else:
+        raw = int((v - offset) / scale) if scale != 0 else 0
     m = (1 << length) - 1
     return max(0, min(raw, m))
 
 
 def _p2r_signed(v, scale, offset, length):
-    raw = int((v - offset) / scale) if scale != 0 else 0
+    if _is_identity(scale, offset):
+        raw = int(v)
+    else:
+        raw = int((v - offset) / scale) if scale != 0 else 0
     if raw < 0:
         raw += 1 << length
     m = (1 << length) - 1
@@ -81,12 +97,16 @@ def _p2r_signed(v, scale, offset, length):
 
 
 def _r2p_unsigned(raw, scale, offset):
+    if _is_identity(scale, offset):
+        return raw                        # 保持整数，不转 float
     return raw * scale + offset
 
 
 def _r2p_signed(raw, scale, offset, length):
     if raw >= (1 << (length - 1)):
         raw -= 1 << length
+    if _is_identity(scale, offset):
+        return raw
     return raw * scale + offset
 
 
@@ -167,6 +187,8 @@ def _physical_to_raw_expr(sig: Signal, var: str) -> str:
         return f"_f32_to_u32({var})"
     if sig.value_type == "float64":
         return f"_f64_to_u64({var})"
+    if is_identity_integer(sig):
+        return f"int({var}) & {signal_max_raw(sig)}"
     if is_signed(sig):
         return f"_p2r_signed({var}, {sig.scale!r}, {sig.offset!r}, {sig.bit_length})"
     return f"_p2r_unsigned({var}, {sig.scale!r}, {sig.offset!r}, {sig.bit_length})"
@@ -179,6 +201,10 @@ def _raw_to_physical_expr(sig: Signal, raw_var: str) -> str:
         return f"_u32_to_f32({raw_var})"
     if sig.value_type == "float64":
         return f"_u64_to_f64({raw_var})"
+    if is_identity_integer(sig):
+        if is_signed(sig):
+            return f"({raw_var} - (1 << {sig.bit_length}) if {raw_var} >= (1 << {sig.bit_length - 1}) else {raw_var})"
+        return raw_var
     if is_signed(sig):
         return f"_r2p_signed({raw_var}, {sig.scale!r}, {sig.offset!r}, {sig.bit_length})"
     return f"_r2p_unsigned({raw_var}, {sig.scale!r}, {sig.offset!r})"
@@ -205,6 +231,8 @@ def _emit_message_class(msg: Message, lines: list[str]):
     lines.append(f"    NODE_COUNT = {msg.node_count}")
     lines.append(f"    NODE_ID_OFFSET = {msg.node_id_offset}")
     lines.append(f"    NODE_ID_START = {msg.node_id_start}")
+    if msg.crc_extra is not None:
+        lines.append(f"    CRC_EXTRA = {msg.crc_extra}")
     if has_broadcast:
         lines.append(f"    BROADCAST_NODE_ID = {msg.broadcast_node_id:#x}")
     else:
@@ -353,11 +381,12 @@ def generate_python(device: DeviceConfig) -> str:
     L.append("from dataclasses import dataclass as _dataclass")
     L.append("")
     L.append(f"DEVICE_NAME = {device.name!r}")
-    L.append(f"DEVICE_BUS = {device.bus!r}")
-    L.append(f"DEVICE_FD = {device.fd!r}")
-    L.append(f"DEVICE_BITRATE = {device.bitrate}")
-    if device.fd:
-        L.append(f"DEVICE_DATA_BITRATE = {device.data_bitrate}")
+    if not device.mavlink:
+        L.append(f"DEVICE_BUS = {device.bus!r}")
+        L.append(f"DEVICE_FD = {device.fd!r}")
+        L.append(f"DEVICE_BITRATE = {device.bitrate}")
+        if device.fd:
+            L.append(f"DEVICE_DATA_BITRATE = {device.data_bitrate}")
     L.append("")
     L.append(_runtime_helpers())
     L.append("")
@@ -400,7 +429,10 @@ def generate_python(device: DeviceConfig) -> str:
     L.append("    return None")
     L.append("")
     L.append("__all__ = [")
-    L.append("    'DEVICE_NAME', 'DEVICE_BUS', 'DEVICE_FD',")
+    if device.mavlink:
+        L.append("    'DEVICE_NAME',")
+    else:
+        L.append("    'DEVICE_NAME', 'DEVICE_BUS', 'DEVICE_FD',")
     L.append("    'ALL_MESSAGES', 'MESSAGES_BY_NAME', 'decode_frame',")
     for msg in device.messages:
         L.append(f"    {to_pascal_case(msg.name)!r},")

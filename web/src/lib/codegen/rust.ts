@@ -4,8 +4,8 @@
 
 import type { DeviceConfig, Message, Signal } from '../types';
 import {
-  sanitizeC, toSnakeCase, toPascalCase, toUpperSnake,
-  signalMaxRawDec, isEnum, isBitfield, isSigned,
+  sanitizeRust, toSnakeCase, toPascalCase, toUpperSnake,
+  signalMaxRawDec, isEnum, isBitfield, isSigned, isIdentityInteger,
   physicalFieldTypeRust, resolveDefaultPhysical, resolveDefaultRawHex,
   userSignals, totalPayloadBytes, fmtFloat,
 } from './common';
@@ -154,6 +154,7 @@ function physToRawCall(sig: Signal, variable: string): string {
   }
   if (sig.value_type === 'float32') return `detail::f32_to_u32(${variable} as f32) as u64`;
   if (sig.value_type === 'float64') return `detail::f64_to_u64(${variable} as f64)`;
+  if (isIdentityInteger(sig)) return `(${variable} as u64) & ${signalMaxRawDec(sig)}u64`;
   const fn = isSigned(sig) ? 'detail::phys_to_raw_signed' : 'detail::phys_to_raw_unsigned';
   return `${fn}(${variable} as f64, ${fmtFloat(sig.scale)}f64, ${fmtFloat(sig.offset)}f64, ${sig.bit_length})`;
 }
@@ -163,6 +164,7 @@ function rawToPhysCall(sig: Signal, rawVar: string): string {
   if (isBitfield(sig) || isEnum(sig)) return rawVar;
   if (sig.value_type === 'float32') return `detail::u32_to_f32(${rawVar} as u32)`;
   if (sig.value_type === 'float64') return `detail::u64_to_f64(${rawVar})`;
+  if (isIdentityInteger(sig)) return isSigned(sig) ? `detail::sign_extend(${rawVar}, ${sig.bit_length})` : rawVar;
   if (isSigned(sig)) {
     return `detail::raw_to_phys_signed(${rawVar}, ${fmtFloat(sig.scale)}f64, ${fmtFloat(sig.offset)}f64, ${sig.bit_length})`;
   }
@@ -185,7 +187,7 @@ function emitStruct(msg: Message, lines: string[]) {
   for (const sig of fields) {
     const ftype = physicalFieldTypeRust(sig);
     const unit = sig.unit ? `  // ${sig.unit}` : '';
-    const fname = sanitizeC(sig.name);
+    const fname = sanitizeRust(sig.name);
     lines.push(`    pub ${fname}: ${ftype},${unit}`);
   }
   if (isMulti) lines.push('    pub node_id: u32,');
@@ -198,7 +200,7 @@ function emitStruct(msg: Message, lines: string[]) {
   lines.push('        Self {');
   for (const sig of fields) {
     const ftype = physicalFieldTypeRust(sig);
-    const fname = sanitizeC(sig.name);
+    const fname = sanitizeRust(sig.name);
     const d = resolveDefaultPhysical(sig);
     let def: string;
     if (d === null) def = ftype.startsWith('f') ? '0.0' : '0';
@@ -219,6 +221,9 @@ function emitStruct(msg: Message, lines: string[]) {
   lines.push(`    pub const NODE_COUNT: u32 = ${msg.node_count};`);
   lines.push(`    pub const NODE_ID_OFFSET: u32 = ${msg.node_id_offset};`);
   lines.push(`    pub const NODE_ID_START: u32 = ${msg.node_id_start};`);
+  if (msg.crc_extra !== undefined) {
+    lines.push(`    pub const CRC_EXTRA: u8 = ${msg.crc_extra};`);
+  }
   if (hasBroadcast) {
     lines.push(`    pub const BROADCAST_NODE_ID: u32 = 0x${(msg.broadcast_node_id as number).toString(16).toUpperCase()};`);
     lines.push(`    pub const BROADCAST_BYTES: usize = ${byteCount * msg.node_count};`);
@@ -268,7 +273,7 @@ function emitStruct(msg: Message, lines: string[]) {
       lines.push(`        // constant: ${sig.name}`);
       lines.push(`        ${pack}(&mut data, ${sig.start_bit}, ${sig.bit_length}, ${raw}u64);`);
     } else {
-      const variable = `self.${sanitizeC(sig.name)}`;
+      const variable = `self.${sanitizeRust(sig.name)}`;
       const raw = physToRawCall(sig, variable);
       const pack = sig.byte_order === 'big_endian' ? 'detail::pack_be' : 'detail::pack_le';
       lines.push(`        { let r = ${raw};`);
@@ -287,7 +292,7 @@ function emitStruct(msg: Message, lines: string[]) {
   lines.push(`        let ${mutKw}m = Self::default();`);
   for (const sig of msg.signals) {
     if (sig.constant) continue;
-    const fname = sanitizeC(sig.name);
+    const fname = sanitizeRust(sig.name);
     const ext = sig.byte_order === 'big_endian' ? 'detail::ext_be' : 'detail::ext_le';
     const ftype = physicalFieldTypeRust(sig);
     const val = rawToPhysCall(sig, 'r');
@@ -388,12 +393,14 @@ export function generateRust(device: DeviceConfig): string {
   L.push('#![allow(dead_code, non_snake_case, non_camel_case_types, clippy::all)]');
   L.push('');
   L.push(`pub const DEVICE_NAME: &str = "${device.name}";`);
-  L.push(`pub const DEVICE_FD: bool = ${device.fd ? 'true' : 'false'};`);
-  if (device.bitrate !== undefined) {
-    L.push(`pub const DEVICE_BITRATE: u32 = ${device.bitrate};`);
-  }
-  if (device.fd && device.data_bitrate !== undefined) {
-    L.push(`pub const DEVICE_DATA_BITRATE: u32 = ${device.data_bitrate};`);
+  if (!device.mavlink) {
+    L.push(`pub const DEVICE_FD: bool = ${device.fd ? 'true' : 'false'};`);
+    if (device.bitrate !== undefined) {
+      L.push(`pub const DEVICE_BITRATE: u32 = ${device.bitrate};`);
+    }
+    if (device.fd && device.data_bitrate !== undefined) {
+      L.push(`pub const DEVICE_DATA_BITRATE: u32 = ${device.data_bitrate};`);
+    }
   }
   L.push('');
   L.push(runtimeHelpers());

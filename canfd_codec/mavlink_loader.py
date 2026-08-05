@@ -36,6 +36,11 @@ MAVLINK_TYPES = {
     "char":     (8,  "unsigned", 1),
 }
 
+MAVLINK_TYPE_ALIASES = {
+    # MAVLink generator magic type: wire-compatible with uint8_t, always 3.
+    "uint8_t_mavlink_version": "uint8_t",
+}
+
 
 def _parse_type(type_str: str) -> tuple[str, int, str, int, int]:
     """Parse a MAVLink type string.
@@ -50,6 +55,7 @@ def _parse_type(type_str: str) -> tuple[str, int, str, int, int]:
         base_type = type_str
         array_count = 1
 
+    base_type = MAVLINK_TYPE_ALIASES.get(base_type, base_type)
     if base_type not in MAVLINK_TYPES:
         raise ValueError(f"Unknown MAVLink type: {base_type}")
 
@@ -112,7 +118,11 @@ def _parse_enums(root: ET.Element) -> dict[str, dict[int, str]]:
                 short_name = name
                 if short_name.startswith(enum_name + "_"):
                     short_name = short_name[len(enum_name) + 1:]
-                values[int(value)] = short_name.lower()
+                try:
+                    raw_value = int(value, 0)
+                except ValueError:
+                    raw_value = int(value, 10)
+                values[raw_value] = short_name.lower()
 
         enums[enum_name] = values
 
@@ -181,6 +191,8 @@ def _parse_messages(root: ET.Element, enums: dict[str, dict[int, str]]) -> list[
             if not field_type or not field_name:
                 continue
 
+            is_mavlink_version = field_type == "uint8_t_mavlink_version"
+
             try:
                 base_type, bit_length, value_type, array_count, wire_size = _parse_type(field_type)
             except ValueError:
@@ -200,6 +212,8 @@ def _parse_messages(root: ET.Element, enums: dict[str, dict[int, str]]) -> list[
                 "wire_size": wire_size,
                 "enum_map": enum_map,
                 "description": field_desc,
+                "default": 3 if is_mavlink_version else None,
+                "constant": is_mavlink_version,
             }
             (ext_fields if in_extensions else core_fields).append(field_info)
 
@@ -225,6 +239,8 @@ def _parse_messages(root: ET.Element, enums: dict[str, dict[int, str]]) -> list[
                         value_type=f["value_type"],
                         description=f"{f['description']} [index {i}]" if f["description"] else f"[index {i}]",
                         enum_map=f["enum_map"].copy() if f["enum_map"] else {},
+                        default=f["default"],
+                        constant=f["constant"],
                     )
                     signals.append(sig)
                     bit_offset += f["bit_length"]
@@ -237,6 +253,8 @@ def _parse_messages(root: ET.Element, enums: dict[str, dict[int, str]]) -> list[
                     value_type=f["value_type"],
                     description=f["description"],
                     enum_map=f["enum_map"],
+                    default=f["default"],
+                    constant=f["constant"],
                 )
                 signals.append(sig)
                 bit_offset += f["bit_length"]

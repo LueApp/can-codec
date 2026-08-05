@@ -389,27 +389,47 @@ def _raw_to_physical(raw_value: int, signal: Signal) -> Any:
         # Two's complement
         if raw_value >= (1 << (signal.bit_length - 1)):
             raw_value -= (1 << signal.bit_length)
+        if signal.scale == 1.0 and signal.offset == 0.0:
+            return raw_value
         return raw_value * signal.scale + signal.offset
 
     else:  # unsigned
+        if signal.scale == 1.0 and signal.offset == 0.0:
+            return raw_value
         return raw_value * signal.scale + signal.offset
 
 
-def _physical_to_raw(physical_value: float, signal: Signal) -> int:
+def _physical_to_raw(physical_value: Any, signal: Signal) -> int:
     """Convert physical value back to raw integer."""
     vtype = signal.value_type
 
     if vtype == "float32":
-        raw_bytes = struct.pack("<f", physical_value)
+        raw_bytes = struct.pack("<f", float(physical_value))
         return struct.unpack("<I", raw_bytes)[0]
 
     elif vtype == "float64":
-        raw_bytes = struct.pack("<d", physical_value)
+        raw_bytes = struct.pack("<d", float(physical_value))
         return struct.unpack("<Q", raw_bytes)[0]
 
     else:
         # Use int() truncation (not round()) to match dm_parser.py behavior
-        raw = int((physical_value - signal.offset) / signal.scale)
+        exact_value = physical_value
+        if isinstance(exact_value, str):
+            try:
+                exact_value = int(exact_value, 0)
+            except ValueError:
+                try:
+                    exact_value = int(exact_value, 10)
+                except ValueError:
+                    exact_value = float(exact_value)
+        if (
+            isinstance(exact_value, int)
+            and signal.scale == 1.0
+            and signal.offset == 0.0
+        ):
+            raw = exact_value
+        else:
+            raw = int((float(exact_value) - signal.offset) / signal.scale)
         if vtype == "signed" and raw < 0:
             raw += (1 << signal.bit_length)
         # Clamp to valid range
@@ -462,7 +482,7 @@ def _constant_raw(sig: Signal) -> int | None:
         return _compose_bitfield(val, sig)
     if sig.enum_map and isinstance(val, str):
         return _reverse_enum(val, sig)
-    return _physical_to_raw(float(val), sig)
+    return _physical_to_raw(val, sig)
 
 
 def _match_constants(msg_def: Message, data: bytes) -> tuple[bool, int]:
@@ -653,7 +673,7 @@ def encode(msg_def: Message, values: dict[str, Any], node_id: int = 0) -> bytes:
                     f"Valid values: {list(sig.enum_map.values())}"
                 )
         else:
-            raw = _physical_to_raw(float(val), sig)
+            raw = _physical_to_raw(val, sig)
 
         # Pack into data
         if sig.byte_order == "big_endian":

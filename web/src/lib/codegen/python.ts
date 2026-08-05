@@ -6,7 +6,7 @@
 import type { DeviceConfig, Message, Signal } from '../types';
 import {
   sanitizeC, toPascalCase, toSnakeCase, toUpperSnake,
-  signalMaxRawDec, isEnum, isBitfield, isSigned,
+  signalMaxRawDec, isEnum, isBitfield, isSigned, isIdentityInteger,
   physicalFieldTypePy, resolveDefaultRawHex, resolveDefaultPhysical,
   userSignals, totalPayloadBytes, fmtFloat, pyRepr, pyReprAny,
 } from './common';
@@ -56,14 +56,30 @@ def _pack_be(data, start, length, value):
             data[bi] &= ~(1 << (7 - (bp % 8)))
 
 
+def _is_identity(scale, offset):
+    """scale=1 且 offset=0 —— 此时不该引入浮点运算。
+
+    \`\`int((v - 0) / 1.0)\`\` 会把 v 先转成 float64，而 float64 只有 53 位
+    有效位。uint64 字段（比如 STATUS 的 timestamp）因此丢低位：
+    \`\`0xFEDCBA9876543210\`\` 变成 \`\`0xFEDCBA9876543000\`\`。
+    """
+    return scale == 1 and offset == 0
+
+
 def _p2r_unsigned(v, scale, offset, length):
-    raw = int((v - offset) / scale) if scale != 0 else 0
+    if _is_identity(scale, offset):
+        raw = int(v)                      # 整数路径，不经 float
+    else:
+        raw = int((v - offset) / scale) if scale != 0 else 0
     m = (1 << length) - 1
     return max(0, min(raw, m))
 
 
 def _p2r_signed(v, scale, offset, length):
-    raw = int((v - offset) / scale) if scale != 0 else 0
+    if _is_identity(scale, offset):
+        raw = int(v)
+    else:
+        raw = int((v - offset) / scale) if scale != 0 else 0
     if raw < 0:
         raw += 1 << length
     m = (1 << length) - 1
@@ -71,12 +87,16 @@ def _p2r_signed(v, scale, offset, length):
 
 
 def _r2p_unsigned(raw, scale, offset):
+    if _is_identity(scale, offset):
+        return raw                        # 保持整数，不转 float
     return raw * scale + offset
 
 
 def _r2p_signed(raw, scale, offset, length):
     if raw >= (1 << (length - 1)):
         raw -= 1 << length
+    if _is_identity(scale, offset):
+        return raw
     return raw * scale + offset
 
 
@@ -159,6 +179,7 @@ function physicalToRawExpr(sig: Signal, variable: string): string {
   }
   if (sig.value_type === 'float32') return `_f32_to_u32(${variable})`;
   if (sig.value_type === 'float64') return `_f64_to_u64(${variable})`;
+  if (isIdentityInteger(sig)) return `int(${variable}) & ${signalMaxRawDec(sig)}`;
   if (isSigned(sig)) {
     return `_p2r_signed(${variable}, ${fmtFloat(sig.scale)}, ${fmtFloat(sig.offset)}, ${sig.bit_length})`;
   }
@@ -170,6 +191,11 @@ function rawToPhysicalExpr(sig: Signal, rawVar: string): string {
   if (isBitfield(sig) || isEnum(sig)) return rawVar;
   if (sig.value_type === 'float32') return `_u32_to_f32(${rawVar})`;
   if (sig.value_type === 'float64') return `_u64_to_f64(${rawVar})`;
+  if (isIdentityInteger(sig)) {
+    return isSigned(sig)
+      ? `(${rawVar} - (1 << ${sig.bit_length}) if ${rawVar} >= (1 << ${sig.bit_length - 1}) else ${rawVar})`
+      : rawVar;
+  }
   if (isSigned(sig)) {
     return `_r2p_signed(${rawVar}, ${fmtFloat(sig.scale)}, ${fmtFloat(sig.offset)}, ${sig.bit_length})`;
   }
@@ -196,6 +222,9 @@ function emitMessageClass(msg: Message, lines: string[]) {
   lines.push(`    NODE_COUNT = ${msg.node_count}`);
   lines.push(`    NODE_ID_OFFSET = ${msg.node_id_offset}`);
   lines.push(`    NODE_ID_START = ${msg.node_id_start}`);
+  if (msg.crc_extra !== undefined) {
+    lines.push(`    CRC_EXTRA = ${msg.crc_extra}`);
+  }
   if (hasBroadcast) {
     lines.push(`    BROADCAST_NODE_ID = ${'0x' + (msg.broadcast_node_id as number).toString(16)}`);
   } else {
@@ -345,13 +374,15 @@ export function generatePython(device: DeviceConfig): string {
   L.push('from dataclasses import dataclass as _dataclass');
   L.push('');
   L.push(`DEVICE_NAME = ${pyRepr(device.name)}`);
-  L.push(`DEVICE_BUS = ${pyRepr(device.bus)}`);
-  L.push(`DEVICE_FD = ${device.fd ? 'True' : 'False'}`);
-  if (device.bitrate !== undefined) {
-    L.push(`DEVICE_BITRATE = ${device.bitrate}`);
-  }
-  if (device.fd && device.data_bitrate !== undefined) {
-    L.push(`DEVICE_DATA_BITRATE = ${device.data_bitrate}`);
+  if (!device.mavlink) {
+    L.push(`DEVICE_BUS = ${pyRepr(device.bus)}`);
+    L.push(`DEVICE_FD = ${device.fd ? 'True' : 'False'}`);
+    if (device.bitrate !== undefined) {
+      L.push(`DEVICE_BITRATE = ${device.bitrate}`);
+    }
+    if (device.fd && device.data_bitrate !== undefined) {
+      L.push(`DEVICE_DATA_BITRATE = ${device.data_bitrate}`);
+    }
   }
   L.push('');
   L.push(runtimeHelpers());
@@ -393,7 +424,11 @@ export function generatePython(device: DeviceConfig): string {
   L.push('    return None');
   L.push('');
   L.push('__all__ = [');
-  L.push("    'DEVICE_NAME', 'DEVICE_BUS', 'DEVICE_FD',");
+  if (device.mavlink) {
+    L.push("    'DEVICE_NAME',");
+  } else {
+    L.push("    'DEVICE_NAME', 'DEVICE_BUS', 'DEVICE_FD',");
+  }
   L.push("    'ALL_MESSAGES', 'MESSAGES_BY_NAME', 'decode_frame',");
   for (const msg of device.messages) L.push(`    ${pyRepr(toPascalCase(msg.name))},`);
   L.push(']');

@@ -2,9 +2,9 @@
 
 from ..codec import DeviceConfig, Message, Signal
 from .common import (
-    sanitize_c_id, to_snake_case, to_pascal_case, to_upper_snake,
+    sanitize_rust_id, to_snake_case, to_pascal_case, to_upper_snake,
     signal_max_raw, rust_uint_type, rust_int_type,
-    is_float, is_signed, is_enum, is_bitfield,
+    is_float, is_signed, is_enum, is_bitfield, is_identity_integer,
     physical_field_type_rust, resolve_default_raw, resolve_default_physical,
     user_signals, total_payload_bytes,
 )
@@ -148,6 +148,8 @@ def _phys_to_raw_call(sig: Signal, var: str) -> str:
         return f"detail::f32_to_u32({var} as f32) as u64"
     if sig.value_type == "float64":
         return f"detail::f64_to_u64({var} as f64)"
+    if is_identity_integer(sig):
+        return f"({var} as u64) & {mask}u64"
     fn = "detail::phys_to_raw_signed" if is_signed(sig) else "detail::phys_to_raw_unsigned"
     return f"{fn}({var} as f64, {sig.scale}f64, {sig.offset}f64, {sig.bit_length})"
 
@@ -159,6 +161,8 @@ def _raw_to_phys_call(sig: Signal, raw_var: str) -> str:
         return f"detail::u32_to_f32({raw_var} as u32)"
     if sig.value_type == "float64":
         return f"detail::u64_to_f64({raw_var})"
+    if is_identity_integer(sig):
+        return f"detail::sign_extend({raw_var}, {sig.bit_length})" if is_signed(sig) else raw_var
     if is_signed(sig):
         return f"detail::raw_to_phys_signed({raw_var}, {sig.scale}f64, {sig.offset}f64, {sig.bit_length})"
     return f"detail::raw_to_phys_unsigned({raw_var}, {sig.scale}f64, {sig.offset}f64)"
@@ -180,7 +184,7 @@ def _emit_struct(msg: Message, lines: list[str]):
     for sig in fields:
         ftype = physical_field_type_rust(sig)
         unit = f"  // {sig.unit}" if sig.unit else ""
-        fname = sanitize_c_id(sig.name)
+        fname = sanitize_rust_id(sig.name)
         lines.append(f"    pub {fname}: {ftype},{unit}")
     if is_multi:
         lines.append("    pub node_id: u32,")
@@ -193,7 +197,7 @@ def _emit_struct(msg: Message, lines: list[str]):
     lines.append("        Self {")
     for sig in fields:
         ftype = physical_field_type_rust(sig)
-        fname = sanitize_c_id(sig.name)
+        fname = sanitize_rust_id(sig.name)
         d = resolve_default_physical(sig)
         if d is None:
             if ftype.startswith("f"):
@@ -220,6 +224,8 @@ def _emit_struct(msg: Message, lines: list[str]):
     lines.append(f"    pub const NODE_COUNT: u32 = {msg.node_count};")
     lines.append(f"    pub const NODE_ID_OFFSET: u32 = {msg.node_id_offset};")
     lines.append(f"    pub const NODE_ID_START: u32 = {msg.node_id_start};")
+    if msg.crc_extra is not None:
+        lines.append(f"    pub const CRC_EXTRA: u8 = {msg.crc_extra};")
     if has_broadcast:
         lines.append(f"    pub const BROADCAST_NODE_ID: u32 = 0x{msg.broadcast_node_id:X};")
         lines.append(f"    pub const BROADCAST_BYTES: usize = {byte_count * msg.node_count};")
@@ -268,7 +274,7 @@ def _emit_struct(msg: Message, lines: list[str]):
             lines.append(f"        // constant: {sig.name}")
             lines.append(f"        {pack}(&mut data, {sig.start_bit}, {sig.bit_length}, {raw}u64);")
         else:
-            var = f"self.{sanitize_c_id(sig.name)}"
+            var = f"self.{sanitize_rust_id(sig.name)}"
             raw_expr = _phys_to_raw_call(sig, var)
             pack = "detail::pack_be" if sig.byte_order == "big_endian" else "detail::pack_le"
             lines.append(f"        {{ let r = {raw_expr};")
@@ -286,7 +292,7 @@ def _emit_struct(msg: Message, lines: list[str]):
     for sig in msg.signals:
         if sig.constant:
             continue
-        fname = sanitize_c_id(sig.name)
+        fname = sanitize_rust_id(sig.name)
         ext = "detail::ext_be" if sig.byte_order == "big_endian" else "detail::ext_le"
         ftype = physical_field_type_rust(sig)
         val = _raw_to_phys_call(sig, "r")
@@ -382,10 +388,11 @@ def generate_rust(device: DeviceConfig) -> str:
     L.append("#![allow(dead_code, non_snake_case, non_camel_case_types, clippy::all)]")
     L.append("")
     L.append(f"pub const DEVICE_NAME: &str = \"{device.name}\";")
-    L.append(f"pub const DEVICE_FD: bool = {'true' if device.fd else 'false'};")
-    L.append(f"pub const DEVICE_BITRATE: u32 = {device.bitrate};")
-    if device.fd:
-        L.append(f"pub const DEVICE_DATA_BITRATE: u32 = {device.data_bitrate};")
+    if not device.mavlink:
+        L.append(f"pub const DEVICE_FD: bool = {'true' if device.fd else 'false'};")
+        L.append(f"pub const DEVICE_BITRATE: u32 = {device.bitrate};")
+        if device.fd:
+            L.append(f"pub const DEVICE_DATA_BITRATE: u32 = {device.data_bitrate};")
     L.append("")
     L.append(_runtime_helpers())
     L.append("")

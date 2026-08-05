@@ -45,8 +45,8 @@ export interface DeviceConfig {
 
 export interface DecodedSignal {
   name: string;
-  raw_value: number;
-  physical_value: number;
+  raw_value: number | string;
+  physical_value: number | string;
   enum_name: string | null;
   bitfield_flags: Record<string, boolean> | null;
   unit: string;

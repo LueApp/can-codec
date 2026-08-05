@@ -760,6 +760,15 @@ class SequenceStore {
       if (multiNode && dec.node_id !== wantNode) return;
       const found = dec.signals.find(g => g.name === s.signal);
       if (!found) return;
+      if (typeof found.physical_value !== 'number') {
+        this._logEntry(
+          s.id,
+          `bind ${s.varName} ← ${s.msgName}.${s.signal}`,
+          false,
+          `decoded value ${found.physical_value} exceeds JavaScript's safe integer range and cannot be used in numeric expressions`,
+        );
+        return;
+      }
       this.vars[s.varName] = found.physical_value;
       const wasNew = !(s.varName in this.bindings);
       this.bindings = {
@@ -837,6 +846,16 @@ class SequenceStore {
         if (multiNode && dec.node_id !== wantNode) return;
         const found = dec.signals.find(g => g.name === s.signal);
         if (!found) return;
+        if (typeof found.physical_value !== 'number') {
+          this._logEntry(
+            s.id,
+            `read ${s.varName} ← ${s.msgName}.${s.signal}`,
+            false,
+            `decoded value ${found.physical_value} exceeds JavaScript's safe integer range and cannot be used in numeric expressions`,
+          );
+          finish();
+          return;
+        }
         const isNew = !(s.varName in this.vars);
         this.vars[s.varName] = found.physical_value;
         if (isNew) this.varsCount = Object.keys(this.vars).length;

@@ -4,7 +4,7 @@ from ..codec import DeviceConfig, Message, Signal
 from .common import (
     sanitize_c_id, to_snake_case, to_upper_snake,
     signal_max_raw, fitting_uint_bits, c_uint_type, c_int_type,
-    is_float, is_signed, is_enum, is_bitfield,
+    is_float, is_signed, is_enum, is_bitfield, is_identity_integer,
     physical_field_type_c, resolve_default_raw, resolve_default_physical,
     user_signals, total_payload_bytes,
 )
@@ -151,6 +151,8 @@ def _phys_to_raw_call(sig: Signal, var: str) -> str:
         return f"(uint64_t)_ccgen_f32_to_u32((float)({var}))"
     if sig.value_type == "float64":
         return f"_ccgen_f64_to_u64((double)({var}))"
+    if is_identity_integer(sig):
+        return f"((uint64_t)({var}) & {signal_max_raw(sig)}ull)"
     fn = "_ccgen_phys_to_raw_signed" if is_signed(sig) else "_ccgen_phys_to_raw_unsigned"
     return f"{fn}((double)({var}), {sig.scale!r}, {sig.offset!r}, {sig.bit_length})"
 
@@ -162,6 +164,8 @@ def _raw_to_phys_call(sig: Signal, raw_var: str) -> str:
         return f"_ccgen_u32_to_f32((uint32_t)({raw_var}))"
     if sig.value_type == "float64":
         return f"_ccgen_u64_to_f64({raw_var})"
+    if is_identity_integer(sig):
+        return f"_ccgen_sign_extend({raw_var}, {sig.bit_length})" if is_signed(sig) else raw_var
     if is_signed(sig):
         return f"_ccgen_raw_to_phys_signed({raw_var}, {sig.scale!r}, {sig.offset!r}, {sig.bit_length})"
     return f"_ccgen_raw_to_phys_unsigned({raw_var}, {sig.scale!r}, {sig.offset!r})"
@@ -182,6 +186,8 @@ def _emit_struct(device: DeviceConfig, msg: Message, lines: list[str]):
     lines.append(f"#define {prefix}_NODE_COUNT   {msg.node_count}")
     lines.append(f"#define {prefix}_NODE_ID_OFFSET {msg.node_id_offset}")
     lines.append(f"#define {prefix}_NODE_ID_START {msg.node_id_start}")
+    if msg.crc_extra is not None:
+        lines.append(f"#define {prefix.upper()}_CRC_EXTRA {msg.crc_extra}u")
     if msg.broadcast_node_id is not None:
         lines.append(f"#define {prefix}_BROADCAST_NODE_ID 0x{msg.broadcast_node_id:X}u")
     lines.append("")
@@ -338,10 +344,11 @@ def generate_c(device: DeviceConfig) -> str:
     L.append("#endif")
     L.append("")
     L.append(f"#define {prefix.upper()}_DEVICE_NAME    \"{device.name}\"")
-    L.append(f"#define {prefix.upper()}_DEVICE_FD      {1 if device.fd else 0}")
-    L.append(f"#define {prefix.upper()}_DEVICE_BITRATE {device.bitrate}u")
-    if device.fd:
-        L.append(f"#define {prefix.upper()}_DATA_BITRATE   {device.data_bitrate}u")
+    if not device.mavlink:
+        L.append(f"#define {prefix.upper()}_DEVICE_FD      {1 if device.fd else 0}")
+        L.append(f"#define {prefix.upper()}_DEVICE_BITRATE {device.bitrate}u")
+        if device.fd:
+            L.append(f"#define {prefix.upper()}_DATA_BITRATE   {device.data_bitrate}u")
     L.append("")
     L.append(_runtime_helpers())
     L.append("")

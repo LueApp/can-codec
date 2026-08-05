@@ -9,41 +9,48 @@ import type { Signal, Message, DeviceConfig, DecodedSignal, DecodedMessage, Mess
 // Bit-level extraction & packing
 // ---------------------------------------------------------------------------
 
-function extractBitsLE(data: Uint8Array, startBit: number, bitLength: number): number {
-  let value = 0;
+const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+const MIN_SAFE_BIGINT = BigInt(Number.MIN_SAFE_INTEGER);
+
+function publicInteger(value: bigint): number | string {
+  return value >= MIN_SAFE_BIGINT && value <= MAX_SAFE_BIGINT ? Number(value) : value.toString();
+}
+
+function extractBitsLE(data: Uint8Array, startBit: number, bitLength: number): bigint {
+  let value = 0n;
   for (let i = 0; i < bitLength; i++) {
     const byteIdx = Math.floor((startBit + i) / 8);
     const bitIdx = (startBit + i) % 8;
     if (byteIdx < data.length) {
       if (data[byteIdx] & (1 << bitIdx)) {
-        value |= (1 << i);
+        value |= 1n << BigInt(i);
       }
     }
   }
-  return value >>> 0;
+  return value;
 }
 
-function extractBitsBE(data: Uint8Array, startBit: number, bitLength: number): number {
-  let value = 0;
+function extractBitsBE(data: Uint8Array, startBit: number, bitLength: number): bigint {
+  let value = 0n;
   for (let i = 0; i < bitLength; i++) {
     const bitPos = startBit + i;
     const byteIdx = Math.floor(bitPos / 8);
     const bitInByte = 7 - (bitPos % 8);
     if (byteIdx < data.length) {
       if (data[byteIdx] & (1 << bitInByte)) {
-        value |= (1 << (bitLength - 1 - i));
+        value |= 1n << BigInt(bitLength - 1 - i);
       }
     }
   }
-  return value >>> 0;
+  return value;
 }
 
-function packBitsLE(data: Uint8Array, startBit: number, bitLength: number, value: number): void {
+function packBitsLE(data: Uint8Array, startBit: number, bitLength: number, value: bigint): void {
   for (let i = 0; i < bitLength; i++) {
     const byteIdx = Math.floor((startBit + i) / 8);
     const bitIdx = (startBit + i) % 8;
     if (byteIdx < data.length) {
-      if (value & (1 << i)) {
+      if (((value >> BigInt(i)) & 1n) !== 0n) {
         data[byteIdx] |= (1 << bitIdx);
       } else {
         data[byteIdx] &= ~(1 << bitIdx);
@@ -52,13 +59,13 @@ function packBitsLE(data: Uint8Array, startBit: number, bitLength: number, value
   }
 }
 
-function packBitsBE(data: Uint8Array, startBit: number, bitLength: number, value: number): void {
+function packBitsBE(data: Uint8Array, startBit: number, bitLength: number, value: bigint): void {
   for (let i = 0; i < bitLength; i++) {
     const bitPos = startBit + i;
     const byteIdx = Math.floor(bitPos / 8);
     const bitInByte = 7 - (bitPos % 8);
     if (byteIdx < data.length) {
-      if (value & (1 << (bitLength - 1 - i))) {
+      if (((value >> BigInt(bitLength - 1 - i)) & 1n) !== 0n) {
         data[byteIdx] |= (1 << bitInByte);
       } else {
         data[byteIdx] &= ~(1 << bitInByte);
@@ -71,107 +78,162 @@ function packBitsBE(data: Uint8Array, startBit: number, bitLength: number, value
 // Signal-level decode / encode
 // ---------------------------------------------------------------------------
 
-function rawToPhysical(rawValue: number, signal: Signal): number {
+function rawToPhysical(rawValue: bigint, signal: Signal): number | string {
   const vtype = signal.value_type;
 
   if (vtype === 'float32') {
     const buf = new ArrayBuffer(4);
     const view = new DataView(buf);
-    view.setUint32(0, rawValue >>> 0, true);
+    view.setUint32(0, Number(BigInt.asUintN(32, rawValue)), true);
     return view.getFloat32(0, true);
   }
 
   if (vtype === 'float64') {
     const buf = new ArrayBuffer(8);
     const view = new DataView(buf);
-    view.setUint32(0, rawValue >>> 0, true);
-    view.setUint32(4, 0, true);
+    view.setBigUint64(0, BigInt.asUintN(64, rawValue), true);
     return view.getFloat64(0, true);
   }
 
-  if (vtype === 'signed') {
-    let signed = rawValue;
-    if (rawValue >= (1 << (signal.bit_length - 1))) {
-      signed = rawValue - (1 << signal.bit_length);
-    }
-    return signed * signal.scale + signal.offset;
+  const integer = vtype === 'signed'
+    ? BigInt.asIntN(signal.bit_length, rawValue)
+    : rawValue;
+
+  // Preserve exact integer results for the common scale/offset case. Values
+  // outside Number's safe range are exposed as decimal strings.
+  if (Number.isSafeInteger(signal.scale) && Number.isSafeInteger(signal.offset)) {
+    const physical = integer * BigInt(signal.scale) + BigInt(signal.offset);
+    return publicInteger(physical);
   }
 
-  return rawValue * signal.scale + signal.offset;
+  return Number(integer) * signal.scale + signal.offset;
 }
 
-function physicalToRaw(physicalValue: number, signal: Signal): number {
+function parseExactInteger(value: string): bigint | null {
+  const trimmed = value.trim();
+  if (/^[+-]?\d+$/.test(trimmed)) return BigInt(trimmed);
+  const hex = trimmed.match(/^([+-]?)(0[xX][0-9a-fA-F]+)$/);
+  if (!hex) return null;
+  const magnitude = BigInt(hex[2]);
+  return hex[1] === '-' ? -magnitude : magnitude;
+}
+
+function invalidPhysicalValue(value: string | number, signal: Signal): Error {
+  return new Error(`Invalid value '${value}' for signal '${signal.name}': not a finite number`);
+}
+
+function physicalToRaw(physicalValue: number | string, signal: Signal): bigint {
   const vtype = signal.value_type;
 
   if (vtype === 'float32') {
+    const numeric = typeof physicalValue === 'number' ? physicalValue : Number(physicalValue);
+    if (!Number.isFinite(numeric)) throw invalidPhysicalValue(physicalValue, signal);
     const buf = new ArrayBuffer(4);
     const view = new DataView(buf);
-    view.setFloat32(0, physicalValue, true);
-    return view.getUint32(0, true);
+    view.setFloat32(0, numeric, true);
+    return BigInt(view.getUint32(0, true));
   }
 
   if (vtype === 'float64') {
+    const numeric = typeof physicalValue === 'number' ? physicalValue : Number(physicalValue);
+    if (!Number.isFinite(numeric)) throw invalidPhysicalValue(physicalValue, signal);
     const buf = new ArrayBuffer(8);
     const view = new DataView(buf);
-    view.setFloat64(0, physicalValue, true);
-    return view.getUint32(0, true);
+    view.setFloat64(0, numeric, true);
+    return view.getBigUint64(0, true);
   }
 
-  let raw = Math.trunc((physicalValue - signal.offset) / signal.scale);
-  if (vtype === 'signed' && raw < 0) {
-    raw += (1 << signal.bit_length);
+  let raw: bigint;
+  const exact = typeof physicalValue === 'string' ? parseExactInteger(physicalValue) : null;
+  const integralTransform = Number.isSafeInteger(signal.scale)
+    && signal.scale !== 0
+    && Number.isSafeInteger(signal.offset);
+
+  if (exact !== null && integralTransform) {
+    raw = (exact - BigInt(signal.offset)) / BigInt(signal.scale);
+  } else {
+    if (exact !== null && (exact < MIN_SAFE_BIGINT || exact > MAX_SAFE_BIGINT)) {
+      throw new Error(
+        `Signal '${signal.name}' uses a non-integer scale/offset; exact values outside `
+        + `JavaScript's safe integer range cannot be encoded. Use a safely representable value.`,
+      );
+    }
+    const numeric = typeof physicalValue === 'number' ? physicalValue : Number(physicalValue);
+    if (!Number.isFinite(numeric)) throw invalidPhysicalValue(physicalValue, signal);
+    if (Number.isInteger(numeric) && !Number.isSafeInteger(numeric)) {
+      throw new Error(
+        `Unsafe integer number for signal '${signal.name}'. Pass the exact value as a decimal or hexadecimal string.`,
+      );
+    }
+    const rawNumber = Math.trunc((numeric - signal.offset) / signal.scale);
+    if (!Number.isSafeInteger(rawNumber)) {
+      throw new Error(
+        `Raw value for signal '${signal.name}' exceeds JavaScript's safe integer range. `
+        + `Pass an exact decimal or hexadecimal string with an integer scale/offset.`,
+      );
+    }
+    raw = BigInt(rawNumber);
   }
-  const maxRaw = (1 << signal.bit_length) - 1;
-  raw = Math.max(0, Math.min(raw, maxRaw));
+
+  if (vtype === 'signed' && raw < 0n) {
+    raw += 1n << BigInt(signal.bit_length);
+  }
+  const maxRaw = (1n << BigInt(signal.bit_length)) - 1n;
+  if (raw < 0n) raw = 0n;
+  if (raw > maxRaw) raw = maxRaw;
   return raw;
 }
 
-function resolveEnum(rawInt: number, signal: Signal): string | null {
+function resolveEnum(rawInt: bigint, signal: Signal): string | null {
   if (Object.keys(signal.enum_map).length > 0) {
-    return signal.enum_map[Math.round(rawInt)] ?? null;
+    return (signal.enum_map as Record<string, string>)[rawInt.toString()] ?? null;
   }
   return null;
 }
 
-function reverseEnum(name: string, signal: Signal): number | null {
+function reverseEnum(name: string, signal: Signal): bigint | null {
   const lower = name.toLowerCase();
   for (const [k, v] of Object.entries(signal.enum_map)) {
-    if (v.toLowerCase() === lower) return Number(k);
+    if (v.toLowerCase() === lower) {
+      try { return BigInt(k); } catch { return null; }
+    }
   }
   return null;
 }
 
-function resolveBitfield(rawInt: number, signal: Signal): Record<string, boolean> {
+function resolveBitfield(rawInt: bigint, signal: Signal): Record<string, boolean> {
   const result: Record<string, boolean> = {};
   for (const [bit, name] of Object.entries(signal.bitfield_map)) {
-    result[name] = Boolean(rawInt & (1 << Number(bit)));
+    result[name] = (rawInt & (1n << BigInt(bit))) !== 0n;
   }
   return result;
 }
 
-function composeBitfield(flags: Record<string, boolean>, signal: Signal): number {
-  let value = 0;
+function composeBitfield(flags: Record<string, boolean>, signal: Signal): bigint {
+  let value = 0n;
   const reverseMap: Record<string, number> = {};
   for (const [bit, name] of Object.entries(signal.bitfield_map)) {
     reverseMap[name.toLowerCase()] = Number(bit);
   }
   for (const [name, active] of Object.entries(flags)) {
     const bit = reverseMap[name.toLowerCase()];
-    if (bit !== undefined && active) value |= (1 << bit);
+    if (bit !== undefined && active) value |= 1n << BigInt(bit);
   }
   return value;
 }
 
 /** Expected raw value of a `constant: true` signal, or null if it has no default. */
-function constantRaw(sig: Signal): number | null {
+function constantRaw(sig: Signal): bigint | null {
   if (!sig.constant || sig.default_value === null) return null;
   const val = sig.default_value;
   if (Object.keys(sig.enum_map).length > 0 && typeof val === 'string') {
     return reverseEnum(val, sig);
   }
-  const num = typeof val === 'number' ? val : Number(val);
-  if (!Number.isFinite(num)) return null;
-  return physicalToRaw(num, sig);
+  try {
+    return physicalToRaw(val, sig);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -546,7 +608,7 @@ export function decode(msgDef: Message, data: Uint8Array, actualId?: number, nod
     const bitfield = Object.keys(sig.bitfield_map).length > 0 ? resolveBitfield(raw, sig) : null;
 
     decodedSignals.push({
-      name: sig.name, raw_value: raw, physical_value: physical,
+      name: sig.name, raw_value: publicInteger(raw), physical_value: physical,
       enum_name: enumName, bitfield_flags: bitfield,
       unit: sig.unit, description: sig.description,
     });
@@ -576,7 +638,7 @@ export function encode(msgDef: Message, values: Record<string, string | number |
       continue;
     }
 
-    let raw: number;
+    let raw: bigint;
     if (Object.keys(sig.bitfield_map).length > 0 && typeof val === 'object' && val !== null) {
       raw = composeBitfield(val as Record<string, boolean>, sig);
     } else if (Object.keys(sig.enum_map).length > 0 && typeof val === 'string') {
@@ -584,16 +646,14 @@ export function encode(msgDef: Message, values: Record<string, string | number |
       if (r === null) throw new Error(`Unknown enum value '${val}' for signal '${sig.name}'. Valid: ${Object.values(sig.enum_map).join(', ')}`);
       raw = r;
     } else {
-      const num = typeof val === 'number' ? val : Number(val);
-      if (isNaN(num)) {
-        // Don't silently pack NaN bits — that's how forgotten variable references end up
-        // sending garbage onto the bus. Hint at the most likely cause.
-        const hint = typeof val === 'string'
-          ? ` (did you mean '=${val}' to evaluate as a variable / expression?)`
-          : '';
-        throw new Error(`Invalid value '${val}' for signal '${sig.name}': not a number${hint}`);
+      try {
+        raw = physicalToRaw(val as string | number, sig);
+      } catch (error) {
+        if (error instanceof Error && typeof val === 'string' && !Number.isFinite(Number(val))) {
+          error.message += ` (did you mean '=${val}' to evaluate as a variable / expression?)`;
+        }
+        throw error;
       }
-      raw = physicalToRaw(num, sig);
     }
 
     if (sig.byte_order === 'big_endian') {

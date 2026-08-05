@@ -31,6 +31,22 @@ export function sanitizeC(name: string): string {
   return s;
 }
 
+const RUST_KEYWORDS = new Set([
+  'as', 'async', 'await', 'break', 'const', 'continue', 'crate', 'dyn', 'else',
+  'enum', 'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let', 'loop',
+  'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'self', 'Self', 'static',
+  'struct', 'super', 'trait', 'true', 'type', 'union', 'unsafe', 'use', 'where',
+  'while', 'abstract', 'become', 'box', 'do', 'final', 'macro', 'override', 'priv',
+  'typeof', 'unsized', 'virtual', 'yield', 'try', 'gen',
+]);
+const RUST_NON_RAW_IDENTIFIERS = new Set(['crate', 'self', 'Self', 'super']);
+
+export function sanitizeRust(name: string): string {
+  const s = sanitizeC(name);
+  if (RUST_NON_RAW_IDENTIFIERS.has(s)) return '_' + s;
+  return RUST_KEYWORDS.has(s) ? `r#${s}` : s;
+}
+
 export function toSnakeCase(name: string): string {
   let s = sanitizeC(name);
   s = s.replace(CAMEL_BOUNDARY, '_');
@@ -111,6 +127,14 @@ export function isEnum(sig: Signal): boolean {
 
 export function isBitfield(sig: Signal): boolean {
   return !!sig.bitfield_map && Object.keys(sig.bitfield_map).length > 0;
+}
+
+export function isIdentityInteger(sig: Signal): boolean {
+  return sig.value_type !== 'float32'
+    && sig.value_type !== 'float64'
+    && sig.scale === 1
+    && sig.offset === 0
+    && !sig.unit;
 }
 
 export function physicalFieldTypeC(sig: Signal): string {

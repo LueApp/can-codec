@@ -26,6 +26,28 @@ def sanitize_c_id(name: str) -> str:
     return s
 
 
+_RUST_KEYWORDS = {
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn",
+    "else", "enum", "extern", "false", "fn", "for", "if", "impl", "in",
+    "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+    "self", "Self", "static", "struct", "super", "trait", "true", "type",
+    "union", "unsafe", "use", "where", "while", "abstract", "become", "box",
+    "do", "final", "macro", "override", "priv", "typeof", "unsized", "virtual",
+    "yield", "try", "gen",
+}
+_RUST_NON_RAW_IDENTIFIERS = {"crate", "self", "Self", "super"}
+
+
+def sanitize_rust_id(name: str) -> str:
+    """Return a Rust field identifier, escaping reserved words when possible."""
+    s = sanitize_c_id(name)
+    if s in _RUST_NON_RAW_IDENTIFIERS:
+        return "_" + s
+    if s in _RUST_KEYWORDS:
+        return "r#" + s
+    return s
+
+
 def to_snake_case(name: str) -> str:
     """PascalCase / camelCase -> snake_case, also sanitizes."""
     s = sanitize_c_id(name)
@@ -104,6 +126,16 @@ def is_enum(sig: Signal) -> bool:
 
 def is_bitfield(sig: Signal) -> bool:
     return bool(sig.bitfield_map)
+
+
+def is_identity_integer(sig: Signal) -> bool:
+    """True when the public field can map to raw bits without floating point."""
+    return (
+        not is_float(sig)
+        and sig.scale == 1.0
+        and sig.offset == 0.0
+        and not sig.unit
+    )
 
 
 def physical_field_type_c(sig: Signal) -> str:
@@ -217,6 +249,7 @@ def total_payload_bytes(msg: Message) -> int:
 
 __all__ = [
     "sanitize_c_id",
+    "sanitize_rust_id",
     "to_snake_case",
     "to_pascal_case",
     "to_upper_snake",
@@ -230,6 +263,7 @@ __all__ = [
     "is_signed",
     "is_enum",
     "is_bitfield",
+    "is_identity_integer",
     "physical_field_type_c",
     "physical_field_type_rust",
     "physical_field_type_py",

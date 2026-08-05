@@ -110,6 +110,17 @@
 
   function parseValues(raw: Record<string, string>): Record<string, string | number> {
     const values: Record<string, string | number> = {};
+    const parseInput = (input: string): string | number => {
+      const trimmed = input.trim();
+      const num = Number(trimmed);
+      if (!Number.isFinite(num)) return input;
+      // Keep unsafe integer literals as strings so codec.ts can parse them
+      // exactly with BigInt. Converting through Number here would lose bits.
+      if (/^[+-]?\d+$/.test(trimmed) || /^[+-]?0[xX][0-9a-fA-F]+$/.test(trimmed)) {
+        if (!Number.isSafeInteger(num)) return trimmed;
+      }
+      return num;
+    };
     for (const [k, v] of Object.entries(raw)) {
       if (v === '') continue;
       const group = signalGroups.find(g => g.key === k);
@@ -119,15 +130,13 @@
         for (let i = 0; i < group.items.length; i++) {
           const val = parts[i] ?? '';
           if (val === '') continue;
-          const num = Number(val);
           const sig = group.items[i];
-          const parsed: string | number = isNaN(num) ? val : num;
+          const parsed = parseInput(val);
           values[sig.name] = nativeNumber(selectedMsg, sig, parsed);
         }
       } else {
-        const num = Number(v);
         const sig = group?.items[0];
-        const parsed: string | number = isNaN(num) ? v : num;
+        const parsed = parseInput(v);
         values[k] = sig ? nativeNumber(selectedMsg, sig, parsed) : parsed;
       }
     }

@@ -142,6 +142,40 @@ const MAVLINK_TYPES: Record<string, [number, Signal['value_type'], number]> = {
   char:     [8,  'unsigned', 1],
 };
 
+export function parseMavlinkEnumValue(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) throw new Error(`Invalid MAVLink enum value: ${value}`);
+  return parsed;
+}
+
+export function parseMavlinkFieldType(typeStr: string): {
+  base_type: string;
+  bit_length: number;
+  value_type: Signal['value_type'];
+  array_count: number;
+  wire_size: number;
+  default_value: number | null;
+  constant: boolean;
+} | null {
+  const arrayMatch = typeStr.match(/^(\w+)\[(\d+)\]$/);
+  const declaredType = arrayMatch ? arrayMatch[1] : typeStr;
+  const arrayCount = arrayMatch ? parseInt(arrayMatch[2], 10) : 1;
+  const isMavlinkVersion = declaredType === 'uint8_t_mavlink_version';
+  const baseType = isMavlinkVersion ? 'uint8_t' : declaredType;
+  const typeInfo = MAVLINK_TYPES[baseType];
+  if (!typeInfo) return null;
+  const [bitLength, valueType, wireSize] = typeInfo;
+  return {
+    base_type: baseType,
+    bit_length: bitLength,
+    value_type: valueType,
+    array_count: arrayCount,
+    wire_size: wireSize,
+    default_value: isMavlinkVersion ? 3 : null,
+    constant: isMavlinkVersion,
+  };
+}
+
 function mavlinkCrc(data: number[], seed = 0xFFFF): number {
   let crc = seed;
   for (const byte of data) {
@@ -177,7 +211,7 @@ function parseEnums(doc: Document): Record<string, Record<number, string>> {
       const name = entry.getAttribute('name');
       if (val !== null && name) {
         let short = name.startsWith(enumName + '_') ? name.slice(enumName.length + 1) : name;
-        values[Number(val)] = short.toLowerCase();
+        values[parseMavlinkEnumValue(val)] = short.toLowerCase();
       }
     }
     enums[enumName] = values;
@@ -203,7 +237,7 @@ export function parseMavlinkXml(xmlText: string, filename: string = 'unknown'): 
     // Collect raw fields in document order, splitting at <extensions/>.
     // Core fields go before the marker (sorted by size, in CRC_EXTRA);
     // extension fields go after (declaration order, excluded from CRC_EXTRA).
-    type RawField = { name: string; base_type: string; bit_length: number; value_type: Signal['value_type']; array_count: number; wire_size: number; enum_map: Record<number, string>; description: string };
+    type RawField = { name: string; base_type: string; bit_length: number; value_type: Signal['value_type']; array_count: number; wire_size: number; enum_map: Record<number, string>; description: string; default_value: number | null; constant: boolean };
     const coreFields: RawField[] = [];
     const extFields: RawField[] = [];
     let inExtensions = false;
@@ -220,23 +254,20 @@ export function parseMavlinkXml(xmlText: string, filename: string = 'unknown'): 
       const fieldEnum = child.getAttribute('enum') ?? '';
       const fieldDesc = child.textContent?.trim() ?? '';
 
-      const arrayMatch = typeStr.match(/^(\w+)\[(\d+)\]$/);
-      const baseType = arrayMatch ? arrayMatch[1] : typeStr;
-      const arrayCount = arrayMatch ? parseInt(arrayMatch[2]) : 1;
-
-      const typeInfo = MAVLINK_TYPES[baseType];
+      const typeInfo = parseMavlinkFieldType(typeStr);
       if (!typeInfo) continue;
-      const [bit_length, value_type, wire_size] = typeInfo;
 
       const fieldInfo: RawField = {
         name: fieldName,
-        base_type: baseType,
-        bit_length,
-        value_type,
-        array_count: arrayCount,
-        wire_size,
+        base_type: typeInfo.base_type,
+        bit_length: typeInfo.bit_length,
+        value_type: typeInfo.value_type,
+        array_count: typeInfo.array_count,
+        wire_size: typeInfo.wire_size,
         enum_map: fieldEnum && enums[fieldEnum] ? enums[fieldEnum] : {},
         description: fieldDesc,
+        default_value: typeInfo.default_value,
+        constant: typeInfo.constant,
       };
       (inExtensions ? extFields : coreFields).push(fieldInfo);
     }
@@ -263,8 +294,8 @@ export function parseMavlinkXml(xmlText: string, filename: string = 'unknown'): 
           description: f.array_count > 1 ? `${f.description} [${i}]` : f.description,
           enum_map: { ...f.enum_map },
           bitfield_map: {},
-          default_value: null,
-          constant: false,
+          default_value: f.default_value,
+          constant: f.constant,
         });
         bitOffset += f.bit_length;
       }

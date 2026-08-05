@@ -5,7 +5,7 @@
 import type { DeviceConfig, Message, Signal } from '../types';
 import {
   sanitizeC, toSnakeCase, toPascalCase, toUpperSnake,
-  signalMaxRawDec, isEnum, isBitfield, isSigned,
+  signalMaxRawDec, isEnum, isBitfield, isSigned, isIdentityInteger,
   physicalFieldTypeC, resolveDefaultPhysical, resolveDefaultRawHex,
   userSignals, totalPayloadBytes, fmtFloat, pyReprAny,
 } from './common';
@@ -143,6 +143,7 @@ function physToRawCall(sig: Signal, variable: string): string {
   }
   if (sig.value_type === 'float32') return `static_cast<uint64_t>(detail::f32_to_u32(static_cast<float>(${variable})))`;
   if (sig.value_type === 'float64') return `detail::f64_to_u64(static_cast<double>(${variable}))`;
+  if (isIdentityInteger(sig)) return `(static_cast<uint64_t>(${variable}) & ${signalMaxRawDec(sig)}ull)`;
   const fn = isSigned(sig) ? 'detail::phys_to_raw_signed' : 'detail::phys_to_raw_unsigned';
   return `${fn}(static_cast<double>(${variable}), ${fmtFloat(sig.scale)}, ${fmtFloat(sig.offset)}, ${sig.bit_length})`;
 }
@@ -152,6 +153,7 @@ function rawToPhysCall(sig: Signal, rawVar: string): string {
   if (isBitfield(sig) || isEnum(sig)) return rawVar;
   if (sig.value_type === 'float32') return `detail::u32_to_f32(static_cast<uint32_t>(${rawVar}))`;
   if (sig.value_type === 'float64') return `detail::u64_to_f64(${rawVar})`;
+  if (isIdentityInteger(sig)) return isSigned(sig) ? `detail::sign_extend(${rawVar}, ${sig.bit_length})` : rawVar;
   if (isSigned(sig)) {
     return `detail::raw_to_phys_signed(${rawVar}, ${fmtFloat(sig.scale)}, ${fmtFloat(sig.offset)}, ${sig.bit_length})`;
   }
@@ -176,6 +178,9 @@ function emitStruct(msg: Message, lines: string[]) {
   lines.push(`    static constexpr uint32_t NODE_COUNT = ${msg.node_count}u;`);
   lines.push(`    static constexpr uint32_t NODE_ID_OFFSET = ${msg.node_id_offset}u;`);
   lines.push(`    static constexpr uint32_t NODE_ID_START = ${msg.node_id_start}u;`);
+  if (msg.crc_extra !== undefined) {
+    lines.push(`    static constexpr uint8_t CRC_EXTRA = ${msg.crc_extra}u;`);
+  }
   if (hasBroadcast) {
     lines.push(`    static constexpr uint32_t BROADCAST_NODE_ID = 0x${(msg.broadcast_node_id as number).toString(16).toUpperCase()}u;`);
   }
@@ -338,12 +343,14 @@ export function generateCpp(device: DeviceConfig): string {
   L.push(`namespace ${ns} {`);
   L.push('');
   L.push(`inline constexpr const char* DEVICE_NAME = "${device.name}";`);
-  L.push(`inline constexpr bool DEVICE_FD = ${device.fd ? 'true' : 'false'};`);
-  if (device.bitrate !== undefined) {
-    L.push(`inline constexpr uint32_t DEVICE_BITRATE = ${device.bitrate}u;`);
-  }
-  if (device.fd && device.data_bitrate !== undefined) {
-    L.push(`inline constexpr uint32_t DEVICE_DATA_BITRATE = ${device.data_bitrate}u;`);
+  if (!device.mavlink) {
+    L.push(`inline constexpr bool DEVICE_FD = ${device.fd ? 'true' : 'false'};`);
+    if (device.bitrate !== undefined) {
+      L.push(`inline constexpr uint32_t DEVICE_BITRATE = ${device.bitrate}u;`);
+    }
+    if (device.fd && device.data_bitrate !== undefined) {
+      L.push(`inline constexpr uint32_t DEVICE_DATA_BITRATE = ${device.data_bitrate}u;`);
+    }
   }
   L.push('');
   L.push(runtimeHelpers());
