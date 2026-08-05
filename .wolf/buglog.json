@@ -3796,6 +3796,18 @@
       "related_bugs": ["bug-222"],
       "occurrences": 1,
       "last_seen": "2026-08-05T16:57:00+08:00"
+    },
+    {
+      "id": "bug-234",
+      "timestamp": "2026-08-05T17:06:00+08:00",
+      "error_message": "Final git ls-remote verification exceeded the 30-second command timeout after a successful push.",
+      "file": "/home/lue/qiuzhi/can-codec/.git/refs/remotes/origin/master",
+      "root_cause": "The GitHub SSH remote query did not return within the verification command window even though both preceding pushes completed successfully.",
+      "fix": "Verify the post-push local HEAD and updated origin/master tracking ref directly; both resolved to the same commit.",
+      "tags": ["git", "github", "timeout", "verification", "sync"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-08-05T17:06:00+08:00"
     }
   ]
 }
