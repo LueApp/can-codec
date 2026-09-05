@@ -60,7 +60,7 @@
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">1. Load a Config File</h3>
       <p>Click <strong>"+ Files"</strong> in the navbar to upload one or more <code>.yaml</code> / <code>.yml</code> / <code>.xml</code> config files. You can also click <strong>"+ Folder"</strong> to load an entire directory at once.</p>
-      <p style="margin-top: 8px;">If you don't have a config file yet, use a built-in template on the <a href="/">Messages</a> page. Templates include example motor controller definitions.</p>
+      <p style="margin-top: 8px;">If you don't have a config file yet, use a built-in template on the <a href="/">Messages</a> page. Click the template to load it, or <strong>Download example</strong> to save the YAML file for editing. Loaded configs also have a <strong>Download</strong> button to save their original YAML or XML file.</p>
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">2. Browse Messages</h3>
       <p>After loading, the <a href="/">Messages</a> page lists all decoded message definitions grouped by device. Each row shows the CAN ID, message name, direction (TX/RX), DLC, and description.</p>
@@ -467,7 +467,7 @@ canfd-codec -c ./configs serve --bus /dev/ttyACM0 --interface slcan --bitrate 10
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">1. 加载配置文件</h3>
       <p>点击导航栏中的 <strong>"+ Files"</strong> 上传一个或多个 <code>.yaml</code> / <code>.yml</code> / <code>.xml</code> 配置文件。也可点击 <strong>"+ Folder"</strong> 一次性加载整个目录。</p>
-      <p style="margin-top: 8px;">如果您还没有配置文件，可在 <a href="/">Messages</a> 页面使用内置模板，模板包含示例电机控制器的消息定义。</p>
+      <p style="margin-top: 8px;">如果您还没有配置文件，可在 <a href="/">Messages</a> 页面使用内置模板。点击模板即可加载，或点击 <strong>下载示例</strong> 保存 YAML 文件以便编辑。已加载的配置也可通过 <strong>下载</strong> 按钮保存原始 YAML 或 XML 文件。</p>
 
       <h3 style="margin-top: 16px; margin-bottom: 8px; font-size: 15px;">2. 浏览消息定义</h3>
       <p>加载完成后，<a href="/">Messages</a> 页面会按设备分组展示所有消息定义。每行显示 CAN ID、消息名称、收发方向（TX/RX）、DLC 和描述。</p>

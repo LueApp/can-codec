@@ -36,6 +36,20 @@
         codecStore.addConfig(file.name, await file.text());
     }
   }
+
+  function downloadConfig(filename: string, content: string) {
+    const blob = new Blob([content], {
+      type: filename.endsWith('.xml') ? 'application/xml;charset=utf-8' : 'application/yaml;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 </script>
 
 <div class="container">
@@ -69,10 +83,15 @@
         <p style="margin-bottom: 12px; font-size: 13px;">{t('messages.template_hint')}</p>
         <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
           {#each CONFIG_TEMPLATES as tmpl}
-            <button onclick={() => codecStore.loadTemplate(tmpl.id)} style="display: flex; flex-direction: column; align-items: center; padding: 12px 20px;">
-              <strong>{tmpl.name}</strong>
-              <span style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">{tmpl.description}</span>
-            </button>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button onclick={() => codecStore.loadTemplate(tmpl.id)} style="display: flex; flex-direction: column; align-items: center; padding: 12px 20px;">
+                <strong>{tmpl.name}</strong>
+                <span style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">{tmpl.description}</span>
+              </button>
+              <button onclick={() => downloadConfig(tmpl.filename, tmpl.content)} title={tmpl.filename}>
+                ↓ {t('messages.download_example')}
+              </button>
+            </div>
           {/each}
         </div>
       </div>
@@ -92,14 +111,20 @@
               </span>
             </div>
           </div>
-          <button class="danger" style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.removeConfig(cfg.filename)}>{t('messages.remove')}</button>
+          <div style="display: flex; gap: 8px;">
+            <button style="padding: 4px 10px; font-size: 12px;" onclick={() => downloadConfig(cfg.filename, cfg.content)} title={cfg.filename}>{t('messages.download')}</button>
+            <button class="danger" style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.removeConfig(cfg.filename)}>{t('messages.remove')}</button>
+          </div>
         </div>
       {/each}
-      {#if CONFIG_TEMPLATES.some(tpl => !codecStore.configs.find(c => c.filename === tpl.filename))}
+      {#if CONFIG_TEMPLATES.length > 0}
         <div style="padding: 8px 0; border-top: 1px solid var(--border); margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span style="font-size: 12px; color: var(--text-dim);">{t('messages.templates_label')}</span>
-          {#each CONFIG_TEMPLATES.filter(tpl => !codecStore.configs.find(c => c.filename === tpl.filename)) as tmpl}
-            <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.loadTemplate(tmpl.id)}>+ {tmpl.name}</button>
+          {#each CONFIG_TEMPLATES as tmpl}
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <button style="padding: 4px 10px; font-size: 12px;" onclick={() => codecStore.loadTemplate(tmpl.id)} disabled={codecStore.configs.some(c => c.filename === tmpl.filename)}>+ {tmpl.name}</button>
+              <button style="padding: 4px 10px; font-size: 12px;" onclick={() => downloadConfig(tmpl.filename, tmpl.content)} title={tmpl.filename}>↓ {t('messages.download_example')}</button>
+            </div>
           {/each}
         </div>
       {/if}
