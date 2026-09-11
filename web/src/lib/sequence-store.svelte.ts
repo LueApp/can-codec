@@ -1000,7 +1000,8 @@ class SequenceStore {
    *  (collected by walking the AST up to this stmt's position). */
   private _encodeSend(s: SendStmt, varsOverride?: Record<string, number>): { canId: number; data: Uint8Array; isFd: boolean }[] {
     const vars = varsOverride ?? this.vars;
-    if (s.msgName && codecStore.codec.getMessageByName(s.msgName)) {
+    const message = s.msgName ? codecStore.codec.getMessageByName(s.msgName) : null;
+    if (s.msgName && message) {
       if (s.isMavlink) {
         const values = resolveValues(s.values ?? {}, vars);
         const sysId = resolveNum(s.sysId, 1, vars);
@@ -1020,7 +1021,7 @@ class SequenceStore {
         return [{ canId: r.canId, data: r.data, isFd: r.data.length > 8 }];
       }
       const values = resolveValues(s.values ?? {}, vars);
-      const nodeId = resolveNum(s.nodeId, 0, vars);
+      const nodeId = resolveNum(s.nodeId, message.node_id_start, vars);
       const r = codecStore.codec.encode(s.msgName, values, nodeId);
       return [{ canId: r.canId, data: r.data, isFd: r.data.length > 8 }];
     }
