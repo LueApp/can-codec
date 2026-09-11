@@ -241,7 +241,7 @@ function constantRaw(sig: Signal): bigint | null {
  * Returns { ok, matched }. ok is false on the first mismatch or when a
  * constant signal extends past the frame.
  */
-function matchConstants(msgDef: Message, data: Uint8Array): { ok: boolean; matched: number } {
+export function matchConstants(msgDef: Message, data: Uint8Array): { ok: boolean; matched: number } {
   let matched = 0;
   for (const sig of msgDef.signals) {
     const expected = constantRaw(sig);
@@ -666,7 +666,7 @@ export function encode(msgDef: Message, values: Record<string, string | number |
   return data;
 }
 
-function dlcToBytes(dlc: number): number {
+export function dlcToBytes(dlc: number): number {
   if (dlc <= 8) return dlc;
   const mapping: Record<number, number> = { 12: 12, 16: 16, 20: 20, 24: 24, 32: 32, 48: 48, 64: 64 };
   return mapping[dlc] ?? dlc;

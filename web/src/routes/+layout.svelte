@@ -39,6 +39,7 @@
       <a href="/encode" class:active={$page.url.pathname === '/encode'}>{t('nav.encode')}</a>
       <a href="/program" class:active={$page.url.pathname === '/program'}>{t('nav.program')}</a>
       <a href="/plot" class:active={$page.url.pathname === '/plot'}>{t('nav.plot')}</a>
+      <a href="/simulator" class:active={$page.url.pathname === '/simulator'}>Simulator</a>
       <a href="/convert" class:active={$page.url.pathname === '/convert'}>{t('nav.convert')}</a>
       <a href="/genlib" class:active={$page.url.pathname === '/genlib'}>{t('nav.genlib')}</a>
       <a href="/docs" class:active={$page.url.pathname === '/docs'}>{t('nav.docs')}</a>

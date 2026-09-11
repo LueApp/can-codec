@@ -4,8 +4,8 @@ WebSocket bridge for live CAN bus frame streaming (zero external dependencies).
 Broadcasts raw CAN frames as JSON to all connected WebSocket clients.
 Decoding is performed client-side in the browser.
 
-Uses candump (from can-utils) instead of python-can, and a stdlib WebSocket
-implementation (RFC 6455) instead of the 'websockets' package.
+Uses persistent native SocketCAN sockets and a stdlib WebSocket implementation.
+The simulator API is an opaque relay: protocol conversion stays in the browser.
 """
 
 import asyncio
@@ -155,7 +155,10 @@ class CANWebSocketServer:
         self._clients: set[asyncio.StreamWriter] = set()
         self._clients_lock = threading.Lock()
         # Items: (arb_id:int, data:bytes, is_fd:bool, ack_writer:StreamWriter|None)
-        self._send_queue: queue.Queue = queue.Queue()
+        self._send_queue: queue.Queue = queue.Queue(maxsize=4096)
+        self._can_socket = None
+        self._roles = {}
+        self._bus_connected = False
         # Reference to the pycan Bus instance (set by _pycan_reader_thread). None otherwise.
         self._pycan_bus = None
         # Reference + lock to the upstream socket (set by _ws_source_reader_thread).
@@ -226,7 +229,10 @@ class CANWebSocketServer:
             self._clients.add(writer)
         print(f"  Client connected: {remote} ({len(self._clients)} total)")
 
-        status = json.dumps({"type": "status", "bus": self.bus, "fd": self.fd})
+        status = json.dumps({"type": "status", "bus": self.bus, "fd": self.fd,
+                             "backend": self.interface,
+                             "connected": self._bus_connected, "version": 2,
+                             "capabilities": ["sim-relay-v1", "request-id", "frame-flags"]})
         try:
             writer.write(_ws_build_frame(status.encode()))
             await writer.drain()
@@ -250,6 +256,9 @@ class CANWebSocketServer:
                     disconnect_reason = "EOF (client closed connection)"
                     break
                 buf += chunk
+                if len(buf) > 2_097_152:
+                    disconnect_reason = "message buffer limit exceeded"
+                    break
                 while True:
                     result = _ws_read_frame(buf)
                     if result is None:
@@ -280,6 +289,9 @@ class CANWebSocketServer:
         except Exception as e:
             disconnect_reason = f"unexpected error: {e}"
         finally:
+            role = self._roles.pop(writer, None)
+            if role:
+                self._relay_peer(role, False)
             with self._clients_lock:
                 self._clients.discard(writer)
             print(
@@ -305,7 +317,34 @@ class CANWebSocketServer:
         if not isinstance(msg, dict):
             return
         mtype = msg.get("type")
+        if mtype == "sim_hello":
+            role = msg.get("role")
+            if msg.get("version") != 1 or role not in ("codec", "simulator"):
+                self._write_json(writer, {"type": "sim_error", "error": "unsupported role or API version"})
+                return
+            if any(r == role and w is not writer for w, r in self._roles.items()):
+                self._write_json(writer, {"type": "sim_error", "error": f"{role} already connected"})
+                return
+            self._roles[writer] = role
+            self._write_json(writer, {"type": "sim_hello", "version": 1, "role": role})
+            for peer_role in set(self._roles.values()) - {role}:
+                self._write_json(writer, {"type": "sim_peer", "role": peer_role, "connected": True})
+            self._relay_peer(role, True)
+            return
+        if mtype == "sim_data":
+            role = self._roles.get(writer)
+            if not role or not isinstance(msg.get("payload"), dict):
+                return
+            peers = [w for w, r in self._roles.items() if r != role]
+            if not peers:
+                self._write_json(writer, {"type": "sim_error", "error": "peer disconnected; message discarded"})
+            for peer in peers:
+                self._write_json(peer, msg)
+            return
         if mtype != "send":
+            return
+        if self._roles.get(writer) == "simulator":
+            self._send_ack_to(writer, False, error="simulator sends decoded messages through sim_data")
             return
         try:
             arb_id_raw = msg.get("arbitration_id")
@@ -315,6 +354,12 @@ class CANWebSocketServer:
                 raise ValueError("odd-length data hex")
             data = bytes.fromhex(data_hex)
             is_fd = bool(msg.get("is_fd", False))
+            metadata = {"is_extended_id": bool(msg.get("is_extended_id", arb_id > 0x7FF)),
+                        "bitrate_switch": bool(msg.get("bitrate_switch", False)),
+                        "error_state_indicator": bool(msg.get("error_state_indicator", False)),
+                        "is_remote_frame": bool(msg.get("is_remote_frame", False)),
+                        "request_id": msg.get("request_id"),
+                        "origin": "simulator" if self._roles.get(writer) == "codec" else "client"}
         except (TypeError, ValueError) as e:
             self._send_ack_to(writer, False, error=f"bad send payload: {e}")
             return
@@ -325,8 +370,33 @@ class CANWebSocketServer:
         if len(data) > max_len:
             self._send_ack_to(writer, False, arb_id=arb_id, error=f"data too long for {'CAN FD' if is_fd else 'classic CAN'} ({len(data)} > {max_len})")
             return
+        if (not metadata["is_extended_id"] and arb_id > 0x7FF or
+                is_fd and metadata["is_remote_frame"] or
+                not is_fd and (metadata["bitrate_switch"] or metadata["error_state_indicator"])):
+            self._send_ack_to(writer, False, arb_id=arb_id, error="incompatible frame flags", request_id=metadata["request_id"])
+            return
+        if is_fd and len(data) not in (*range(9), 12, 16, 20, 24, 32, 48, 64):
+            self._send_ack_to(writer, False, arb_id=arb_id, error="CAN FD payload must use a legal wire length", request_id=metadata["request_id"])
+            return
         # Enqueue for the sender thread to push to the bus.
-        self._send_queue.put((arb_id, data, is_fd, writer))
+        try:
+            self._send_queue.put_nowait((arb_id, data, is_fd, writer, metadata))
+        except queue.Full:
+            self._send_ack_to(writer, False, arb_id=arb_id, error="send queue full", request_id=metadata["request_id"])
+
+    def _write_json(self, writer, message):
+        try:
+            if writer.transport.get_write_buffer_size() > 1_048_576:
+                writer.close()
+                return
+            writer.write(_ws_build_frame(json.dumps(message).encode()))
+        except (ConnectionError, OSError):
+            writer.close()
+
+    def _relay_peer(self, role, connected):
+        for peer, peer_role in list(self._roles.items()):
+            if role != peer_role:
+                self._write_json(peer, {"type": "sim_peer", "role": role, "connected": connected})
 
     def _send_ack_to(
         self,
@@ -334,9 +404,13 @@ class CANWebSocketServer:
         ok: bool,
         arb_id: Optional[int] = None,
         error: Optional[str] = None,
+        request_id=None,
     ):
         """Send a send_ack JSON frame to a specific client. Safe from any thread."""
         msg = {"type": "send_ack", "ok": ok}
+        if request_id is not None:
+            msg["request_id"] = request_id
+        msg["stage"] = "submitted" if ok else "failed"
         if arb_id is not None:
             msg["arbitration_id"] = arb_id
         if error:
@@ -354,14 +428,16 @@ class CANWebSocketServer:
                 item = self._send_queue.get(timeout=0.25)
             except queue.Empty:
                 continue
-            arb_id, data, is_fd, ack_writer = item
+            arb_id, data, is_fd, ack_writer, metadata = item
+            if ack_writer is not None and ack_writer.is_closing():
+                continue  # Never transmit queued commands from a disconnected client.
             try:
-                err = self._send_one(arb_id, data, is_fd)
+                err = self._send_one(arb_id, data, is_fd, metadata)
             except Exception as e:
                 err = f"send failed: {e}"
             if ack_writer is not None:
                 loop.call_soon_threadsafe(
-                    self._send_ack_to, ack_writer, err is None, arb_id, err
+                    self._send_ack_to, ack_writer, err is None, arb_id, err, metadata.get("request_id")
                 )
             if err:
                 print(f"  send 0x{arb_id:X} ({len(data)}B, fd={is_fd}) -> {err}")
@@ -377,11 +453,16 @@ class CANWebSocketServer:
                     "dlc": len(data),
                     "timestamp": time.time(),
                     "is_fd": is_fd,
+                    "bus": self.bus,
+                    **metadata,
                 })
                 loop.call_soon_threadsafe(self._broadcast_sync, frame_json)
 
-    def _send_one(self, arb_id: int, data: bytes, is_fd: bool) -> Optional[str]:
+    def _send_one(self, arb_id: int, data: bytes, is_fd: bool, metadata=None) -> Optional[str]:
         """Dispatch one frame to whichever backend is in use. Returns error or None."""
+        metadata = metadata or {}
+        if self.interface == "memory":
+            return None  # Test-only transport, never accesses hardware.
         if self.source_url:
             # Relay mode: forward the send command upstream.
             with self._source_sock_lock:
@@ -409,29 +490,68 @@ class CANWebSocketServer:
                     arbitration_id=arb_id,
                     data=data,
                     is_fd=is_fd,
-                    is_extended_id=arb_id > 0x7FF,
+                    is_extended_id=metadata.get("is_extended_id", arb_id > 0x7FF),
+                    bitrate_switch=metadata.get("bitrate_switch", False),
+                    error_state_indicator=metadata.get("error_state_indicator", False),
+                    is_remote_frame=metadata.get("is_remote_frame", False),
                 )
                 self._pycan_bus.send(m)
                 return None
             except Exception as e:
                 return f"python-can send failed: {e}"
-        # Default: socketcan -> shell out to cansend
-        arg = _format_cansend_arg(arb_id, data, is_fd)
+        # One persistent RAW socket for TX and RX; own TX echoes are disabled.
+        if self._can_socket is None:
+            return "CAN interface not connected"
+        can_id = arb_id | (0x80000000 if metadata.get("is_extended_id", arb_id > 0x7FF) else 0)
+        if metadata.get("is_remote_frame"):
+            can_id |= 0x40000000
+        flags = int(metadata.get("bitrate_switch", False)) | (int(metadata.get("error_state_indicator", False)) << 1)
+        frame = struct.pack("=IBBBB", can_id, len(data), flags if is_fd else 0, 0, 0) + data.ljust(64 if is_fd else 8, b"\0")
         try:
-            res = subprocess.run(
-                ["cansend", self.bus, arg],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-        except FileNotFoundError:
-            return "cansend not found (install can-utils)"
-        except subprocess.TimeoutExpired:
-            return "cansend timed out"
-        if res.returncode != 0:
-            err = (res.stderr or res.stdout or "").strip() or f"cansend exit {res.returncode}"
-            return err
+            self._can_socket.send(frame)
+        except OSError as exc:
+            return f"SocketCAN send failed: {exc}"
         return None
+
+    def _socketcan_reader_thread(self, loop):
+        while self._running:
+            sock = None
+            try:
+                sock = socket_mod.socket(socket_mod.AF_CAN, socket_mod.SOCK_RAW, socket_mod.CAN_RAW)
+                if self.fd:
+                    sock.setsockopt(socket_mod.SOL_CAN_RAW, socket_mod.CAN_RAW_FD_FRAMES, 1)
+                sock.setsockopt(socket_mod.SOL_CAN_RAW, socket_mod.CAN_RAW_RECV_OWN_MSGS, 0)
+                sock.settimeout(0.25)
+                sock.bind((self.bus,))
+                self._can_socket = sock
+                self._notify_bus_status(loop, True)
+                while self._running:
+                    try:
+                        raw = sock.recv(72)
+                    except socket_mod.timeout:
+                        continue
+                    if len(raw) not in (16, 72):
+                        continue
+                    can_id, length, flags, _, _ = struct.unpack("=IBBBB", raw[:8])
+                    arb_id = can_id & 0x1FFFFFFF
+                    if self.filter_ids and arb_id not in self.filter_ids:
+                        continue
+                    message = {"type": "frame", "direction": "rx", "bus": self.bus,
+                               "arbitration_id": arb_id, "data": raw[8:8 + length].hex().upper(),
+                               "dlc": length, "timestamp": time.time(), "monotonic_ns": str(time.monotonic_ns()),
+                               "is_fd": len(raw) == 72, "is_extended_id": bool(can_id & 0x80000000),
+                               "is_remote_frame": bool(can_id & 0x40000000), "is_error_frame": bool(can_id & 0x20000000),
+                               "bitrate_switch": len(raw) == 72 and bool(flags & 1),
+                               "error_state_indicator": len(raw) == 72 and bool(flags & 2)}
+                    loop.call_soon_threadsafe(self._broadcast_sync, json.dumps(message))
+            except (OSError, AttributeError) as exc:
+                self._notify_bus_status(loop, False, str(exc))
+            finally:
+                self._can_socket = None
+                if sock:
+                    sock.close()
+            if self._running:
+                time.sleep(1)
 
     def _candump_reader_thread(self, loop: asyncio.AbstractEventLoop):
         """Thread that reads candump output and schedules broadcasts."""
@@ -590,12 +710,14 @@ class CANWebSocketServer:
         connected: bool,
         error: str | None = None,
     ):
+        self._bus_connected = connected
         msg = json.dumps(
             {
                 "type": "status",
                 "bus": self.bus,
                 "fd": self.fd,
                 "connected": connected,
+                "backend": self.interface,
                 **({"error": error} if error else {}),
             }
         )
@@ -713,7 +835,13 @@ class CANWebSocketServer:
         with self._clients_lock:
             dead: list[asyncio.StreamWriter] = []
             for writer in self._clients:
+                if self._roles.get(writer) == "simulator":
+                    continue  # The simulator never receives raw CAN traffic.
                 try:
+                    if writer.transport.get_write_buffer_size() > 1_048_576:
+                        writer.close()
+                        dead.append(writer)
+                        continue
                     writer.write(frame)
                 except Exception:
                     dead.append(writer)
@@ -736,10 +864,13 @@ class CANWebSocketServer:
 
         if self.source_url:
             target = self._ws_source_reader_thread
+        elif self.interface == "memory":
+            self._notify_bus_status(loop, True)
+            target = lambda _loop: None
         elif self.interface != "socketcan":
             target = self._pycan_reader_thread
         else:
-            target = self._candump_reader_thread
+            target = self._socketcan_reader_thread
         reader_thread = threading.Thread(
             target=target,
             args=(loop,),

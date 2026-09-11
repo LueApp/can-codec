@@ -30,6 +30,36 @@ client-side; only live-bus features need the bridge server.
 | **Program** | Build multi-step CAN command sequences with notebook-style cells and **closed-loop** control. |
 | **Plot** | Live signal plotter; receives frames over WebSocket from the bridge server. TX frames sent from Program/Encode are tagged and visible on the same timeline. |
 | **Convert** | candump ↔ cansend format conversion. |
+| **Simulator** | Browser-worker gateway to an independent behavior simulator: device bindings, decoded messages, feedback encoding, connection checks and command tracing. |
+
+### Behavior simulator integration
+
+The new **Simulator** page connects to a protocol-independent simulator using the
+common API documented in the sibling `behavior-sim/spec/common-api.md` project.
+CAN encoding/decoding runs in a dedicated browser worker. The local bridge uses
+persistent SocketCAN sockets and relays decoded messages without interpreting
+device behavior. Keep the web application open while running a controller test.
+
+Load your protocol file, add device/node bindings (or import
+`behavior-sim/examples/routing.json`), start the gateway, and point the simulator at
+the same bridge endpoint. Message directions are derived from the controller TX/RX
+definitions. Physical `can0` and virtual `vcan0` are both supported; the simulator
+does not select either transport. The `--interface memory` backend is available
+for browser-only demos and tests, not as a replacement SocketCAN interface.
+
+The initial simulator route supports direct CAN/CAN FD definitions. MAVLink's
+existing encode/decode tools remain available, but MAVLink simulator routing is
+explicitly rejected until its adapter is implemented. Default simulator routing
+does not replay queued commands after disconnects.
+
+The downloadable bridge is generated from the canonical Python implementation:
+
+```bash
+python3 scripts/generate_bridge.py
+```
+
+Regenerate it whenever `canfd_codec/serve.py` changes. This updates the embedded
+script and checksum together.
 
 ### Program page: scripted + closed-loop sequences
 
