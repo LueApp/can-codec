@@ -121,6 +121,8 @@ function parseMessage(raw: Record<string, unknown>, params?: Record<string, numb
     broadcast_node_id: broadcastNodeId,
     signals,
     mux_signal: (raw['mux_signal'] as string) ?? undefined,
+    match: raw['match'] as Message['match'],
+    broadcast_payload: raw['broadcast_payload'] as Message['broadcast_payload'],
   };
 }
 
@@ -334,7 +336,15 @@ export function parseYamlConfig(yamlText: string, filename: string = 'unknown'):
   const messages: Message[] = [];
   if (Array.isArray(raw['messages'])) {
     for (const msgRaw of raw['messages'] as Record<string, unknown>[]) {
-      messages.push(parseMessage(msgRaw, params));
+      const message = parseMessage(msgRaw, params);
+      if (Array.isArray(raw['node_groups'])) {
+        message.node_signals = {};
+        for (const group of raw['node_groups'] as { nodes: number[]; parameters?: Record<string, number> }[]) {
+          const signals = parseMessage(msgRaw, { ...params, ...group.parameters }).signals;
+          for (const node of group.nodes) message.node_signals[node] = signals;
+        }
+      }
+      messages.push(message);
     }
   }
 

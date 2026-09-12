@@ -68,6 +68,8 @@ class Message:
     crc_extra: int | None = None  # MAVLink CRC_EXTRA seed (computed from XML definition)
     broadcast_node_id: int | None = None  # Special node_id for broadcast (e.g., 0x7F)
     mux_signal: str | None = None  # Signal whose enum value sub-groups other signals in plots
+    match: dict[str, Any] = field(default_factory=dict)
+    broadcast_payload: str | None = None
     _node_signals: dict[int, list[Signal]] = field(default_factory=dict, repr=False)
 
     def get_signals(self, node_id: int = 0) -> list[Signal]:
@@ -240,6 +242,8 @@ def _parse_message(raw: dict, params: dict | None = None) -> Message:
         node_id_start=raw.get("node_id_start", 0),
         broadcast_node_id=broadcast_node_id,
         mux_signal=raw.get("mux_signal"),
+        match=raw.get("match", {}),
+        broadcast_payload=raw.get("broadcast_payload"),
     )
     for sig_raw in raw.get("signals", []):
         msg.signals.append(_parse_signal(sig_raw, params))
@@ -504,6 +508,14 @@ def _match_constants(msg_def: Message, data: bytes) -> tuple[bool, int]:
         else:
             actual = _extract_bits_le(data, sig.start_bit, sig.bit_length)
         if actual != expected:
+            return False, matched
+        matched += 1
+    for name, expected in msg_def.match.items():
+        sig = next((signal for signal in msg_def.signals if signal.name == name), None)
+        if sig is None or sig.start_bit + sig.bit_length > len(data) * 8:
+            return False, matched
+        actual = (_extract_bits_be if sig.byte_order == "big_endian" else _extract_bits_le)(data, sig.start_bit, sig.bit_length)
+        if actual not in (expected if isinstance(expected, list) else [expected]):
             return False, matched
         matched += 1
     return True, matched
@@ -885,10 +897,13 @@ class Codec:
         if result is None:
             return None
         _, msg_def, node_id = result
+        if msg_def.match and not _match_constants(msg_def, data)[0]:
+            return None
         # Broadcast frame detection
         if msg_def.broadcast_node_id is not None and node_id == msg_def.broadcast_node_id:
             expected_bcast_bytes = dlc_to_bytes(msg_def.dlc) * msg_def.node_count
-            if len(data) == expected_bcast_bytes:
+            padded_bytes = next((n for n in (*range(9), 12, 16, 20, 24, 32, 48, 64) if n >= expected_bcast_bytes), expected_bcast_bytes)
+            if msg_def.broadcast_payload != "shared" and len(data) in (expected_bcast_bytes, padded_bytes):
                 return decode_broadcast(msg_def, data, actual_id=msg_id)
             # Single-frame broadcast: one payload applies to all nodes
         # Pad data to expected DLC if shorter (e.g. MAVLink v2 zero-trimmed payloads)

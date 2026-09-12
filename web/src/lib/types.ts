@@ -29,6 +29,11 @@ export interface Message {
   signals: Signal[];
   crc_extra?: number;
   mux_signal?: string;
+  /** Explicit payload discriminator, e.g. register_id: [35, 36, 37]. */
+  match?: Record<string, number | number[]>;
+  /** Shared register broadcasts vs packed per-node control payloads. */
+  broadcast_payload?: 'shared' | 'per_node';
+  node_signals?: Record<number, Signal[]>;
 }
 
 export interface DeviceConfig {

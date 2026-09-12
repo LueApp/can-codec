@@ -255,6 +255,15 @@ export function matchConstants(msgDef: Message, data: Uint8Array): { ok: boolean
     if (actual !== expected) return { ok: false, matched };
     matched++;
   }
+  for (const [name, expected] of Object.entries(msgDef.match ?? {})) {
+    const signal = msgDef.signals.find(s => s.name === name);
+    if (!signal || signal.start_bit + signal.bit_length > data.length * 8) return { ok: false, matched };
+    const actual = signal.byte_order === 'big_endian'
+      ? extractBitsBE(data, signal.start_bit, signal.bit_length)
+      : extractBitsLE(data, signal.start_bit, signal.bit_length);
+    if (!(Array.isArray(expected) ? expected : [expected]).some(value => BigInt(value) === actual)) return { ok: false, matched };
+    matched++;
+  }
   return { ok: true, matched };
 }
 
@@ -418,7 +427,7 @@ export const mavlinkCanSenderComp = (id: number): number => (id >>> 14) & 0x3F;
 export const mavlinkCanTargetSys = (id: number): number => (id >>> 6) & 0xFF;
 export const mavlinkCanTargetComp = (id: number): number => id & 0x3F;
 
-/** Split a MAVLink v2 frame into CAN FD frames (max 64 bytes each). */
+/** Split a MAVLink v2 frame into legal CAN wire lengths (max 64 bytes each). */
 export function splitMavlinkFrames(
   mavlinkCanId: number, frame: Uint8Array
 ): { canId: string; data: string; fdFlag: string }[] {
@@ -426,10 +435,16 @@ export function splitMavlinkFrames(
   const maxLen = 64;
   for (let offset = 0; offset < frame.length; offset += maxLen) {
     const chunk = frame.slice(offset, offset + maxLen);
+    // CAN FD DLCs above 8 represent only these sizes. Pad the final transport
+    // chunk, after the MAVLink checksum; do not alter MAVLink length or CRC.
+    const wireLength = chunk.length <= 8 ? chunk.length
+      : [12, 16, 20, 24, 32, 48, 64].find(size => size >= chunk.length)!;
+    const wire = new Uint8Array(wireLength);
+    wire.set(chunk);
     const fdFlag = chunk.length > 8 ? '##1' : '#';
     chunks.push({
       canId: mavlinkCanId.toString(16).toUpperCase().padStart(8, '0'),
-      data: Array.from(chunk).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(''),
+      data: Array.from(wire).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(''),
       fdFlag,
     });
   }
@@ -598,7 +613,7 @@ export function parseCandump(line: string): CandumpFrame | null {
 export function decode(msgDef: Message, data: Uint8Array, actualId?: number, nodeId: number = 0): DecodedMessage {
   const decodedSignals: DecodedSignal[] = [];
 
-  for (const sig of msgDef.signals) {
+  for (const sig of msgDef.node_signals?.[nodeId] ?? msgDef.signals) {
     const raw = sig.byte_order === 'big_endian'
       ? extractBitsBE(data, sig.start_bit, sig.bit_length)
       : extractBitsLE(data, sig.start_bit, sig.bit_length);
@@ -621,11 +636,11 @@ export function decode(msgDef: Message, data: Uint8Array, actualId?: number, nod
   };
 }
 
-export function encode(msgDef: Message, values: Record<string, string | number | Record<string, boolean>>): Uint8Array {
+export function encode(msgDef: Message, values: Record<string, string | number | Record<string, boolean>>, nodeId = 0): Uint8Array {
   const byteCount = dlcToBytes(msgDef.dlc);
   const data = new Uint8Array(byteCount);
 
-  for (const sig of msgDef.signals) {
+  for (const sig of msgDef.node_signals?.[nodeId] ?? msgDef.signals) {
     let val: string | number | Record<string, boolean> | null;
     if (sig.constant) {
       if (sig.default_value === null) continue;
@@ -702,7 +717,7 @@ function encodeBroadcastFrame(
   for (let i = 0; i < msgDef.node_count; i++) {
     const nodeId = msgDef.node_id_start + i;
     const values = perNodeValues.get(nodeId) ?? {};
-    segments.push(encode(msgDef, values));
+    segments.push(encode(msgDef, values, nodeId));
   }
   const result = new Uint8Array(byteCount * msgDef.node_count);
   let offset = 0;
@@ -825,8 +840,12 @@ export class Codec {
   decode(msgId: number, data: Uint8Array, dlc?: number): DecodedMessage | null {
     const result = this.findMessageById(msgId, dlc ?? data.length, data);
     if (!result) return null;
+    if (result.message.match && !matchConstants(result.message, data).ok) return null;
     // Broadcast frame detection
     if (result.message.broadcast_node_id !== null && result.nodeId === result.message.broadcast_node_id) {
+      if (result.message.broadcast_payload === 'shared' || data.length === dlcToBytes(result.message.dlc)) {
+        return decode(result.message, data, msgId, result.nodeId);
+      }
       return decodeBroadcastFrame(result.message, data, msgId);
     }
     let paddedData = data;
@@ -889,7 +908,7 @@ export class Codec {
   encode(msgName: string, values: Record<string, string | number | Record<string, boolean>>, nodeId: number = 0): { canId: number; data: Uint8Array } {
     const entry = this.byName.get(msgName);
     if (!entry) throw new Error(`Unknown message '${msgName}'. Available: ${Array.from(this.byName.keys()).sort().join(', ')}`);
-    const data = encode(entry.message, values);
+    const data = encode(entry.message, values, nodeId);
     const canId = getIdForNode(entry.message, nodeId);
     return { canId, data };
   }

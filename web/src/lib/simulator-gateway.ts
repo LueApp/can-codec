@@ -33,6 +33,19 @@ function bytes(hex: string): Uint8Array {
   return Uint8Array.from(hex.match(/../g) ?? [], v => parseInt(v, 16));
 }
 
+function payloadForNode(message: Message, binding: SimulatorBinding, frame: WireFrame, data: Uint8Array): Uint8Array | null {
+  const size = dlcToBytes(message.dlc);
+  if (getIdForNode(message, binding.node) === frame.arbitration_id) return data.length === size ? data : null;
+  if (message.broadcast_node_id === null || getIdForNode(message, message.broadcast_node_id) !== frame.arbitration_id) return null;
+  const packed = message.broadcast_payload === 'per_node' || message.broadcast_payload !== 'shared' && data.length > size;
+  if (!packed) return data.length === size ? data : null;
+  const logical = size * message.node_count;
+  const padded = [...Array(9).keys(), 12, 16, 20, 24, 32, 48, 64].find(length => length >= logical);
+  if (!frame.is_fd || data.length !== logical && data.length !== padded) return null;
+  const offset = (binding.node - message.node_id_start) * size;
+  return data.slice(offset, offset + size);
+}
+
 export class SimulatorGateway {
   private request = 0;
   private config: GatewayConfig;
@@ -77,7 +90,7 @@ export class SimulatorGateway {
   definitions() {
     return { type: 'definitions', version: 1, devices: this.config.bindings.map(binding => {
       const protocol = this.config.protocols[binding.protocol];
-      const fields = (message: Message) => Object.fromEntries(message.signals.map(s => [s.name, {
+      const fields = (message: Message) => Object.fromEntries((message.node_signals?.[binding.node] ?? message.signals).map(s => [s.name, {
         type: s.value_type.startsWith('float') || s.scale !== 1 || s.offset !== 0 ? 'number' : 'integer',
         unit: s.unit, default: s.default_value, constant: s.constant,
       }]));
@@ -95,20 +108,19 @@ export class SimulatorGateway {
     for (const binding of this.config.bindings) {
       const protocol = this.config.protocols[binding.protocol];
       if (protocol.fd !== frame.is_fd) continue;
-      const candidates = protocol.messages.filter(m => {
-        if (!this.isInput(binding, m)) return false;
+      const candidates = protocol.messages.flatMap(m => {
+        if (!this.isInput(binding, m)) return [];
         const extended = binding.extended ?? getIdForNode(m, binding.node) > 0x7ff;
-        if (extended !== (frame.is_extended_id ?? frame.arbitration_id > 0x7ff)) return false;
-        const addressed = getIdForNode(m, binding.node) === frame.arbitration_id;
-        const broadcast = m.broadcast_node_id !== null && getIdForNode(m, m.broadcast_node_id) === frame.arbitration_id;
-        return (addressed || broadcast) && dlcToBytes(m.dlc) === data.length;
-      }).map(message => ({ message, match: matchConstants(message, data) }))
+        if (extended !== (frame.is_extended_id ?? frame.arbitration_id > 0x7ff)) return [];
+        const payload = payloadForNode(m, binding, frame, data);
+        return payload ? [{ message: m, payload, match: matchConstants(m, payload) }] : [];
+      })
         .filter(c => c.match.ok).sort((a, b) => b.match.matched - a.match.matched);
       if (!candidates.length) continue;
       if (candidates.length > 1 && candidates[0].match.matched === candidates[1].match.matched) {
         throw new Error(`${binding.device}: ambiguous input frame 0x${frame.arbitration_id.toString(16)}`);
       }
-      const decoded = decode(candidates[0].message, data, frame.arbitration_id, binding.node);
+      const decoded = decode(candidates[0].message, candidates[0].payload, frame.arbitration_id, binding.node);
       results.push({ type: 'message', version: 1, request_id: `input-${++this.request}`,
         device: binding.device, name: decoded.name,
         fields: Object.fromEntries(decoded.signals.map(s => [s.name, s.physical_value])),
@@ -124,10 +136,11 @@ export class SimulatorGateway {
     const message = protocol.messages.find(m => m.name === packet.name && this.isOutput(binding, m));
     if (!message) throw new Error(`Output ${packet.device}/${packet.name} is not declared`);
     if (!packet.fields || typeof packet.fields !== 'object') throw new Error('Output fields must be an object');
+    const signals = message.node_signals?.[binding.node] ?? message.signals;
     for (const key of Object.keys(packet.fields)) {
-      if (!message.signals.some(s => s.name === key)) throw new Error(`Unknown output field ${key}`);
+      if (!signals.some(s => s.name === key)) throw new Error(`Unknown output field ${key}`);
     }
-    for (const signal of message.signals) {
+    for (const signal of signals) {
       const value = packet.fields[signal.name] ?? signal.default_value;
       if (signal.constant) continue;
       if (value === null || value === undefined) throw new Error(`Missing output field ${signal.name}`);
@@ -145,7 +158,7 @@ export class SimulatorGateway {
         if (raw < low - 1e-6 || raw > high + 1e-6) throw new Error(`Output ${signal.name} cannot fit its field`);
       }
     }
-    const data = encode(message, packet.fields);
+    const data = encode(message, packet.fields, binding.node);
     const canId = getIdForNode(message, binding.node);
     return { type: 'send', arbitration_id: canId, data: Array.from(data, b => b.toString(16).padStart(2, '0')).join(''),
       is_fd: protocol.fd, is_extended_id: binding.extended ?? canId > 0x7ff,

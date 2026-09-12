@@ -61,6 +61,15 @@ python3 scripts/generate_bridge.py
 Regenerate it whenever `canfd_codec/serve.py` changes. This updates the embedded
 script and checksum together.
 
+For devices with shared CAN IDs, an optional message `match` mapping discriminates
+payload fields, for example `match: {register_id: [35, 36, 37]}`. Values refer to
+raw integer field values. `broadcast_payload: shared` sends the same register
+request to every node; `broadcast_payload: per_node` describes packed control
+segments. The simulator gateway accepts complete packed payloads with legal
+CAN FD padding (for example seven 8-byte commands occupy a 64-byte wire frame).
+Browser encoding/decoding now applies `node_groups` signal ranges per node as
+the Python codec does.
+
 ### Program page: scripted + closed-loop sequences
 
 The Program page lets you compose a small AST of statements (Send, Wait, Repeat, Every,
